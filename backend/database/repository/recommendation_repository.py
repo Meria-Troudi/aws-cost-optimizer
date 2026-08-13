@@ -1,47 +1,61 @@
 """
-Recommendation repository - persistence layer for recommendations.
+Recommendation persistence.
 """
+
+from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from backend.database.models.recommendation import Recommendation
+from backend.database.utils import json_dumps
+from ..models.recommendation import Recommendation
 
 
-def save_recommendation(db: Session, data: dict) -> Recommendation:
-    """Save a recommendation."""
-    obj = Recommendation(
-        finding_id=data.get("finding_id"),
-        title=data.get("title"),
-        description=data.get("description"),
-        action=data.get("action"),
-        category=data.get("category"),
-        estimated_savings=data.get("estimated_savings"),
-        confidence=data.get("confidence"),
-        priority=data.get("priority"),
-        implementation=data.get("implementation"),
-        status=data.get("status", "open"),
-    )
-    db.add(obj)
+def save_recommendations(
+    db: Session,
+    scan_run_id: int,
+    recommendations: list[dict],
+) -> list[Recommendation]:
+
+    saved = []
+
+    for data in recommendations:
+
+        if not isinstance(data, dict):
+            continue
+
+        explanation_payload = {
+            "reason": data.get("reason") or "",
+            "generation": data.get("generation", "deterministic"),
+            "affected_resources": data.get("affected_resources") or [],
+        }
+
+        rec = Recommendation(
+            scan_run_id=scan_run_id,
+            finding_id=data.get("finding_id"),
+            resource_type=data.get("resource_type"),
+            title=data.get("title"),
+            action=data.get("action"),
+            explanation=json_dumps(explanation_payload),
+            priority=data.get("priority", "low"),
+            confidence=data.get("confidence", "low"),
+            status="requires_validation",
+        )
+
+        db.add(rec)
+        saved.append(rec)
+
     db.flush()
-    return obj
+
+    return saved
 
 
-def get_recommendations_by_finding(db: Session, finding_id: int):
-    """Get all recommendations for a finding."""
+def get_recommendations_by_scan(
+    db: Session,
+    scan_run_id: int,
+):
     return (
         db.query(Recommendation)
-        .filter(Recommendation.finding_id == finding_id)
-        .all()
-    )
-
-
-def get_recommendations_by_scan(db: Session, scan_run_id: int):
-    """Get all recommendations for a scan run (via findings)."""
-    from backend.database.models.finding import Finding
-
-    return (
-        db.query(Recommendation)
-        .join(Finding, Recommendation.finding_id == Finding.id)
-        .filter(Finding.scan_run_id == scan_run_id)
+        .filter(Recommendation.scan_run_id == scan_run_id)
+        .order_by(Recommendation.priority.desc())
         .all()
     )

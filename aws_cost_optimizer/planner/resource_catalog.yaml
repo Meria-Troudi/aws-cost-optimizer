@@ -1,101 +1,106 @@
+# aws_cost_optimizer/planner/resource_catalog.yaml
 nat_gateway:
-  services:
-    - EC2 - Other
-  usage_patterns:
-    - "*NatGateway*"
-  collector: nat_gateway
-  resource_type: nat_gateway
-  metrics:
-    - name: BytesOutToDestination
-      statistic: Sum
-      unit: Bytes
-    - name: BytesInFromSource
-      statistic: Sum
-      unit: Bytes
-    - name: PacketsOutToDestination
-      statistic: Sum
-      unit: Count
-    - name: PacketsInFromSource
-      statistic: Sum
-      unit: Count
-    - name: ActiveConnectionCount
-      statistic: Average
-      unit: Count
-
-rds:
-  services:
-    - Amazon Relational Database Service
-  usage_patterns:
-    - "*InstanceUsage*"
-    - "*db.*"
-  collector: rds
-  resource_type: rds_instance
-  metrics:
-    - name: CPUUtilization
-      statistic: Average
-      unit: Percent
-    - name: DatabaseConnections
-      statistic: Average
-      unit: Count
-    - name: ReadIOPS
-      statistic: Average
-      unit: Count/Second
-    - name: WriteIOPS
-      statistic: Average
-      unit: Count/Second
-    - name: FreeableMemory
-      statistic: Average
-      unit: Bytes
-    - name: FreeStorageSpace
-      statistic: Average
-      unit: Bytes
-
-rds_cluster:
-  services:
-    - Amazon Relational Database Service
-  usage_patterns:
-    - "*Aurora*"
-    - "*StorageIOUsage*"
-  collector: rds_cluster
-  resource_type: rds_cluster
-
-elastic_ip:
-  services:
-    - Amazon Virtual Private Cloud
-  usage_patterns:
-    - "*PublicIPv4*"
-  collector: elastic_ip
-  resource_type: elastic_ip
-
-eks:
-  services:
-    - Amazon Elastic Container Service for Kubernetes
-  usage_patterns:
-    - "*AmazonEKS*"
-  collector: eks
-  resource_type: eks_cluster
-
-elb:
-  services:
-    - Amazon Elastic Load Balancing
-  usage_patterns:
-    - "*LoadBalancerUsage*"
-    - "*LCUUsage*"
-  collector: elb
-  resource_type: load_balancer
-
+  category: ec2_other
+  billing:
+    services:
+      - EC2 - Other
+      - Amazon Virtual Private Cloud
+    usage_patterns:
+      - "*NatGateway*"
+  collector:
+    key: nat_gateway
+    resource_type: nat_gateway
+public_ipv4:
+  category: ec2_other
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+    usage_patterns:
+      - "*PublicIPv4*"
+  collector:
+    key: public_ipv4
+    resource_type: public_ipv4
 transit_gateway:
-  services:
-    - Amazon Virtual Private Cloud
-  usage_patterns:
-    - "*TransitGateway*"
-  collector: transit_gateway
-  resource_type: transit_gateway
-
+  category: ec2_other
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+    usage_patterns:
+      - "*TransitGateway*"
+  collector:
+    key: transit_gateway
+    resource_type: transit_gateway
 vpc_endpoint:
-  services:
-    - Amazon Virtual Private Cloud
-  usage_patterns:
-    - "*VpcEndpoint*"
-  collector: vpc_endpoint
-  resource_type: vpc_endpoint
+  category: ec2_other
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+    usage_patterns:
+      - "*VpcEndpoint*"
+      - "*VPCEndpoint*"
+  collector:
+    key: vpc_endpoint
+    resource_type: vpc_endpoint
+
+
+rds_instance:
+  category: database
+  billing:
+    services:
+      - Amazon Relational Database Service
+    usage_patterns:
+      - "*InstanceUsage*"
+      - "*RDS:ChargedBackupUsage*"
+      - "*RDS*"
+  collector:
+    key: rds
+    resource_type: rds_instance
+
+# EKS
+eks_cluster:
+  category: compute
+  billing:
+    services:
+      - Amazon Elastic Container Service for Kubernetes
+    usage_patterns:
+      - "*AmazonEKS*"
+      - "*EKS*"
+  collector:
+    key: eks
+    resource_type: eks_cluster
+
+# ELB / LOAD BALANCER
+load_balancer:
+  category: network
+  billing:
+    services:
+      - Amazon Elastic Load Balancing
+    usage_patterns:
+      - "*LoadBalancer*"
+      - "*ELB*"
+  collector:
+    key: elb
+    resource_type: load_balancer
+
+# VPC / NETWORKING - FUTURE
+vpc_peering:
+  category: ec2_other
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+    usage_patterns:
+      - "*VpcPeering*"
+      - "*VPCPeering*"
+  collector:
+    key: vpc_peering
+    resource_type: vpc_peering
+carrier_gateway:
+  category: ec2_other
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+    usage_patterns:
+      - "*CarrierGateway*"
+  collector:
+    key: carrier_gateway
+    resource_type: carrier_gateway

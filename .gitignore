@@ -1,12 +1,10 @@
 # Scan outputs
 scans/
-
 # Generated reports
 aws_cost_optimizer/output/
-
+compute_optimizer_report.json
 # Database
 backend/aws_optimizer.db
-
 # Python
 __pycache__/
 *.py[cod]
@@ -16,25 +14,20 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-
 # Virtual environments
 venv/
 env/
 .venv/
-
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
 # OS
 .DS_Store
 Thumbs.db
-
 # Logs
 *.log
-
 # Environment variables
 .env
 .env.local

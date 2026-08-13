@@ -1,0 +1,6 @@
+boto3
+botocore
+sqlalchemy
+pyyaml
+fastapi
+uvicorn

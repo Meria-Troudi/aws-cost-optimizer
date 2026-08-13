@@ -1,102 +1,86 @@
-"""
-ScanRun model - represents one analysis execution.
-Everything created during analysis is linked to a scan.
-"""
+from datetime import date, datetime
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Date,
-    JSON,
-    Float,
-    DateTime,
-)
-from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy import Date, DateTime, Float, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.database.base import Base
+from ..base import Base
 
 
 class ScanRun(Base):
     __tablename__ = "scan_runs"
 
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
-        autoincrement=True
     )
 
-    account_id = Column(
-        String,
-        index=True
+    account_id: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        index=True,
     )
 
-    start_date = Column(
+    start_date: Mapped[date] = mapped_column(
         Date,
-        nullable=False
+        nullable=False,
     )
 
-    end_date = Column(
+    end_date: Mapped[date] = mapped_column(
         Date,
-        nullable=False
+        nullable=False,
     )
 
-    region = Column(
-        String,
-        nullable=True
+    region: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
     )
 
-    cost_threshold = Column(
+    cost_threshold: Mapped[float] = mapped_column(
         Float,
-        default=100.0
+        default=0.0,
     )
 
-    tag_filter = Column(
-        JSON,
-        nullable=True
-    )
-
-    status = Column(
-        String,
+    status: Mapped[str] = mapped_column(
+        String(20),
         default="running",
-        index=True
     )
 
-    collector_version = Column(
-        String,
-        nullable=True
-    )
-
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
     )
 
-    finished_at = Column(
+    finished_at: Mapped[datetime | None] = mapped_column(
         DateTime,
-        nullable=True
+        nullable=True,
     )
 
-    # Relationships - pipeline stages
     collection_plans = relationship(
         "CollectionPlan",
         back_populates="scan_run",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
-    resource_snapshots = relationship(
-        "ResourceSnapshot",
-        back_populates="scan_run"
+    cost_records = relationship(
+        "CostRecord",
+        back_populates="scan_run",
+        cascade="all, delete-orphan",
     )
 
-    metrics = relationship(
-        "Metric",
-        back_populates="scan_run"
+    resources = relationship(
+        "Resource",
+        back_populates="scan_run",
+        cascade="all, delete-orphan",
     )
 
     findings = relationship(
         "Finding",
         back_populates="scan_run",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
+    )
+
+    recommendations = relationship(
+        "Recommendation",
+        back_populates="scan_run",
+        cascade="all, delete-orphan",
     )

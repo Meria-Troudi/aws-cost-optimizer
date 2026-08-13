@@ -1,36 +1,29 @@
 """
-Service cost repository - queries CostRecord directly for service aggregations.
+Service cost repository
 """
-
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 
-from backend.database.models.cost_record import CostRecord
+from backend.api.services.cost_analytics import build_service_costs_with_changes
+from backend.database.repository.cost_analytics_repository import get_service_costs_by_month
 
 
 def get_service_costs_with_rank(db: Session, scan_run_id: int):
-    """Return one ranked cost row per service, aggregated across regions."""
-    rows = (
-        db.query(
-            CostRecord.service,
-            func.sum(CostRecord.amount).label("cost"),
-        )
-        .filter(CostRecord.scan_run_id == scan_run_id)
-        .group_by(CostRecord.service)
-        .order_by(func.sum(CostRecord.amount).desc())
-        .all()
-    )
+    service_by_month = get_service_costs_by_month(db, scan_run_id)
+    period_totals = {}
+    for row in service_by_month:
+        period_totals[row["service"]] = period_totals.get(row["service"], 0) + row["cost"]
+    total = sum(period_totals.values()) or 1
 
-    total = sum(float(row.cost or 0) for row in rows)
-    result = []
-    for rank, row in enumerate(rows, 1):
-        cost = float(row.cost or 0)
-        result.append({
-            "rank": rank,
-            "service": row.service,
-            "cost": cost,
-            "share_pct": round(cost / total * 100, 2) if total else 0.0,
-            "trend": "N/A",
-            "change_percentage": 0.0,
-        })
-    return result
+    enriched = build_service_costs_with_changes(service_by_month, total)
+    return [
+        {
+            "rank": row["rank"],
+            "service": row["service"],
+            "cost": row["cost"],
+            "share_pct": row["share_pct"],
+            "trend": row["trend"],
+            "change_percentage": row["change_pct"] or 0.0,
+            "change_amount": row["change_amount"],
+        }
+        for row in enriched
+    ]

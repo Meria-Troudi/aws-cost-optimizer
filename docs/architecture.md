@@ -4,7 +4,7 @@ Cost Collection
 Service Ranking
         |
         v
-Usage Type Ranking  
+Usage Type Ranking
         |
         v
 Analyzer Selection
@@ -17,18 +17,11 @@ Rule Evaluation
         |
         v
 Finding / Recommendation
-
-
 The complete general flow should be designed as a **cost-driven optimization engine**, not a resource discovery engine.
-
 The core idea:
-
 > Start from AWS billing → identify expensive areas → map them to optimization domains → discover possible resources → analyze behavior → generate recommendations.
-
 ---
-
 # Complete General Architecture Flow
-
 ```text
 ┌───────────────────────────────┐
 │          AWS Account           │
@@ -38,7 +31,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │        Billing Layer           │
 │                               │
@@ -54,7 +46,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │      Cost Normalization        │
 │                               │
@@ -71,7 +62,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │      Cost Analysis Engine      │
 │                               │
@@ -89,7 +79,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │      Analysis Planner          │
 │                               │
@@ -106,7 +95,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │      Optimization Registry     │
 │                               │
@@ -124,7 +112,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │        Resource Discovery      │
 │                               │
@@ -144,7 +131,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │       Resource Collector       │
 │                               │
@@ -162,7 +148,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │       Rule Analysis Engine     │
 │                               │
@@ -181,7 +166,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │        Finding Generator       │
 │                               │
@@ -198,7 +182,6 @@ The core idea:
                 |
                 |
                 v
-
 ┌───────────────────────────────┐
 │       Recommendation API/UI    │
 │                               │
@@ -207,51 +190,31 @@ The core idea:
 │ Export CSV                    │
 └───────────────────────────────┘
 ```
-
 ---
-
 # Detailed explanation of each layer
-
 ## 1. Billing Collection Layer
-
 Purpose:
-
 Answer:
-
 > "Where is the money going?"
-
 It does NOT answer:
-
 > "Which exact resource created this cost?"
-
 Example output:
-
 `service_usage_cost.csv`
-
 | service     | usage_type          | region    | cost |
 | ----------- | ------------------- | --------- | ---- |
 | EC2 - Other | EU-NatGateway-Hours | eu-west-1 | 463  |
 | RDS         | Aurora Storage      | eu-west-1 | 103  |
 | EKS         | Cluster Hours       | us-east-1 | 218  |
-
 ---
-
 # 2. Cost Analysis Layer
-
 Purpose:
-
 Find what deserves investigation.
-
 Example:
-
 Input:
-
 ```
 Total cost: $2874
 ```
-
 Ranking:
-
 ```
 1. EC2 - Other       $669
 2. RDS               $559
@@ -259,11 +222,8 @@ Ranking:
 4. QuickSight        $331
 5. EKS               $322
 ```
-
 Then:
-
 For EC2 Other:
-
 ```
 EC2 - Other
  |
@@ -271,27 +231,18 @@ EC2 - Other
  +-- EBS Volume              $20
  +-- Elastic IP              $15
 ```
-
 ---
-
 # 3. Analysis Planner
-
 This is the brain deciding:
-
 > "What analyzers should run?"
-
 Example:
-
 Input:
-
 ```
 EC2 - Other
 EU-NatGateway-Hours
 $463
 ```
-
 Creates:
-
 ```json
 {
  "service":"EC2 - Other",
@@ -300,31 +251,20 @@ Creates:
  "cost":463
 }
 ```
-
 ---
-
 # 4. Registry
-
 The registry is your knowledge map.
-
 Example:
-
 ```text
 AWS Billing Pattern
-
         |
         v
-
 Optimization Domain
-
         |
         v
-
 Analyzer
 ```
-
 Example:
-
 ```
 NatGateway-Hours
         |
@@ -333,8 +273,6 @@ nat_gateway
         |
         v
 NatGatewayAnalyzer
-
-
 Aurora:StorageIOUsage
         |
         v
@@ -343,44 +281,29 @@ rds_storage
         v
 RDSAnalyzer
 ```
-
 ---
-
 # 5. Resource Discovery
-
 Now you leave billing.
-
 You ask AWS:
-
 > "Show me resources related to this domain."
-
 Example:
-
 NAT domain:
-
 ```python
 ec2.describe_nat_gateways()
 ```
-
 Result:
-
 ```
 nat-123
 nat-456
 ```
-
 Important:
-
 You are NOT saying:
-
 ```
 EU-NatGateway-Hours
        |
        nat-123
 ```
-
 You are saying:
-
 ```
 EU-NatGateway-Hours
        |
@@ -388,51 +311,33 @@ EU-NatGateway-Hours
        |
        discover NAT gateways
 ```
-
 ---
-
 # 6. Resource Analysis
-
 Now you analyze every discovered resource.
-
 Example:
-
 ```
 nat-123
-
 State:
 available
-
 Traffic:
 500 GB/month
-
 Finding:
 Used
 ```
-
 ---
-
 ```
 nat-456
-
 State:
 available
-
 Traffic:
 0 GB/month
-
 Finding:
 Potentially idle
 ```
-
 ---
-
 # 7. Recommendation Generation
-
 The output should contain:
-
 ## What was expensive?
-
 ```json
 {
 "billing_context":{
@@ -442,9 +347,7 @@ The output should contain:
 }
 }
 ```
-
 ## What resource was analyzed?
-
 ```json
 {
 "resource":{
@@ -453,9 +356,7 @@ The output should contain:
 }
 }
 ```
-
 ## Why?
-
 ```json
 {
 "evidence":{
@@ -464,26 +365,18 @@ The output should contain:
 }
 }
 ```
-
 ## Recommendation
-
 ```json
 {
 "title":"Possible idle NAT Gateway",
-
 "action":
 "Review NAT Gateway and delete if unused",
-
 "confidence":"MEDIUM"
 }
 ```
-
 ---
-
 # The complete reusable pattern for every AWS service
-
 ## NAT Gateway
-
 ```
 Cost Explorer
  |
@@ -497,11 +390,8 @@ traffic analysis
  |
 idle NAT recommendation
 ```
-
 ---
-
 ## RDS
-
 ```
 Cost Explorer
  |
@@ -515,11 +405,8 @@ CPU/connections/storage
  |
 rightsizing recommendation
 ```
-
 ---
-
 ## EBS
-
 ```
 Cost Explorer
  |
@@ -533,11 +420,8 @@ check attachment
  |
 delete unused volume
 ```
-
 ---
-
 ## EKS
-
 ```
 Cost Explorer
  |
@@ -551,11 +435,8 @@ node utilization
  |
 optimize cluster
 ```
-
 ---
-
 The final architecture principle:
-
 ```
                 BILLING
                    |
@@ -584,24 +465,17 @@ The final architecture principle:
         RECOMMENDATION
 ```
 Your current architecture has one conceptual mistake:
-
 > You separated `inventory` from the analyzer, but then your analyzer has to import inventory anyway. This creates extra files without giving you real independence.
-
 Your idea is correct:
-
 * **Billing layer**: says "NAT Gateway cost exists in eu-west-1 = $463.25"
 * **Planner**: decides "run NAT analyzer"
 * **NAT Analyzer**:
-
   * discovers NAT Gateways
   * collects metrics
   * evaluates rules
   * creates findings
-
 The analyzer should own its discovery because **discovery is domain-specific**.
-
 Do not create:
-
 ```
 inventory/
     nat_gateway.py
@@ -610,14 +484,10 @@ aws/
 analyzers/
     nat_gateway.py
 ```
-
 for every service. It becomes a framework before you even have recommendations.
-
 Use this simpler structure:
-
 ```
 project/
-
 ├── analyzers/
 │   ├── base.py
 │   └── nat_gateway.py        <-- everything NAT
@@ -638,33 +508,20 @@ project/
 │
 └── main.py
 ```
-
 ---
-
 ## 1. Fix the NAT analyzer
-
 Replace your current `analyzers/nat_gateway.py` with:
-
 ```python
 from typing import List, Dict
-
 from aws.client import get_client
 from aws.cloudwatch import get_metrics
 from models.resource import Resource
 from models.finding import Finding
-
-
 class NatGatewayAnalyzer:
-
     def run(self, billing_context):
-
         region = billing_context.region
-
         print(f"    Discovering NAT gateways in {region}")
-
         resources = self.discover(region)
-
-
         if not resources:
             return [
                 Finding(
@@ -683,47 +540,25 @@ class NatGatewayAnalyzer:
                     estimated_saving=0
                 )
             ]
-
-
         findings=[]
-
-
         for nat in resources:
-
             metrics=self.collect_metrics(nat)
-
-
             finding=self.evaluate(
                 nat,
                 metrics,
                 billing_context
             )
-
-
             if finding:
                 findings.append(finding)
-
-
         return findings
-
-
-
     def discover(self, region):
-
         ec2=get_client(
             "ec2",
             region
         )
-
-
         response=ec2.describe_nat_gateways()
-
-
         resources=[]
-
-
         for nat in response["NatGateways"]:
-
             resources.append(
                 Resource(
                     id=nat["NatGatewayId"],
@@ -737,24 +572,14 @@ class NatGatewayAnalyzer:
                     }
                 )
             )
-
-
         return resources
-
-
-
     def collect_metrics(self,nat):
-
         namespace="AWS/NATGateway"
-
-
         metrics=[
             "BytesInFromSource",
             "BytesOutToDestination",
             "ActiveConnectionCount"
         ]
-
-
         return get_metrics(
             nat.region,
             namespace,
@@ -764,29 +589,18 @@ class NatGatewayAnalyzer:
             },
             days=30
         )
-
-
-
     def evaluate(
         self,
         nat,
         metrics,
         billing
     ):
-
-
         traffic=0
-
-
         for metric,data in metrics.items():
-
             traffic += sum(
                 data.values()
             )
-
-
         if traffic == 0:
-
             return Finding(
                 resource_id=nat.id,
                 rule="IDLE_NAT_GATEWAY",
@@ -807,33 +621,21 @@ class NatGatewayAnalyzer:
                     "billing_cost":float(billing.cost)
                 }
             )
-
-
         return None
 ```
-
 ---
-
 ## 2. Fix planner
-
 Your planner is almost correct.
-
 Change only this part:
-
 Before:
-
 ```python
 AnalyzerTask(
     analyzer=mapping["analyzer"]
 )
 ```
-
 Keep it.
-
 The planner should not know discovery.
-
 Good:
-
 ```
 Cost Explorer
       |
@@ -849,58 +651,39 @@ NatGatewayAnalyzer
       |
       +--> evaluate
 ```
-
 ---
-
 ## 3. Fix registry
-
 Keep:
-
 ```python
 ANALYZER_CATALOG = [
-
 {
 "name":"nat_gateway",
-
 "domain":"nat_gateway",
-
 "analyzer":NatGatewayAnalyzer(),
-
 "match":{
 "services":[
 "EC2 - Other",
 "Amazon Virtual Private Cloud"
 ],
-
 "usage_patterns":[
 "NatGateway"
 ]
 }
-
 }
-
 ]
 ```
-
 No changes.
-
 ---
-
 ## 4. Fix main.py
-
 Currently you probably call:
-
 ```python
 analyzer.run(
  billing_context,
  regions
 )
 ```
-
 Remove regions.
-
 Change:
-
 ```python
 findings = task.analyzer.run(
     BillingContext(
@@ -911,46 +694,31 @@ findings = task.analyzer.run(
     )
 )
 ```
-
 ---
-
 ## 5. Delete these files
-
 You do not need:
-
 ```
 inventory/
     nat_gateway.py
 ```
-
 because the analyzer owns it.
-
 You also do not need:
-
 ```
 metric_classifier.py
 metric_discovery.py
 ```
-
 yet.
-
 They are premature abstraction.
-
 You currently have **one analyzer**.
-
 Dynamic metric frameworks make sense when you have:
-
 * NAT Gateway
 * RDS
 * EBS
 * Lambda
 * ALB
 * EKS
-
 and you notice repeated patterns.
-
 Right now:
-
 ```
 NAT Analyzer
     |
@@ -960,44 +728,31 @@ NAT Analyzer
     |
     +-- rules
 ```
-
 is cleaner.
-
 ---
-
 Your final flow becomes:
-
 ```
 Cost Explorer
      |
      |
      v
-
      |
      |
      v
-
 Planner (decison layer what  analyzer should  be  runing )
-
 "EC2 Other + NatGateway usage"
         |
         |
         v
-
 NatGatewayAnalyzer
-
         |
         +--> describe_nat_gateways()
         |
         +--> CloudWatch metrics
         |
         +--> rules
-
         |
         v
-
 Finding
-
-recommendation 
+recommendation
 ```
-

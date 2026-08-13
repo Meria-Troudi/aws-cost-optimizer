@@ -1,157 +1,106 @@
 """
-Resource repository
-
+Resource persistence.
 """
 
+from __future__ import annotations
+
+from typing import Any, Dict
+
 from sqlalchemy.orm import Session
-from datetime import datetime
-from decimal import Decimal
 
-from backend.database.models.resource import Resource
-from backend.database.models.snapshot import ResourceSnapshot
-from backend.database.models.metric import Metric
+from ..models.resource import Resource
+from ..models.snapshot import ResourceSnapshot
+from ..utils import json_dumps
 
 
-def _serialize_for_json(obj):
-    if isinstance(obj, datetime):
-        return obj.isoformat()
-    elif isinstance(obj, Decimal):
-        return float(obj)
-    elif isinstance(obj, dict):
-        return {k: _serialize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [_serialize_for_json(item) for item in obj]
-    return obj
-
-
-def get_or_create_resource(
+def save_resource(
     db: Session,
-    aws_resource_id: str,
-    service: str,
-    resource_type: str,
-    region: str,
-    scan_run_id: int = None,
-    account_id: str = None,
-    state: str = None,
-    name: str = None,
-    tags: dict = None,
-    attributes: dict = None,
+    data: dict,
 ) -> Resource:
-
-    resource = (
-        db.query(Resource)
-        .filter_by(
-            aws_resource_id=aws_resource_id,
-            account_id=account_id,
-        )
-        .first()
-    )
-    
-    if resource:
-        # Update existing resource with latest state and scan run
-        resource.state = state
-        resource.name = name
-        resource.tags = tags
-        resource.attributes = attributes
-        resource.scan_run_id = scan_run_id
-        return resource
-    
-    resource = Resource(
-        aws_resource_id=aws_resource_id,
-        service=service,
-        resource_type=resource_type,
-        region=region,
-        scan_run_id=scan_run_id,
-        account_id=account_id,
-        state=state,
-        name=name,
-        tags=tags,
-        attributes=attributes,
-    )
+    """Save a new resource."""
+    resource = Resource(**data)
     db.add(resource)
     db.flush()
     return resource
 
 
-def save_resource_snapshot(
+def get_or_create_resource(
     db: Session,
-    resource_id: int,
+    *,
+    aws_resource_id: str,
+    service: str,
+    resource_type: str,
+    region: str | None,
     scan_run_id: int,
-    source_api: str,
-    configuration: dict,
-    raw_response: dict,
-) -> ResourceSnapshot:
-    
-    serialized_config = _serialize_for_json(configuration) if configuration else None
-    serialized_raw = _serialize_for_json(raw_response) if raw_response else None
-    
-    snapshot = ResourceSnapshot(
-        resource_id=resource_id,
-        scan_run_id=scan_run_id,
-        source_api=source_api,
-        configuration=serialized_config,
-        raw_response=serialized_raw,
-        collected_at=datetime.utcnow(),
-    )
-    db.add(snapshot)
-    return snapshot
-
-
-def save_metric(
-    db: Session,
-    resource_id: int,
-    scan_run_id: int,
-    namespace: str,
-    metric_name: str,
-    statistic: str,
-    value: float,
-    metric_start: datetime,
-    metric_end: datetime,
-    unit: str = None,
-    period: int = None,
-    dimensions: dict = None,
-    raw_datapoints: list = None,
-) -> Metric:
-    # Check if metric already exists (deduplication)
-    existing = (
-        db.query(Metric)
+    name: str | None = None,
+    tags: Dict[str, str] | None = None,
+) -> Resource:
+    resource = (
+        db.query(Resource)
         .filter(
-            Metric.resource_id == resource_id,
-            Metric.scan_run_id == scan_run_id,
-            Metric.metric_name == metric_name,
-            Metric.statistic == statistic,
+            Resource.scan_run_id == scan_run_id,
+            Resource.aws_resource_id == aws_resource_id,
         )
         .first()
     )
-    
-    if existing:
-        # Update existing metric
-        existing.value = value
-        existing.unit = unit
-        existing.metric_start = metric_start
-        existing.metric_end = metric_end
-        existing.namespace = namespace
-        return existing
-    
-    serialized_datapoints = None
-    if raw_datapoints:
-        serialized_datapoints = _serialize_for_json(raw_datapoints)
-    
-    metric = Metric(
+
+    if resource is not None:
+        return resource
+
+    return save_resource(
+        db,
+        {
+            "scan_run_id": scan_run_id,
+            "aws_resource_id": aws_resource_id,
+            "service": service,
+            "resource_type": resource_type,
+            "region": region,
+            "name": name,
+            "tags": json_dumps(tags or {}),
+        },
+    )
+
+
+def save_resource_snapshot(
+    db: Session,
+    *,
+    resource_id: int,
+    scan_run_id: int,
+    source_api: str,
+    configuration: Dict[str, Any] | None = None,
+    topology: Dict[str, Any] | None = None,
+    state: str | None = None,
+    raw_response: Any = None,
+    relationships: Any = None,
+    availability_zone: str | None = None,
+) -> ResourceSnapshot:
+    """Save a resource snapshot."""
+    snapshot = ResourceSnapshot(
         resource_id=resource_id,
         scan_run_id=scan_run_id,
-        namespace=namespace,
-        metric_name=metric_name,
-        statistic=statistic,
-        value=value,
-        unit=unit,
-        metric_start=metric_start,
-        metric_end=metric_end,
-        period=period,
-        dimensions=dimensions,
-        raw_datapoints=serialized_datapoints,
+        source=source_api,
+        state=state,
+        configuration=json_dumps(configuration or {}),
+        topology=json_dumps(topology or {}),
     )
-    db.add(metric)
-    return metric
+    db.add(snapshot)
+    db.flush()
+    return snapshot
 
 
+def get_resource(
+    db: Session,
+    resource_id: int,
+):
+    return db.get(Resource, resource_id)
+
+
+def get_resources_for_scan(
+    db: Session,
+    scan_id: int,
+):
+    return (
+        db.query(Resource)
+        .filter(Resource.scan_run_id == scan_id)
+        .all()
+    )

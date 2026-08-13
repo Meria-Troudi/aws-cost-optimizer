@@ -1,15 +1,11 @@
 """
-Application settings - only application-wide constants that rarely change.
-Scan-specific parameters live in the ScanRun model.
+Application settings - loaded from environment variables with sensible defaults.
 """
 import os
-
-CE_REGION = "us-east-1"
-
-OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
-
-DEFAULT_METRIC_PERIOD = 86400
-
-MAX_API_RETRIES = 3
-
-NAT_USAGE_PATTERNS = ["NatGateway"]
+# AWS Cost Explorer region
+CE_REGION = os.getenv("AWS_CE_REGION", "us-east-1")
+# Default scan date range (YYYY-MM-DD)
+DEFAULT_START_DATE = os.getenv("DEFAULT_START_DATE", "2026-03-01")
+DEFAULT_END_DATE = os.getenv("DEFAULT_END_DATE", "2026-07-01")
+# Default cost threshold for collection planning
+DEFAULT_COST_THRESHOLD = float(os.getenv("DEFAULT_COST_THRESHOLD", "0.0"))

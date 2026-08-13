@@ -1,151 +1,72 @@
 """
 AWS Cost Optimizer - Scan Orchestrator
-
 Pipeline stages:
 1. SCAN              - Create ScanRun
 2. COST COLLECTION   - CostCollector → CostRecord (raw Cost Explorer data)
 3. COST ANALYSIS     - Query CostRecord for service/usage type aggregations
 4. COLLECTION PLAN   - CollectionPlanner → CollectionPlan
 5. RESOURCE COLLECTION - CollectorManager → Resource + ResourceSnapshot + Metric
-6. FINDINGS          - FindingBuilder → evidence findings
+6. FINDINGS          - FindingEngine → deterministic findings (aggregated via FindingStore)
+7. RECOMMENDATIONS   - Thin RecommendationEngine → recommendations
+8. SUMMARY           - ScanExporter → scans/scan_{id}/summary.txt
 """
-
-import sys
 import os
+import sys
+import time
 
-sys.path.insert(
-    0,
-    os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        )
-    )
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from datetime import date
 from sqlalchemy import func
 
-from config.settings import CE_REGION
-from aws.client import get_client
-
-from backend.database.session import SessionLocal
-
+from config.settings import (
+    CE_REGION,
+    DEFAULT_START_DATE,
+    DEFAULT_END_DATE,
+    DEFAULT_COST_THRESHOLD,
+)
+from aws_cost_optimizer.config.client import get_client
+from backend.database.connection import SessionLocal
+from backend.database.init_db import init_db as init_database
 from backend.database.models.cost_record import CostRecord
-from backend.database.models.resource import Resource
-from backend.database.models.metric import Metric
-
 from backend.database.repository.scan_run_repository import (
     create_scan_run,
-    finish_scan_run,
+    complete_scan_run,
 )
-
 from collectors.cost.collector import CostCollector
 from collectors.manager import CollectorManager
-
 from aws_cost_optimizer.planner.planner import CollectionPlanner
-from backend.services.finding_builder import FindingBuilder
-from aws_cost_optimizer.rules.engine import RuleEngine
-
 from inspection.exporter import ScanExporter
 
 
-def box(title, width=70):
-    print("\n┌" + "─"*width + "┐")
-    print("│ " + title.ljust(width-2) + "│")
-    print("└" + "─"*width + "┘")
+def main(region=None, cost_threshold=None, start_date=None, end_date=None):
+    if cost_threshold is None:
+        cost_threshold = DEFAULT_COST_THRESHOLD
 
-
-def separator():
-    print("-"*70)
-
-
-def show_header(scan):
-    box(f"SCAN #{scan.id}")
-    print(f" Account      : {scan.account_id}")
-    print(f" Period       : {scan.start_date} → {scan.end_date}")
-    region_display = scan.region if scan.region else "all regions"
-    print(f" Region       : {region_display}")
-    print(f" Threshold    : ${scan.cost_threshold:,.2f}")
-    print(f" Started      : {date.today()}")
-    separator()
-
-
-def show_cost_analysis(db, scan):
-    box("COST ANALYSIS")
-
-    # Query CostRecord for service aggregations with rank and share_pct
-    from backend.database.repository.service_cost_repository import get_service_costs_with_rank
-    services = get_service_costs_with_rank(db, scan.id)
-
-    raw_total = (
-        db.query(func.sum(CostRecord.amount))
-        .filter(CostRecord.scan_run_id == scan.id)
-        .scalar()
-        or 0
-    )
-    considered_total = sum(s["cost"] for s in services)
-    print(f"Raw Cost Explorer total : ${float(raw_total):,.2f}")
-    print(f"Cost considered         : ${float(considered_total):,.2f}\n")
-
-    for svc in services:
-        print(
-            f"{svc['rank']:2}. "
-            f"{svc['service']:<52}"
-            f"${svc['cost']:>8.2f}"
-            f" ({svc['share_pct']:.2f}%)"
-            f"  [{svc.get('trend', 'N/A')}]"
-        )
-
-    separator()
-
-
-def show_resources(db, scan):
-    box("DISCOVERED RESOURCES")
-
-    resources = (
-        db.query(Resource)
-        .filter(Resource.scan_run_id == scan.id)
-        .all()
-    )
-
-    for r in resources:
-        metrics = (
-            db.query(Metric)
-            .filter(
-                Metric.resource_id == r.id,
-                Metric.scan_run_id == scan.id
-            )
-            .count()
-        )
-
-        print(
-            f"{r.resource_type:<20}"
-            f"{r.aws_resource_id:<40}"
-            f"{r.region:<15}"
-            f"metrics={metrics}"
-        )
-
-    separator()
-
-
-def main(region=None, cost_threshold=100.0, start_date=None, end_date=None):
-
+    init_database()
     db = SessionLocal()
+
+    scan_metrics = {
+        "stage_durations": {},
+        "cost_records": 0,
+        "cost_collected": 0.0,
+        "cost_validation": "N/A",
+        "collection_plans": 0,
+        "resources_collected": 0,
+        "metrics_collected": 0,
+        "topology_collected": 0,
+        "contexts": 0,
+        "findings": 0,
+    }
+    total_start = time.time()
+    exporter = None
 
     try:
         sts = get_client("sts", CE_REGION)
         account_id = sts.get_caller_identity().get("Account")
 
-        # ── Scan parameters ──
-        if start_date is None:
-            start = date(2026, 4, 1)
-        else:
-            start = date.fromisoformat(start_date)
-        
-        if end_date is None:
-            end = date(2026, 7, 1)
-        else:
-            end = date.fromisoformat(end_date)
+        start = date.fromisoformat(start_date or DEFAULT_START_DATE)
+        end = date.fromisoformat(end_date or DEFAULT_END_DATE)
 
         scan = create_scan_run(
             db,
@@ -155,138 +76,164 @@ def main(region=None, cost_threshold=100.0, start_date=None, end_date=None):
             region=region,
             cost_threshold=cost_threshold,
         )
-
-        show_header(scan)
-
         exporter = ScanExporter(scan)
 
-        # ── Stage 1: COST COLLECTION ──
-        print("\nCollecting AWS Cost Explorer...")
+        stage_start = time.time()
         collector = CostCollector()
-        validation = collector.collect(db, scan)
+        cost_validation = collector.collect(db, scan)
+        scan_metrics["stage_durations"]["cost_collection"] = time.time() - stage_start
+        scan_metrics["cost_records"] = (
+            db.query(func.count(CostRecord.id))
+            .filter(CostRecord.scan_run_id == scan.id)
+            .scalar()
+            or 0
+        )
+        scan_metrics["cost_collected"] = cost_validation.get("collected_total", 0.0)
+        scan_metrics["cost_validation"] = "OK" if cost_validation.get("matches") else "FAILED"
 
-        if validation["matches"]:
-            print("Cost validation : OK")
-        else:
-            print("Cost validation : FAILED")
-
-        # ── Stage 2: COST ANALYSIS ──
-        # Cost analysis is now performed on-the-fly from CostRecord
-        exporter.export_cost(db)
-        show_cost_analysis(db, scan)
-
-        # Show service breakdown
-        print("\nService cost analysis...")
-        from backend.database.repository.service_cost_repository import get_service_costs_with_rank
-        from backend.database.repository.usage_type_cost_repository import get_usage_types_by_service
-        services = get_service_costs_with_rank(db, scan.id)
-
-        for svc in services:
-            print(f"\n  {svc['service']:<52} ${svc['cost']:>10.2f} [{svc['trend']}]")
-
-            usage_types = get_usage_types_by_service(db, scan.id, svc["service"])
-            for ut in usage_types:
-                print(f"    {ut['usage_type']:<40} ${ut['cost']:>8.2f} ({ut['percentage']:.1f}%)")
-
-        separator()
-
-        # ── Stage 3: COLLECTION PLAN ──
-        print("\nCreating collection plan...")
+        stage_start = time.time()
         planner = CollectionPlanner()
         plans = planner.plan(db, scan)
+        scan_metrics["stage_durations"]["collection_plan"] = time.time() - stage_start
+        scan_metrics["collection_plans"] = len(plans)
 
-        print(f"Collection plans created: {len(plans)}")
-        for plan in plans:
-            print(f"  {plan['collector']:<20} {plan['region']:<15} ${plan['cost_context']:>8.2f} [{plan['priority']}]")
-
-        exporter.export_plan(plans)
-
-        # ── Stage 4: RESOURCE COLLECTION ──
-        print("\nExecuting collectors...")
+        stage_start = time.time()
         manager = CollectorManager()
         results = []
         for plan in plans:
+            cost_context = {
+                "service": plan.get("service"),
+                "usage_type": plan.get("usage_type"),
+                "region": plan.get("region"),
+                "cost": {
+                    "value": plan.get("cost_context", 0),
+                    "currency": "USD",
+                    "scope": "usage_type_region",
+                    "resource_level_attribution": False,
+                },
+            }
             try:
                 result = manager.execute(
                     db=db,
                     scan=scan,
                     collector_name=plan["collector"],
                     region=plan["region"],
+                    cost_context=cost_context,
                 )
                 results.append(result)
-            except Exception as e:
-                print(f"ERROR: {plan['collector']} in {plan['region']}: {e}")
+                scan_metrics["resources_collected"] += result.get("resources", 0)
+                scan_metrics["metrics_collected"] += result.get("metrics", 0)
+                scan_metrics["topology_collected"] += result.get("topology_resources", 0)
+            except Exception as exc:
                 results.append({
                     "collector": plan["collector"],
                     "region": plan["region"],
                     "resources": 0,
                     "metrics": 0,
-                    "success": False,
-                    "error": str(e)
+                    "topology_resources": 0,
+                    "status": "failed",
+                    "error": str(exc),
                 })
-
         db.commit()
-        exporter.export_collectors(db, results)
+        scan_metrics["stage_durations"]["resource_collection"] = time.time() - stage_start
 
-        show_resources(db, scan)
+        from aws_cost_optimizer.collection.validation import (
+            resources_for_analysis,
+            validate_collection_results,
+        )
 
-        # ── Stage 5: EVIDENCE FINDINGS (recommendations come later) ──
-        print("\nBuilding evidence findings...")
-        builder = FindingBuilder()
-        contexts = builder.build(db, scan)
-        print(f"Evaluation contexts created: {len(contexts)}")
-        
-        # Run rule engine to generate findings
-        print("\nEvaluating rules...")
-        rule_engine = RuleEngine()
-        findings = rule_engine.run(db, contexts)
-        print(f"Findings created: {len(findings)}")
+        collection_validation = validate_collection_results(plans, results)
+        results = collection_validation["results"]
+        not_found_findings = collection_validation["not_found_findings"]
+        scan_metrics["collection_not_found"] = collection_validation["not_found_count"]
 
-        exporter.export_summary(db, validation, plans, results, contexts)
+        stage_start = time.time()
+        from aws_cost_optimizer.recommendations.pipeline.optimization import OptimizationPipeline
 
-        finish_scan_run(db, scan.id, "completed")
+        pipeline = OptimizationPipeline()
+        all_resources = resources_for_analysis(results)
 
-        print("\nSCAN COMPLETE")
-        print(f"Review folder: scans/scan_{scan.id}")
+        optimization_result = pipeline.run(
+            db=db,
+            scan=scan,
+            resources=all_resources,
+            collection_plans=plans,
+            pre_findings=not_found_findings,
+        )
+        all_findings = optimization_result.get("findings", [])
+        all_recommendations = optimization_result.get("recommendations", [])
+        scan_metrics["stage_durations"]["optimization"] = time.time() - stage_start
+        scan_metrics["contexts"] = len(all_resources)
+        scan_metrics["findings"] = len(all_findings)
+        db.commit()
 
-    except Exception as e:
-        print("\nSCAN FAILED", e)
+        scan_metrics["total_duration"] = time.time() - total_start
+        contexts = []
+        for result in results:
+            if result.get("status") != "completed":
+                continue
+            contexts.append({
+                "service": result.get("service", ""),
+                "region": result.get("region", ""),
+                "usage_type": result.get("usage_type", ""),
+                "cost": result.get("cost", 0),
+                "resource_type": result.get("resource_type", ""),
+                "resource_count": result.get("resource_count", 0),
+                "not_found": result.get("not_found", False),
+                "recommendation_allowed": result.get(
+                    "recommendation_allowed",
+                    True,
+                ),
+                "evidence": {
+                    "resources": result.get("resource_data", []),
+                },
+            })
+
+        summary_path = exporter.export(
+            db,
+            validation=cost_validation,
+            plans=plans,
+            results=results,
+            contexts=contexts,
+            scan_metrics=scan_metrics,
+            findings=all_findings,
+            recommendations=all_recommendations,
+        )
+        complete_scan_run(db, scan.id)
+        return summary_path
+    except Exception:
         raise
-
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="AWS Cost Optimizer Scanner")
-    parser.add_argument(
-        "--region",
-        help="AWS region to scan (default: all regions)",
-        default=None
-    )
+    parser.add_argument("--region", help="AWS region to scan (default: all regions)", default=None)
     parser.add_argument(
         "--threshold",
         type=float,
-        help="Cost threshold for collection plan (default: $100.00)",
-        default=100.0
+        help=f"Cost threshold for collection plan (default: ${DEFAULT_COST_THRESHOLD:.2f})",
+        default=None,
     )
     parser.add_argument(
         "--start-date",
-        help="Start date for cost analysis (YYYY-MM-DD, default: 2026-04-01)",
-        default=None
+        help=f"Start date for cost analysis (YYYY-MM-DD, default: {DEFAULT_START_DATE})",
+        default=None,
     )
     parser.add_argument(
         "--end-date",
-        help="End date for cost analysis (YYYY-MM-DD, default: 2026-07-01)",
-        default=None
+        help=f"End date for cost analysis (YYYY-MM-DD, default: {DEFAULT_END_DATE})",
+        default=None,
     )
-
     args = parser.parse_args()
-
-    main(
+    summary_path = main(
         region=args.region,
         cost_threshold=args.threshold,
         start_date=args.start_date,
-        end_date=args.end_date
+        end_date=args.end_date,
     )
+    if summary_path:
+        print(summary_path)

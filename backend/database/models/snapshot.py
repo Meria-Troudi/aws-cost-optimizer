@@ -1,84 +1,57 @@
-"""
-Resource snapshot model - tracks resource state over time.
-"""
-
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    ForeignKey,
-    DateTime,
-    JSON,
-    Index,
-)
-from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from backend.database.base import Base
+from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..base import Base
 
 
 class ResourceSnapshot(Base):
-
     __tablename__ = "resource_snapshots"
 
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
-        autoincrement=True
     )
 
-    resource_id = Column(
-        Integer,
+    resource_id: Mapped[int] = mapped_column(
         ForeignKey("resources.id"),
-        nullable=False
+        nullable=False,
+        index=True,
     )
 
-    scan_run_id = Column(
-        Integer,
+    scan_run_id: Mapped[int] = mapped_column(
         ForeignKey("scan_runs.id"),
-        nullable=False
+        nullable=False,
+        index=True,
     )
 
-    source_api = Column(
+    source: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    state: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    configuration: Mapped[str | None] = mapped_column(
         String,
-        nullable=False
+        nullable=True,
     )
 
-    configuration = Column(
-        JSON,
-        nullable=False
+    topology: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
     )
 
-    raw_response = Column(
-        JSON,
-        nullable=False
-    )
-
-    collected_at = Column(
+    collected_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
-        nullable=False
     )
 
-    # Relationships
     resource = relationship(
         "Resource",
-        back_populates="snapshots"
-    )
-
-    scan_run = relationship(
-        "ScanRun",
-        back_populates="resource_snapshots"
-    )
-
-    __table_args__ = (
-        Index(
-            "idx_snapshot_resource_scan",
-            "resource_id",
-            "scan_run_id"
-        ),
-        Index(
-            "idx_snapshot_scan_run",
-            "scan_run_id"
-        ),
+        back_populates="snapshots",
     )

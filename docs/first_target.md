@@ -1,27 +1,16 @@
 # First Target
-
 This is the right moment to introduce the database.
-
 Your current CSV output is temporary. Once you add FastAPI + SQLAlchemy + SQLite, the database becomes the **source of truth**.
-
 First, answer your question:
-
 > are the models replaced with tables?
-
 No. They are not replaced exactly.
-
 You currently have two types of models:
-
 ### 1. Runtime models (dataclasses)
-
 Example:
-
 ```python
 models/finding.py
 ```
-
 Used while the program runs:
-
 ```
 Analyzer
    |
@@ -31,23 +20,16 @@ Finding object
    v
 Database insert
 ```
-
 These can stay.
-
 ---
-
 ### 2. Database models (SQLAlchemy ORM)
-
 New:
-
 ```
 backend/
  └── database/
        ├── models.py
 ```
-
 These represent tables:
-
 ```
 Finding object
       |
@@ -57,18 +39,12 @@ SQLAlchemy Finding table
       v
 SQLite
 ```
-
 You can eventually remove some dataclasses because SQLAlchemy models can replace them, but do not mix the migration yet.
-
 ---
-
 # New structure
-
 Add:
-
 ```
 aws_cost_optimizer/
-
 ├── backend/
 │
 │   ├── main.py                 # FastAPI entry point later
@@ -91,66 +67,44 @@ aws_cost_optimizer/
 ├── aws/
 └── main.py
 ```
-
 ---
-
 # Tables you need
-
 Do not create too many tables.
-
 For your project, start with these:
-
 ---
-
 ## 1. accounts
-
 Why:
-
 Your project must work with multiple AWS accounts.
-
 Table:
-
 ```
 accounts
 ```
-
 Columns:
-
 | column     | type     |
 | ---------- | -------- |
 | id         | integer  |
 | account_id | string   |
 | name       | string   |
 | created_at | datetime |
-
 Example:
-
 ```
 id:1
 account_id:123456789012
 name:test-account
 ```
-
 ---
-
 # 2. billing_costs
-
 Replace:
-
 ```
 monthly_cost.csv
 service_usage_cost.csv
 billing_usage_type.csv
 ```
-
 One normalized table.
-
 ```
 billing_costs
 ```
-
 Columns:
-
 | column     | type    |
 | ---------- | ------- |
 | id         | integer |
@@ -161,52 +115,36 @@ Columns:
 | usage_type | string  |
 | region     | string  |
 | cost       | float   |
-
 Example:
-
 ```
 Amazon VPC
 NatGateway-Hours
 eu-west-1
 463.25
 ```
-
 This becomes your planner input.
-
 Instead of:
-
 ```python
 usage_rows
 ```
-
 you query:
-
 ```sql
 SELECT *
 FROM billing_costs
 ORDER BY cost DESC
 ```
-
 ---
-
 # 3. analysis_tasks
-
 This represents your planner output.
-
 Currently:
-
 ```python
 AnalyzerTask
 ```
-
 becomes a table.
-
 ```
 analysis_tasks
 ```
-
 Columns:
-
 | column     | type     |
 | ---------- | -------- |
 | id         | integer  |
@@ -215,38 +153,27 @@ Columns:
 | regions    | JSON     |
 | status     | string   |
 | created_at | datetime |
-
 Example:
-
 ```
 domain:
 nat_gateway
-
 regions:
 [
 "eu-west-1",
 "us-east-1"
 ]
 ```
-
 ---
-
 # 4. resources
-
 Replace:
-
 ```
 models/resource.py
 ```
-
 This is discovered AWS inventory.
-
 ```
 resources
 ```
-
 Columns:
-
 | column        | type    |
 | ------------- | ------- |
 | id            | integer |
@@ -257,36 +184,25 @@ Columns:
 | region        | string  |
 | state         | string  |
 | attributes    | JSON    |
-
 Example:
-
 ```
 resource_id:
 nat-012345
-
 service:
 EC2
-
 type:
 nat_gateway
 ```
-
 ---
-
 # 5. metrics
-
 Replace:
-
 ```
 models/metric.py
 ```
-
 ```
 metrics
 ```
-
 Columns:
-
 | column      | type     |
 | ----------- | -------- |
 | id          | integer  |
@@ -295,34 +211,24 @@ Columns:
 | statistic   | string   |
 | value       | float    |
 | timestamp   | datetime |
-
 Example:
-
 ```
 NatGatewayId
 BytesOutToDestination
 Sum
 0
 ```
-
 ---
-
 # 6. findings
-
 Replace:
-
 ```
 models/finding.py
 ```
-
 This is your recommendation output.
-
 ```
 findings
 ```
-
 Columns:
-
 | column      | type     |
 | ----------- | -------- |
 | id          | integer  |
@@ -336,24 +242,17 @@ Columns:
 | risk        | string   |
 | evidence    | JSON     |
 | created_at  | datetime |
-
 Example:
-
 ```
 rule:
 IDLE_NAT_GATEWAY
-
 severity:
 MEDIUM
-
 action:
 Remove unused NAT Gateway
 ```
-
 ---
-
 # Final database design
-
 ```
 accounts
     |
@@ -369,84 +268,53 @@ accounts
                  |
                  +------ findings
 ```
-
 ---
-
 # Implementation steps
-
 ## Step 1 — Install packages
-
 ```bash
 pip install fastapi uvicorn sqlalchemy
 ```
-
 For SQLite:
-
 Nothing needed.
-
 Python already includes sqlite.
-
 ---
-
 # Step 2 — Create database connection
-
 Create:
-
 ```
 backend/database/connection.py
 ```
-
 ```python
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-
-
 DATABASE_URL = "sqlite:///./aws_optimizer.db"
-
-
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
-
-
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine
 )
 ```
-
 ---
-
 # Step 3 — Base
-
 Create:
-
 ```
 backend/database/base.py
 ```
-
 ```python
 from sqlalchemy.orm import DeclarativeBase
-
-
 class Base(DeclarativeBase):
     pass
 ```
-
 ---
-
 # Step 4 — SQLAlchemy models
-
 Create:
-
 ```
 backend/database/models.py
 ```
-
 Start with:
-
 ```python
 from sqlalchemy import (
     Column,
@@ -460,153 +328,87 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.sqlite import JSON
 from datetime import datetime
-
 from .base import Base
-
-
 class Account(Base):
-
     __tablename__ = "accounts"
-
     id = Column(Integer, primary_key=True)
-
     account_id = Column(String, unique=True)
-
     name = Column(String)
-
     created_at = Column(
         DateTime,
         default=datetime.utcnow
     )
-
-
-
 class BillingCost(Base):
-
     __tablename__ = "billing_costs"
-
     id = Column(Integer, primary_key=True)
-
     account_id = Column(
         Integer,
         ForeignKey("accounts.id")
     )
-
     service = Column(String)
-
     usage_type = Column(String)
-
     region = Column(String)
-
     cost = Column(Float)
-
     date_start = Column(String)
-
     date_end = Column(String)
-
-
-
 class Resource(Base):
-
     __tablename__ = "resources"
-
     id = Column(Integer, primary_key=True)
-
     account_id = Column(
         Integer,
         ForeignKey("accounts.id")
     )
-
     resource_id = Column(String)
-
     service = Column(String)
-
     resource_type = Column(String)
-
     region = Column(String)
-
     state = Column(String)
-
     attributes = Column(JSON)
-
-
-
 class Finding(Base):
-
     __tablename__ = "findings"
-
     id = Column(Integer, primary_key=True)
-
     resource_id = Column(
         Integer,
         ForeignKey("resources.id")
     )
-
     rule = Column(String)
-
     severity = Column(String)
-
     title = Column(String)
-
     description = Column(Text)
-
     action = Column(Text)
-
     confidence = Column(String)
-
     risk = Column(String)
-
     evidence = Column(JSON)
-
     created_at = Column(
         DateTime,
         default=datetime.utcnow
     )
 ```
-
 ---
-
 # Step 5 — Create tables
-
 Create:
-
 ```
 backend/database/init_db.py
 ```
-
 ```python
 from .connection import engine
 from .base import Base
-
 from . import models
-
-
 Base.metadata.create_all(bind=engine)
-
-
 print("Database created")
 ```
-
 Run:
-
 ```bash
 python -m backend.database.init_db
 ```
-
 You should get:
-
 ```
 aws_optimizer.db
 ```
-
 ---
-
 # Step 6 — First migration from your current pipeline
-
 Do NOT change everything.
-
 First migration:
-
 ```
 billing/collector.py
         |
@@ -625,65 +427,44 @@ analyzers
         v
 findings table
 ```
-
 Your new flow:
-
 ```
 main.py
-
 collect AWS
     |
     v
 save billing_costs
-
     |
     v
-
 planner reads database
-
     |
     v
-
 create analysis_tasks
-
     |
     v
-
 analyzers
-
     |
     v
-
 save findings
 ```
-
 ---
-
 I would **not add FastAPI routes yet**. First make the pipeline database-backed. FastAPI should come after you can query:
-
 * `/costs`
 * `/tasks`
 * `/resources`
 * `/findings`
-
 from the database.
 For your current architecture, do **not** create tables for every Python model. Some models are temporary runtime objects (`AnalyzerTask`, `MetricProfile`, etc.). The database should store **persistent data**:
-
 * AWS account information
 * collected billing data
 * discovered resources
 * metrics
 * analysis execution
 * findings/recommendations
-
 Your `models/` folder is not directly replaced 1:1. Some become SQLAlchemy tables, some remain Python dataclasses.
-
 ## Database tables (SQLite + SQLAlchemy)
-
 ### 1. `aws_accounts`
-
 Stores AWS accounts connected to the optimizer.
-
 | Column     | Type       | Description    |
 | ---------- | ---------- | -------------- |
 | id         | INTEGER PK | Internal ID    |
@@ -691,16 +472,11 @@ Stores AWS accounts connected to the optimizer.
 | name       | VARCHAR    | Friendly name  |
 | region     | VARCHAR    | Default region |
 | created_at | DATETIME   | Creation time  |
-
 ---
-
 ### 2. `billing_periods`
-
 Stores monthly cost summaries.
-
 Replacement for:
 `MonthlyCost`
-
 | Column     | Type       | Description   |
 | ---------- | ---------- | ------------- |
 | id         | INTEGER PK |               |
@@ -709,22 +485,15 @@ Replacement for:
 | end_date   | DATE       | Billing end   |
 | total_cost | DECIMAL    | Total cost    |
 | currency   | VARCHAR    | USD           |
-
 Example:
-
 ```
 2026-06-01 → 2026-07-01 → 1471.88
 ```
-
 ---
-
 ### 3. `service_costs`
-
 Cost grouped by AWS service.
-
 Replacement for:
 `billing_service.csv`
-
 | Column       | Type       | Description      |
 | ------------ | ---------- | ---------------- |
 | id           | INTEGER PK |                  |
@@ -732,24 +501,17 @@ Replacement for:
 | period_id    | FK         | Billing period   |
 | service_name | VARCHAR    | EC2, RDS, VPC... |
 | cost         | DECIMAL    | Service cost     |
-
 Example:
-
 ```
 Amazon RDS             559.04
 Amazon VPC             539.49
 EC2 - Other            669.67
 ```
-
 ---
-
 ### 4. `usage_costs`
-
 Detailed Cost Explorer usage data.
-
 Replacement for:
 `ServiceUsageCost`
-
 | Column       | Type       | Description      |
 | ------------ | ---------- | ---------------- |
 | id           | INTEGER PK |                  |
@@ -759,25 +521,18 @@ Replacement for:
 | usage_type   | VARCHAR    | NATGateway-Hours |
 | region       | VARCHAR    | eu-west-1        |
 | cost         | DECIMAL    | Cost             |
-
 Example:
-
 ```
 EC2 - Other
 EU-NatGateway-Hours
 eu-west-1
 463.25
 ```
-
 ---
-
 ### 5. `resources`
-
 Inventory discovered by analyzers.
-
 Replacement for:
 `Resource`
-
 | Column        | Type       | Description       |
 | ------------- | ---------- | ----------------- |
 | id            | INTEGER PK |                   |
@@ -789,25 +544,18 @@ Replacement for:
 | state         | VARCHAR    | available/deleted |
 | attributes    | JSON       | Extra AWS data    |
 | discovered_at | DATETIME   |                   |
-
 Example:
-
 ```
 nat-01300ff326d760430
 EC2 - Other
 nat_gateway
 eu-west-1
 ```
-
 ---
-
 ### 6. `metrics`
-
 CloudWatch collected metrics.
-
 Replacement for:
 `MetricValue`, `MetricProfile`
-
 | Column       | Type       | Description  |
 | ------------ | ---------- | ------------ |
 | id           | INTEGER PK |              |
@@ -816,24 +564,17 @@ Replacement for:
 | statistic    | VARCHAR    | Sum/Average  |
 | value        | FLOAT      | Metric value |
 | collected_at | DATETIME   |              |
-
 Example:
-
 ```
 nat-123
 BytesOutToDestination
 Sum
 0
 ```
-
 ---
-
 ### 7. `analysis_runs`
-
 Tracks executions.
-
 New table.
-
 | Column      | Type       | Description       |
 | ----------- | ---------- | ----------------- |
 | id          | INTEGER PK |                   |
@@ -841,24 +582,17 @@ New table.
 | started_at  | DATETIME   |                   |
 | finished_at | DATETIME   |                   |
 | status      | VARCHAR    | running/completed |
-
 Example:
-
 ```
 Run #1
 Account xxx
 completed
 ```
-
 ---
-
 ### 8. `analysis_tasks`
-
 Stores what the planner decided to analyze.
-
 Replacement for:
 `AnalyzerTask`
-
 | Column          | Type       | Description        |
 | --------------- | ---------- | ------------------ |
 | id              | INTEGER PK |                    |
@@ -867,29 +601,21 @@ Replacement for:
 | analyzer_name   | VARCHAR    | NatGatewayAnalyzer |
 | regions         | JSON       | Regions list       |
 | status          | VARCHAR    | pending/completed  |
-
 Example:
-
 ```
 domain:
 nat_gateway
-
 regions:
 [
  eu-west-1,
  us-east-1
 ]
 ```
-
 ---
-
 ### 9. `findings`
-
 Your recommendations output.
-
 Replacement for:
 `Finding`
-
 | Column           | Type       | Description      |
 | ---------------- | ---------- | ---------------- |
 | id               | INTEGER PK |                  |
@@ -904,26 +630,17 @@ Replacement for:
 | confidence       | VARCHAR    |                  |
 | risk             | VARCHAR    |                  |
 | evidence         | JSON       |                  |
-
 Example:
-
 ```
 IDLE_NAT_GATEWAY
-
 Remove unused NAT Gateway
-
 confidence:
 MEDIUM
 ```
-
 ---
-
 ### 10. `recommendation_rules`
-
 Future table for your rule engine.
-
 Instead of hardcoding everything.
-
 | Column      | Type       | Description |
 | ----------- | ---------- | ----------- |
 | id          | INTEGER PK |             |
@@ -932,24 +649,17 @@ Instead of hardcoding everything.
 | description | TEXT       |             |
 | severity    | VARCHAR    |             |
 | enabled     | BOOLEAN    |             |
-
 Example:
-
 ```
 domain:
 rds
-
 rule:
 idle_database
-
 enabled:
 true
 ```
-
 ---
-
 # Final database relationship
-
 ```
 aws_accounts
       |
@@ -959,8 +669,6 @@ billing_periods
       +---- service_costs
       |
       +---- usage_costs
-
-
 aws_accounts
       |
       |
@@ -968,8 +676,6 @@ resources
       |
       |
 metrics
-
-
 aws_accounts
       |
       |
@@ -981,13 +687,9 @@ analysis_tasks
       |
 findings
 ```
-
 ## Minimum MVP tables to create now
-
 Do not create all 10 immediately.
-
 Create these first:
-
 1. `aws_accounts`
 2. `billing_periods`
 3. `service_costs`
@@ -996,19 +698,12 @@ Create these first:
 6. `analysis_runs`
 7. `analysis_tasks`
 8. `findings`
-
 Then add:
-
 9. `metrics`
 10. `recommendation_rules`
-
 This is enough to move from CSV pipeline → FastAPI + SQLite + SQLAlchemy without redesigning later.
-
-
 # AWS Cost Optimizer - Complete Project Analysis
-
 ## 📁 Detailed Project Structure
-
 ```
 c:\Users\meria\Desktop\ING\Stages\stage2\fin/
 ├── aws_cost_optimizer/                    # Main application package
@@ -1092,15 +787,10 @@ c:\Users\meria\Desktop\ING\Stages\stage2\fin/
     ├── collectors_inventory/
     └── engine/
 ```
-
 ---
-
 ## 🔄 Detailed Data Flow Analysis
-
 ### **Phase 1: Cost Collection** (Billing Layer)
-
 **Entry Point:** `main.py` → `CostCollector.collect()`
-
 **Flow:**
 ```
 AWS Cost Explorer API
@@ -1120,23 +810,17 @@ For each region with costs:
     ↓
 update_scan_run_summary(total_cost, region_count)
 ```
-
-**Output:** 
+**Output:**
 - `ScanRun` record (status: collecting)
 - `BillingDimension` records (service + usage_type pairs)
 - `CostFact` records (individual cost entries by region/month)
-
 **Key Files:**
 - `aws_cost_optimizer/collectors/cost/collector.py`
 - `aws_cost_optimizer/collectors/cost/cost_explorer.py`
 - `backend/database/repository/cost_repository.py`
-
 ---
-
 ### **Phase 2: Cost Analysis & Planning** (Decision Layer)
-
 **Entry Point:** `main.py` → `CollectionPlanner.plan()`
-
 **Flow:**
 ```
 Query database for top N expensive billing dimensions:
@@ -1159,7 +843,6 @@ For each billing dimension:
     ↓
     Create CollectionExecution records
 ```
-
 **Output:**
 - `CollectionExecution` records (one per collector/region combination)
 - Each execution contains:
@@ -1168,12 +851,10 @@ For each billing dimension:
   - `billing_dimensions`: List of billing dimensions this collector will address
   - `total_cost`: Sum of costs
   - `investigation`: Catalog metadata
-
 **Key Files:**
 - `aws_cost_optimizer/planner/planner.py`
 - `aws_cost_optimizer/planner/resource_catalog.py`
 - `aws_cost_optimizer/planner/resource_catalog.json`
-
 **Resource Catalog Example:**
 ```json
 {
@@ -1191,13 +872,9 @@ For each billing dimension:
   ]
 }
 ```
-
 ---
-
 ### **Phase 3: Resource Collection** (Discovery Layer)
-
 **Entry Point:** `main.py` → `CollectorManager.execute()`
-
 **Flow:**
 ```
 For each pending CollectionExecution:
@@ -1228,25 +905,19 @@ For each pending CollectionExecution:
     ↓
     Update CollectionExecution status to "completed"
 ```
-
 **Output:**
 - `Resource` records (AWS resources discovered)
 - `ResourceSnapshot` records (resource configurations at scan time)
 - `Metric` records (CloudWatch metrics)
 - `CollectionExecution` records (updated with resource count)
-
 **Key Files:**
 - `aws_cost_optimizer/collectors/manager.py`
 - `aws_cost_optimizer/collectors/persistence.py`
 - `aws_cost_optimizer/collectors/services/nat_gateway.py`
 - `backend/database/repository/resource_repository.py`
-
 ---
-
 ### **Phase 4: Investigation Building** (Analysis Layer)
-
 **Entry Point:** `main.py` → `InvestigationBuilder.build_for_plan()`
-
 **Flow:**
 ```
 For each CollectionExecution plan:
@@ -1289,21 +960,15 @@ For each CollectionExecution plan:
         ↓
         save_investigation(db, data)
 ```
-
 **Output:**
 - `Investigation` records (ready for manual review)
 - Contains all evidence: resources, metrics, configurations, costs
-
 **Key Files:**
 - `aws_cost_optimizer/analyzers/builder.py`
 - `backend/database/repository/investigation_repository.py`
-
 ---
-
 ### **Phase 5: Reporting** (Output Layer)
-
 **Entry Point:** `main.py` → `InvestigationReporter.print_summary()`
-
 **Flow:**
 ```
 Query all investigations for scan_run_id
@@ -1315,25 +980,18 @@ For each group:
     Format key metrics
     Print summary table
 ```
-
 **Output:**
 - Console report with:
   - Resource type and region
   - Number of findings
   - Total cost
   - Key metrics (traffic, CPU, connections, etc.)
-
 **Key Files:**
 - `aws_cost_optimizer/analyzers/reporter.py`
-
 ---
-
 ## 🏗️ Architecture Analysis
-
 ### **Current Architecture Pattern: Cost-Driven Investigation Engine**
-
 The project follows a **cost-driven optimization engine** pattern (not resource discovery):
-
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  1. BILLING LAYER                                           │
@@ -1363,9 +1021,7 @@ The project follows a **cost-driven optimization engine** pattern (not resource 
 │  Output: Investigation (pending_review)                     │
 └─────────────────────────────────────────────────────────────┘
 ```
-
 ### **Key Design Principles**
-
 1. **Cost-First Approach**: Start from billing data, not resource discovery
 2. **Domain-Driven Collectors**: Each collector owns its discovery logic
 3. **Separation of Concerns**:
@@ -1373,70 +1029,53 @@ The project follows a **cost-driven optimization engine** pattern (not resource 
    - Planner: Decide what to collect based on cost
    - Analyzers: Build investigations from collected data
    - Reporters: Present findings
-
 4. **Registry Pattern**: Dynamic collector loading based on catalog configuration
 5. **Investigation Model**: Raw data for manual review (not automated recommendations yet)
-
 ---
-
 ## 📊 Database Schema Relationships
-
 ```
 ScanRun (1) ──→ (N) CostFact
                     ↓
                     (N) BillingDimension (1) ──→ (N) Investigation
-
 ScanRun (1) ──→ (N) CollectionExecution
-
 ScanRun (1) ──→ (N) Investigation
                     ↓
                     Contains:
                     - resource_data (JSON)
                     - metrics (JSON)
                     - configuration (JSON)
-
 Resource (1) ──→ (N) ResourceSnapshot
 Resource (1) ──→ (N) Metric
 ```
-
 ---
-
 ## 🎯 Current State & Capabilities
-
 ### **What Works:**
-✅ Cost collection from AWS Cost Explorer  
-✅ Cost analysis and ranking  
-✅ Automated planning (which collectors to run)  
-✅ Resource discovery (NAT Gateway, RDS, EC2, EBS)  
-✅ CloudWatch metric collection  
-✅ Context collection (VPC, subnet, routes, ENI)  
-✅ Investigation building with full evidence  
-✅ Console reporting  
-
+✅ Cost collection from AWS Cost Explorer
+✅ Cost analysis and ranking
+✅ Automated planning (which collectors to run)
+✅ Resource discovery (NAT Gateway, RDS, EC2, EBS)
+✅ CloudWatch metric collection
+✅ Context collection (VPC, subnet, routes, ENI)
+✅ Investigation building with full evidence
+✅ Console reporting
 ### **What's Missing:**
-⚠️ Automated rule evaluation (idle detection, rightsizing)  
-⚠️ Finding generation (structured optimization opportunities)  
-⚠️ Recommendation generation (actionable advice)  
-⚠️ Confidence scoring  
-⚠️ Estimated savings calculation  
-
+⚠️ Automated rule evaluation (idle detection, rightsizing)
+⚠️ Finding generation (structured optimization opportunities)
+⚠️ Recommendation generation (actionable advice)
+⚠️ Confidence scoring
+⚠️ Estimated savings calculation
 ### **Current Output:**
 - Investigations with raw data for **manual review**
 - No automated recommendations yet
 - Human must analyze metrics and make decisions
-
 ---
-
 ## 🔍 Example Flow: NAT Gateway Analysis
-
 ```
 1. Cost Explorer shows: "EC2 - Other + EU-NatGateway-Hours = $463 in eu-west-1"
-
-2. Planner resolves: 
+2. Planner resolves:
    service="EC2 - Other", usage_type="EU-NatGateway-Hours"
    → catalog matches "NatGateway" pattern
    → collector="nat_gateway", resource_type="nat_gateway"
-
 3. CollectionPlanner creates:
    CollectionExecution(
        collector_key="nat_gateway",
@@ -1444,7 +1083,6 @@ Resource (1) ──→ (N) Metric
        billing_dimensions=[{service, usage_type, cost: 463}],
        total_cost=463
    )
-
 4. CollectorManager executes:
    NatGatewayCollector("eu-west-1").collect()
    → ec2.describe_nat_gateways() → finds 3 NATs
@@ -1452,12 +1090,10 @@ Resource (1) ──→ (N) Metric
        - Collect CloudWatch metrics (BytesIn, BytesOut, ActiveConnectionCount)
        - Collect context (VPC, subnet, routes, ENI)
    → Returns 3 resource dicts
-
 5. Persistence saves:
    - 3 Resource records
    - 3 ResourceSnapshot records
    - ~9 Metric records (3 metrics × 3 resources)
-
 6. InvestigationBuilder creates:
    Investigation(
        resource_type="nat_gateway",
@@ -1471,19 +1107,15 @@ Resource (1) ──→ (N) Metric
        },
        status="pending_review"
    )
-
 7. Reporter prints:
    "nat_gateway (eu-west-1) - 1 investigation, total $463.00/mo
     usage=EU-NatGateway-Hours  $   463.00/mo  resources=3  BytesOutToDestination=750000.00  ..."
 ```
-
 ## 📝 Summary
-
 This is a **sophisticated cost-driven AWS optimization platform** that:
 1. **Starts from billing data** (not resource discovery)
 2. **Intelligently plans** which resources to investigate based on cost
 3. **Collects comprehensive data** (resources, metrics, context)
 4. **Builds investigations** with full evidence for human review
 5. **Reports findings** in a structured format
-
 The architecture is **production-ready** for data collection and investigation building, but **not yet automated** for generating optimization recommendations. The current output requires human analysis to identify idle resources, rightsizing opportunities, etc.

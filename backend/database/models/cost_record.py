@@ -1,99 +1,79 @@
-"""
-CostRecord model - detailed Cost Explorer data storage.
-This is the main fact table for all cost analysis.
-"""
+from datetime import date, datetime
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Float,
-    Date,
-    DateTime,
-    ForeignKey,
-)
+from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.database.base import Base
-from datetime import datetime
+from ..base import Base
 
 
 class CostRecord(Base):
     __tablename__ = "cost_records"
 
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
-        primary_key=True
+        primary_key=True,
     )
 
-    scan_run_id = Column(
-        Integer,
+    scan_run_id: Mapped[int] = mapped_column(
         ForeignKey("scan_runs.id"),
         nullable=False,
         index=True,
     )
 
-    # Time period
-    start_date = Column(
+    start_date: Mapped[date] = mapped_column(
         Date,
-        nullable=False
+        nullable=False,
     )
 
-    end_date = Column(
+    end_date: Mapped[date] = mapped_column(
         Date,
-        nullable=False
-    )
-
-    # Cost Explorer dimensions
-    service = Column(
-        String,
         nullable=False,
-        index=True
     )
 
-    usage_type = Column(
-        String,
+    service: Mapped[str] = mapped_column(
+        String(150),
         nullable=False,
-        index=True
+        index=True,
     )
 
-    operation = Column(
-        String,
-        nullable=True
-    )
-
-    region = Column(
-        String,
+    usage_type: Mapped[str | None] = mapped_column(
+        String(250),
         nullable=True,
-        index=True
+        index=True,
     )
 
-    availability_zone = Column(
-        String,
-        nullable=True
+    operation: Mapped[str | None] = mapped_column(
+        String(150),
+        nullable=True,
     )
 
-    linked_account = Column(
-        String,
-        nullable=True
+    region: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+        index=True,
     )
 
-    # Cost metrics
-    amount = Column(
+    amount: Mapped[float] = mapped_column(
         Float,
-        nullable=False
+        nullable=False,
     )
 
-    usage_quantity = Column(
+    usage_quantity: Mapped[float | None] = mapped_column(
         Float,
-        nullable=True
+        nullable=True,
     )
 
-    unit = Column(
-        String,
-        nullable=True
+    unit: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
     )
 
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
+    )
+
+    scan_run = relationship(
+        "ScanRun",
+        back_populates="cost_records",
     )

@@ -1,0 +1,429 @@
+# aws_cost_optimizer/planner/collection_profiles.yaml
+nat_gateway:
+  identity:
+    enabled: true
+    fields:
+      - source: NatGatewayId
+        output: nat_gateway_id
+
+  configuration:
+    enabled: true
+    fields:
+      - source: NatGatewayId
+        output: nat_gateway_id
+      - source: VpcId
+        output: vpc_id
+      - source: SubnetId
+        output: subnet_id
+      - source: ConnectivityType
+        output: connectivity_type
+      - source: State
+        output: state
+      - source: CreateTime
+        output: create_time
+      - source: NatGatewayAddresses
+        output: nat_gateway_addresses
+
+  observations:
+    enabled: true
+    cloudwatch:
+      namespace: AWS/NATGateway
+      period: 3600
+      metrics:
+        - name: BytesOutToDestination
+          statistic: Sum
+          unit: Bytes
+        - name: BytesOutToSource
+          statistic: Sum
+          unit: Bytes
+        - name: ActiveConnectionCount
+          statistic: Maximum
+          unit: Count
+        - name: ConnectionAttemptCount
+          statistic: Sum
+          unit: Count
+        - name: ConnectionEstablishedCount
+          statistic: Sum
+          unit: Count
+  topology:
+    enabled: true
+
+public_ipv4:
+  identity:
+    enabled: true
+    fields:
+      - public_ip
+      - resource_id
+      - resource_type
+      - tags
+
+  configuration:
+    enabled: true
+    fields:
+      - allocation_id
+      - association_id
+      - public_ip
+      - private_ip
+      - instance_id
+      - network_interface_id
+      - network_interface_type
+      - network_interface_owner_id
+      - requester_managed
+      - requester_id
+      - vpc_id
+      - subnet_id
+      - availability_zone
+      - state
+      - public_ip_type
+      - service_principal
+      - interface_description
+      - tags
+
+  observations:
+    enabled: false
+
+  topology:
+    enabled: true
+
+vpc_endpoint:
+  identity:
+    enabled: true
+    fields:
+      - vpc_endpoint_id
+      - vpc_id
+      - service_name
+      - endpoint_type
+  configuration:
+    enabled: true
+    fields:
+      - service_region
+      - state
+      - creation_timestamp
+      - policy_document
+      - private_dns_enabled
+      - dns_options
+      - dns_entries
+      - route_table_ids
+      - subnet_ids
+      - network_interface_ids
+      - security_group_ids
+      - owner_id
+      - requester_managed
+      - ip_address_type
+      - last_error
+      - failure_reason
+      - tags
+  observations:
+    enabled: false
+  topology:
+    enabled: true
+
+transit_gateway:
+  identity:
+    enabled: true
+    fields:
+      - source: TransitGatewayId
+        output: transit_gateway_id
+
+  configuration:
+    enabled: true
+    fields:
+      - source: TransitGatewayId
+        output: transit_gateway_id
+      - source: State
+        output: state
+      - source: OwnerId
+        output: owner_id
+      - source: CreationTime
+        output: creation_time
+      - source: Description
+        output: description
+      - source: AmazonSideAsn
+        output: amazon_side_asn
+      - source: DefaultRouteTableAssociation
+        output: default_route_table_association
+      - source: DefaultRouteTablePropagation
+        output: default_route_table_propagation
+      - source: DnsSupport
+        output: dns_support
+      - source: VpnEcmpSupport
+        output: vpn_ecmp_support
+      - source: MulticastSupport
+        output: multicast_support
+      - source: AutoAcceptSharedAttachments
+        output: auto_accept_shared_attachments
+      - source: AssociationDefaultRouteTableId
+        output: association_default_route_table_id
+      - source: PropagationDefaultRouteTableId
+        output: propagation_default_route_table_id
+      - source: SecurityGroupReferencingSupport
+        output: security_group_referencing_support
+      - source: Tags
+        output: tags
+  relationships:
+    enabled: true
+    collect:
+      - vpc_attachments
+      - vpn_attachments
+      - direct_connect_attachments
+      - peering_attachments
+      - connect_attachments
+      - route_tables
+      - routes
+      - associations
+      - propagations
+  observations:
+    enabled: true
+    cloudwatch:
+      namespace: AWS/TransitGateway
+      period: 3600
+      metrics:
+        - name: BytesIn
+          statistic: Sum
+          unit: Bytes
+
+        - name: BytesOut
+          statistic: Sum
+          unit: Bytes
+
+        - name: PacketsIn
+          statistic: Sum
+          unit: Count
+
+        - name: PacketsOut
+          statistic: Sum
+          unit: Count
+
+        - name: BytesDropCountBlackhole
+          statistic: Sum
+          unit: Bytes
+
+        - name: BytesDropCountNoRoute
+          statistic: Sum
+          unit: Bytes
+
+        - name: PacketDropCountBlackhole
+          statistic: Sum
+          unit: Count
+
+        - name: PacketDropCountNoRoute
+          statistic: Sum
+          unit: Count
+  topology:
+    enabled: true
+
+rds_instance:
+
+  identity:
+    enabled: true
+    fields:
+      - source: DBInstanceIdentifier
+        output: db_instance_identifier
+      - source: DBInstanceArn
+        output: db_instance_arn
+      - source: DBInstanceClass
+        output: db_instance_class
+      - source: Engine
+        output: engine
+      - source: EngineVersion
+        output: engine_version
+      - source: DBInstanceStatus
+        output: status
+
+  configuration:
+    enabled: true
+    fields:
+      - source: DBInstanceClass
+        output: instance_class
+      - source: Engine
+        output: engine
+      - source: EngineVersion
+        output: engine_version
+      - source: LicenseModel
+        output: license_model
+      - source: AutoMinorVersionUpgrade
+        output: auto_minor_version_upgrade
+      - source: DeletionProtection
+        output: deletion_protection
+      - source: PubliclyAccessible
+        output: publicly_accessible
+      - source: MonitoringInterval
+        output: monitoring_interval
+      - source: MonitoringRoleArn
+        output: monitoring_role_arn
+      - source: PromotionTier
+        output: promotion_tier
+  
+  storage:
+    enabled: true
+    fields:
+      - source: StorageType
+        output: storage_type
+      - source: AllocatedStorage
+        output: allocated_storage_gib
+      - source: MaxAllocatedStorage
+        output: max_allocated_storage_gib
+      - source: Iops
+        output: iops
+      - source: StorageThroughput
+        output: storage_throughput
+      - source: StorageEncrypted
+        output: storage_encrypted
+      - source: KmsKeyId
+        output: kms_key_id
+
+  availability:
+    enabled: true
+    fields:
+      - source: MultiAZ
+        output: multi_az
+      - source: AvailabilityZone
+        output: availability_zone
+      - source: SecondaryAvailabilityZone
+        output: secondary_availability_zone
+
+  backup:
+    enabled: true
+    fields:
+      - source: BackupRetentionPeriod
+        output: backup_retention_days
+      - source: PreferredBackupWindow
+        output: preferred_backup_window
+
+  performance:
+    enabled: true
+    fields:
+      - source: PerformanceInsightsEnabled
+        output: performance_insights_enabled
+      - source: PerformanceInsightsRetentionPeriod
+        output: performance_insights_retention_days
+
+  relationships:
+    enabled: true
+    fields:
+      - source: DBClusterIdentifier
+        output: db_cluster_identifier
+      - source: ReadReplicaSourceDBInstanceIdentifier
+        output: read_replica_source
+      - source: ReadReplicaDBInstanceIdentifiers
+        output: read_replicas
+      - source: DBSubnetGroup.DBSubnetGroupName
+        output: db_subnet_group
+      - source: DBSubnetGroup.VpcId
+        output: vpc_id
+
+  network:
+    enabled: true
+    mode: minimal
+
+  observations:
+    enabled: true
+    cloudwatch:
+      namespace: AWS/RDS
+      period: 3600
+      metrics:
+
+        - name: CPUUtilization
+          statistic: Average
+          unit: Percent
+
+        - name: DatabaseConnections
+          statistic: Average
+          unit: Count
+
+        - name: FreeableMemory
+          statistic: Average
+          unit: Bytes
+
+        - name: FreeStorageSpace
+          statistic: Average
+          unit: Bytes
+
+        - name: ReadIOPS
+          statistic: Average
+          unit: Count/Second
+
+        - name: WriteIOPS
+          statistic: Average
+          unit: Count/Second
+
+        - name: ReadLatency
+          statistic: Average
+          unit: Seconds
+
+        - name: WriteLatency
+          statistic: Average
+          unit: Seconds
+
+        - name: NetworkReceiveThroughput
+          statistic: Average
+          unit: Bytes/Second
+
+        - name: NetworkTransmitThroughput
+          statistic: Average
+          unit: Bytes/Second
+  cloudtrail:
+    enabled: true
+  topology:
+    enabled: true
+
+load_balancer:
+  identity:
+    enabled: true
+    fields:
+      - load_balancer_arn
+      - load_balancer_name
+
+  configuration:
+    enabled: true
+    fields:
+      - load_balancer_arn
+      - load_balancer_name
+      - type
+      - scheme
+      - state
+      - created_time
+      - vpc_id
+      - dns_name
+      - canonical_hosted_zone_id
+      - ip_address_type
+      - availability_zones
+      - subnet_ids
+      - security_groups
+      - tags
+
+  relationships:
+    enabled: true
+
+  observations:
+    enabled: true
+    cloudwatch:
+      namespace: AWS/ApplicationELB
+      period: 3600
+      metrics:
+      - name: RequestCount
+        statistic: Sum
+        key: request_count
+
+      - name: ActiveConnectionCount
+        statistic: Average
+        key: active_connections
+
+      - name: NewConnectionCount
+        statistic: Sum
+        key: new_connections
+
+      - name: ProcessedBytes
+        statistic: Sum
+        key: processed_bytes
+
+      - name: HTTPCode_Target_5XX_Count
+        statistic: Sum
+        key: target_5xx
+
+      - name: TargetResponseTime
+        statistic: Average
+        key: target_response_time
+
+  topology:
+    enabled: true

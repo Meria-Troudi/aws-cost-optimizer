@@ -1,114 +1,80 @@
-"""
-Resource model - stores discovered AWS resources.
-"""
+from datetime import datetime
 
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    DateTime,
-    JSON,
-    Index,
-    ForeignKey,
-)
-from sqlalchemy.orm import relationship
+from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from backend.database.base import Base
+from ..base import Base
 
 
 class Resource(Base):
     __tablename__ = "resources"
 
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
-        autoincrement=True
     )
 
-    scan_run_id = Column(
-        Integer,
+    scan_run_id: Mapped[int] = mapped_column(
         ForeignKey("scan_runs.id"),
         nullable=False,
         index=True,
     )
 
-    # AWS resource IDs are only unique within an account.  Keep the account on
-    # the resource itself so repository lookups can safely deduplicate scans
-    # from multiple AWS accounts.
-    account_id = Column(
-        String,
-        nullable=True,
+    aws_resource_id: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
         index=True,
     )
 
-    aws_resource_id = Column(
-        String,
+    service: Mapped[str] = mapped_column(
+        String(100),
         nullable=False,
-        index=True
     )
 
-    service = Column(
-        String,
+    resource_type: Mapped[str] = mapped_column(
+        String(100),
         nullable=False,
-        index=True
+        index=True,
     )
 
-    resource_type = Column(
+    region: Mapped[str | None] = mapped_column(
+        String(32),
+        nullable=True,
+    )
+
+    name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    tags: Mapped[str | None] = mapped_column(
         String,
-        nullable=False,
-        index=True
+        nullable=True,
     )
 
-    region = Column(
-        String,
-        nullable=False,
-        index=True
-    )
-
-    availability_zone = Column(
-        String,
-        nullable=True
-    )
-
-    name = Column(
-        String,
-        nullable=True
-    )
-
-    state = Column(
-        String,
-        nullable=True
-    )
-
-    tags = Column(
-        JSON,
-        nullable=True
-    )
-
-    attributes = Column(
-        JSON,
-        nullable=True
-    )
-
-    created_at = Column(
+    first_seen: Mapped[datetime] = mapped_column(
         DateTime,
-        nullable=True
+        default=datetime.utcnow,
     )
 
-    # Relationships
+    last_seen: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    scan_run = relationship(
+        "ScanRun",
+        back_populates="resources",
+    )
+
     snapshots = relationship(
         "ResourceSnapshot",
         back_populates="resource",
-        cascade="all, delete-orphan"
+        cascade="all, delete-orphan",
     )
 
     metrics = relationship(
         "Metric",
         back_populates="resource",
-        cascade="all, delete-orphan"
-    )
-
-    findings = relationship(
-        "Finding",
-        back_populates="resource"
+        cascade="all, delete-orphan",
     )

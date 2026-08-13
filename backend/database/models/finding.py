@@ -1,105 +1,98 @@
-"""
-Finding model - analysis result. This is NOT the recommendation.
-It is the detected problem.
-"""
-
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Text,
-    JSON,
-    ForeignKey,
-    DateTime,
-    Index,
-)
-from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from backend.database.base import Base
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..base import Base
 
 
 class Finding(Base):
-
     __tablename__ = "findings"
 
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
-        autoincrement=True
     )
 
-    scan_run_id = Column(
-        Integer,
+    scan_run_id: Mapped[int] = mapped_column(
         ForeignKey("scan_runs.id"),
         nullable=False,
-        index=True
-    )
-
-    resource_id = Column(
-        Integer,
-        ForeignKey("resources.id"),
-        nullable=True
-    )
-
-    resource_type = Column(
-        String,
-        nullable=True,
         index=True,
     )
 
-    service = Column(
-        String,
-        nullable=True,
-        index=True
+    resource_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
     )
 
-    finding_type = Column(
+    resource_id: Mapped[str] = mapped_column(
+        String(200),
+        nullable=False,
+        index=True,
+    )
+
+    finding_type: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
+
+    analyzer: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    analyzer_version: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    severity: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    confidence: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    reason: Mapped[str] = mapped_column(
         String,
         nullable=False,
-        index=True
     )
 
-    title = Column(
+    recommendation_eligible: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+
+    conditions: Mapped[str | None] = mapped_column(
         String,
-        nullable=False
+        nullable=True,
     )
 
-    description = Column(
-        Text,
-        nullable=True
-    )
-
-    severity = Column(
+    evidence: Mapped[str | None] = mapped_column(
         String,
-        nullable=False
+        nullable=True,
     )
 
-    evidence = Column(
-        JSON,
-        nullable=False
-    )
-
-    status = Column(
+    limitations: Mapped[str | None] = mapped_column(
         String,
-        default="open"  # open, reviewed, ignored
+        nullable=True,
     )
 
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
     )
 
-    # Relationships
-    scan_run = relationship("ScanRun", back_populates="findings")
-    resource = relationship("Resource", back_populates="findings")
+    scan_run = relationship(
+        "ScanRun",
+        back_populates="findings",
+    )
+
     recommendations = relationship(
         "Recommendation",
         back_populates="finding",
-        cascade="all, delete-orphan"
-    )
-
-    __table_args__ = (
-        Index("idx_finding_scan_run", "scan_run_id"),
-        Index("idx_finding_service", "service"),
+        cascade="all, delete-orphan",
     )

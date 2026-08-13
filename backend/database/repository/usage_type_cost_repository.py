@@ -1,15 +1,10 @@
 """
-Usage type cost repository - queries CostRecord directly for usage type aggregations.
+Usage type cost repository 
 """
-
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-
 from backend.database.models.cost_record import CostRecord
-
-
 def get_usage_types_by_service(db: Session, scan_run_id: int, service: str, limit: int = 3):
-    """Return a service's usage types aggregated across all regions."""
     rows = (
         db.query(
             CostRecord.usage_type,

@@ -1,67 +1,82 @@
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Float,
-    DateTime,
-    JSON,
-    ForeignKey,
-    Index,
-)
-from sqlalchemy.orm import relationship
+from datetime import datetime
 
-from backend.database.base import Base
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..base import Base
 
 
 class Metric(Base):
     __tablename__ = "metrics"
 
-    id = Column(Integer, primary_key=True)
-
-    resource_id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
+        primary_key=True,
+    )
+
+    resource_id: Mapped[int] = mapped_column(
         ForeignKey("resources.id"),
         nullable=False,
         index=True,
     )
 
-    scan_run_id = Column(
-        Integer,
+    scan_run_id: Mapped[int] = mapped_column(
         ForeignKey("scan_runs.id"),
         nullable=False,
         index=True,
     )
 
-    namespace = Column(String)
-    metric_name = Column(String)
+    namespace: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
 
-    statistic = Column(String)
-    period = Column(Integer)
+    metric_name: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+    )
 
-    value = Column(Float)
+    statistic: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
 
-    unit = Column(String)
+    period: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
 
-    metric_start = Column(DateTime)
-    metric_end = Column(DateTime)
+    value: Mapped[float | None] = mapped_column(
+        Float,
+        nullable=True,
+    )
 
-    collected_at = Column(DateTime)
+    unit: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
 
-    dimensions = Column(JSON, nullable=True)
-    raw_datapoints = Column(JSON, nullable=True)
+    metric_start: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
 
-    # Relationships
-    scan_run = relationship("ScanRun", back_populates="metrics")
-    resource = relationship("Resource", back_populates="metrics")
+    metric_end: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
 
-    __table_args__ = (
-        Index(
-            "idx_metric_resource_scan",
-            "resource_id",
-            "scan_run_id",
-        ),
-        Index(
-            "idx_metric_scan_run",
-            "scan_run_id",
-        ),
+    dimensions: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
+
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+    )
+
+    resource = relationship(
+        "Resource",
+        back_populates="metrics",
     )

@@ -1,40 +1,83 @@
-"""
-Cost Explorer API wrapper
-"""
+#/aws_cost_optimizer/collectors/cost/cost_explorer.py
 
-from typing import List, Dict, Any
+from __future__ import annotations
 
-from aws.client import get_client
-def _paginate_cost_and_usage(client, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+from typing import Any
 
-    results_by_period = {}
+from aws_cost_optimizer.config.client import get_client
+from aws_cost_optimizer.config.settings import CE_REGION
+
+
+def _paginate_cost_and_usage(
+    client: Any,
+    params: dict[str, Any],
+) -> list[dict[str, Any]]:
+    results_by_period: dict[str, dict[str, Any]] = {}
+
     response = client.get_cost_and_usage(**params)
-    _merge_groups_by_period(results_by_period, response)
-    while "NextPageToken" in response and response["NextPageToken"]:
-        params["NextPageToken"] = response["NextPageToken"]
-        response = client.get_cost_and_usage(**params)
-        _merge_groups_by_period(results_by_period, response)
-    
+
+    _merge_groups_by_period(
+        results_by_period,
+        response,
+    )
+
+    while (
+        "NextPageToken" in response
+        and response["NextPageToken"]
+    ):
+        params["NextPageToken"] = response[
+            "NextPageToken"
+        ]
+
+        response = client.get_cost_and_usage(
+            **params
+        )
+
+        _merge_groups_by_period(
+            results_by_period,
+            response,
+        )
+
     return list(results_by_period.values())
 
 
-def _merge_groups_by_period(results_by_period: Dict, response: Dict):
-    for block in response.get("ResultsByTime", []):
+def _merge_groups_by_period(
+    results_by_period: dict[str, dict[str, Any]],
+    response: dict[str, Any],
+) -> None:
+
+    for block in response.get(
+        "ResultsByTime",
+        [],
+    ):
         start = block["TimePeriod"]["Start"]
+
         if start not in results_by_period:
             results_by_period[start] = {
                 "TimePeriod": block["TimePeriod"],
-                "Estimated": block.get("Estimated", False),
+                "Estimated": block.get(
+                    "Estimated",
+                    False,
+                ),
                 "Groups": [],
-                "Total": block.get("Total", {}),
+                "Total": block.get(
+                    "Total",
+                    {},
+                ),
             }
-        results_by_period[start]["Groups"].extend(block.get("Groups", []))
+
+        results_by_period[start]["Groups"].extend(
+            block.get("Groups", [])
+        )
 
 
-def get_cost_usage(start: str, end: str, region: str = None) -> List[Dict[str, Any]]:
-
-    client = get_client("ce", "us-east-1")
-    params = {
+def get_cost_usage(
+    start: str,
+    end: str,
+    region: str | None = None,
+) -> list[dict[str, Any]]:
+    client = get_client("ce", CE_REGION)
+    params: dict[str, Any] = {
         "TimePeriod": {
             "Start": start,
             "End": end,
@@ -52,7 +95,7 @@ def get_cost_usage(start: str, end: str, region: str = None) -> List[Dict[str, A
             },
         ],
     }
-    
+
     if region:
         params["Filter"] = {
             "Dimensions": {
@@ -60,12 +103,20 @@ def get_cost_usage(start: str, end: str, region: str = None) -> List[Dict[str, A
                 "Values": [region],
             }
         }
-    
-    return _paginate_cost_and_usage(client, params)
 
-def get_regions_with_costs(start: str, end: str) -> List[str]:
-    client = get_client("ce", "us-east-1")
-    params = {
+    return _paginate_cost_and_usage(
+        client,
+        params,
+    )
+
+
+def get_regions_with_costs(
+    start: str,
+    end: str,
+) -> list[str]:
+    client = get_client("ce", CE_REGION)
+
+    params: dict[str, Any] = {
         "TimePeriod": {
             "Start": start,
             "End": end,
@@ -79,22 +130,64 @@ def get_regions_with_costs(start: str, end: str) -> List[str]:
             },
         ],
     }
-    
-    results = _paginate_cost_and_usage(client, params)
-    regions = set()
+
+    results = _paginate_cost_and_usage(
+        client,
+        params,
+    )
+
+    regions: set[str] = set()
+
     for result in results:
-        for group in result["Groups"]:
-            region = group["Keys"][0]
-            cost = float(group["Metrics"]["UnblendedCost"]["Amount"])
-            if cost > 0:
+        for group in result.get(
+            "Groups",
+            [],
+        ):
+            keys = group.get(
+                "Keys",
+                [],
+            )
+
+            if not keys:
+                continue
+
+            region = keys[0]
+
+            amount = float(
+                group.get(
+                    "Metrics",
+                    {},
+                )
+                .get(
+                    "UnblendedCost",
+                    {},
+                )
+                .get(
+                    "Amount",
+                    0.0,
+                )
+            )
+
+            if amount > 0:
                 regions.add(region)
-    
+
     return list(regions)
 
 
-def get_monthly_totals(start: str, end: str) -> List[Dict[str, Any]]:
-    client = get_client("ce", "us-east-1")
-    params = {
+def get_monthly_totals(
+    start: str,
+    end: str,
+    region: str | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Return monthly total cost for the period.
+
+    Optionally filtered to a single region.
+    """
+
+    client = get_client("ce", CE_REGION)
+
+    params: dict[str, Any] = {
         "TimePeriod": {
             "Start": start,
             "End": end,
@@ -102,6 +195,16 @@ def get_monthly_totals(start: str, end: str) -> List[Dict[str, Any]]:
         "Granularity": "MONTHLY",
         "Metrics": ["UnblendedCost"],
     }
-    results = _paginate_cost_and_usage(client, params)
-    
-    return results
+
+    if region:
+        params["Filter"] = {
+            "Dimensions": {
+                "Key": "REGION",
+                "Values": [region],
+            }
+        }
+
+    return _paginate_cost_and_usage(
+        client,
+        params,
+    )

@@ -1,89 +1,77 @@
-"""
-Recommendation model - final user action.
-"""
-
-from sqlalchemy import (
-    Column,
-    Integer,
-    String,
-    Text,
-    Float,
-    JSON,
-    ForeignKey,
-    DateTime,
-)
-from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from backend.database.base import Base
+from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ..base import Base
 
 
 class Recommendation(Base):
-
     __tablename__ = "recommendations"
 
-    id = Column(
+    id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
-        autoincrement=True
     )
 
-    finding_id = Column(
-        Integer,
-        ForeignKey("findings.id"),
+    scan_run_id: Mapped[int] = mapped_column(
+        ForeignKey("scan_runs.id"),
         nullable=False,
-        index=True
+        index=True,
     )
 
-    title = Column(
+    finding_id: Mapped[int | None] = mapped_column(
+        ForeignKey("findings.id"),
+        nullable=True,
+        index=True,
+    )
+
+    resource_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    action: Mapped[str] = mapped_column(
         String,
-        nullable=False
+        nullable=False,
     )
 
-    description = Column(
-        Text,
-        nullable=True
-    )
-
-    action = Column(
-        Text,
-        nullable=False
-    )
-
-    category = Column(
+    explanation: Mapped[str | None] = mapped_column(
         String,
-        nullable=True
+        nullable=True,
     )
 
-    estimated_savings = Column(
-        Float,
-        nullable=True
+    priority: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
     )
 
-    confidence = Column(
-        Float,
-        nullable=True
+    confidence: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
     )
 
-    priority = Column(
-        String,
-        nullable=True  # critical, high, medium, low
+    status: Mapped[str] = mapped_column(
+        String(30),
+        default="requires_validation",
     )
 
-    implementation = Column(
-        JSON,
-        nullable=True
-    )
-
-    status = Column(
-        String,
-        default="open"  # open, in_progress, applied, dismissed
-    )
-
-    created_at = Column(
+    created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow
+        default=datetime.utcnow,
     )
 
-    # Relationships
-    finding = relationship("Finding", back_populates="recommendations")
+    scan_run = relationship(
+        "ScanRun",
+        back_populates="recommendations",
+    )
+
+    finding = relationship(
+        "Finding",
+        back_populates="recommendations",
+    )

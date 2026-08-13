@@ -1,30 +1,35 @@
 """
 CollectionPlanner
 """
-
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-
 from backend.database.models.cost_record import CostRecord
 from backend.database.repository.collection_plan_repository import save_collection_plan
-
 from aws_cost_optimizer.planner.resource_catalog import ResourceCatalog
 from aws_cost_optimizer.planner.resolver import CatalogResolver
+from aws_cost_optimizer.planner.collection_profile import CollectionProfile
+
+def _priority_for(total_cost: float) -> str:
+    if total_cost >= 500:
+        return "high"
+    elif total_cost >= 100:
+        return "medium"
+    return "low"
 
 
 class CollectionPlanner:
-
     def __init__(self):
         self.catalog = ResourceCatalog()
         self.resolver = CatalogResolver(self.catalog.all())
+        self.profile_loader = CollectionProfile()
 
     def plan(
         self,
         db: Session,
         scan
     ) -> List[Dict[str, Any]]:
-        # Get aggregated cost records grouped by service, usage_type, region
+        
         cost_aggregates = (
             db.query(
                 CostRecord.service,
@@ -43,35 +48,31 @@ class CollectionPlanner:
             .all()
         )
 
-        plans = []
-
+        plan_map = {}
         for aggregate in cost_aggregates:
             service = aggregate.service
             usage_type = aggregate.usage_type
             region = aggregate.region
             total_cost = aggregate.total_cost
-
-            # Region filter
             if scan.region and region != scan.region:
                 continue
-
-            # Resolve to collector
-            resolved = self.resolver.resolve(
-                service,
-                usage_type
-            )
-
+            resolved = self.resolver.resolve(service, usage_type)
             if not resolved:
                 continue
 
-            # Determine priority based on cost
-            if total_cost >= 500:
-                priority = "high"
-            elif total_cost >= 200:
-                priority = "medium"
-            else:
-                priority = "low"
+            # One plan per (collector, region, resource_type)
+            # keep the highest cost when multiple usage types map to the same collector
+            plan_key = (resolved["collector"], region, resolved["resource_type"])
 
+            if plan_key in plan_map:
+                if total_cost > plan_map[plan_key]["cost_context"]:
+                    plan_map[plan_key]["cost_context"] = total_cost
+                    plan_map[plan_key]["priority"] = _priority_for(total_cost)
+                    plan_map[plan_key]["service"] = service
+                    plan_map[plan_key]["usage_type"] = usage_type
+                continue
+
+            priority = _priority_for(total_cost)
             plan_data = {
                 "scan_run_id": scan.id,
                 "service": service,
@@ -83,12 +84,8 @@ class CollectionPlanner:
                 "cost_context": total_cost,
                 "status": "planned",
             }
-
-            # Persist to database
             save_collection_plan(db, plan_data)
-
-            # Also return as dict for backward compatibility
-            plans.append({
+            plan_map[plan_key] = {
                 "service": service,
                 "region": region,
                 "usage_type": usage_type,
@@ -96,11 +93,10 @@ class CollectionPlanner:
                 "collector": resolved["collector"],
                 "priority": priority,
                 "cost_context": total_cost,
-            })
+            }
 
+        plans = list(plan_map.values())
         db.flush()
-
-        # Sort by cost descending
         return sorted(
             plans,
             key=lambda x: x["cost_context"],
