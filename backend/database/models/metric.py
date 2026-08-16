@@ -1,6 +1,13 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
@@ -9,19 +16,30 @@ from ..base import Base
 class Metric(Base):
     __tablename__ = "metrics"
 
+    __table_args__ = (
+        UniqueConstraint(
+            "resource_id",
+            "scan_run_id",
+            "namespace",
+            "metric_name",
+            "statistic",
+            name="uq_metric_identity",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
     )
 
     resource_id: Mapped[int] = mapped_column(
-        ForeignKey("resources.id"),
+        ForeignKey("resources.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
     scan_run_id: Mapped[int] = mapped_column(
-        ForeignKey("scan_runs.id"),
+        ForeignKey("scan_runs.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )

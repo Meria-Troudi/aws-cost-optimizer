@@ -12,19 +12,22 @@ import re
 from typing import Any
 
 
-FINDING_TITLES: dict[str, str] = {
-    "nat_gateway_no_observed_activity": "NAT Gateway with no observed activity",
-    "nat_gateway_no_activity": "NAT Gateway with no observed activity",
-    "nat_gateway_low_utilization": "NAT Gateway with low utilization",
-    "nat_gateway_low_traffic": "NAT Gateway with low traffic",
-    "nat_gateway_aws_service_traffic": "NAT Gateway routing AWS service traffic",
-    "nat_gateway_cross_az": "NAT Gateway with cross-AZ traffic",
-    "nat_gateway_endpoint_opportunity": "NAT Gateway VPC endpoint opportunity",
-    "rds_instance_possible_oversized": "Potentially oversized RDS instance",
-    "rds_billing_resource_mismatch": "RDS billing/resource mismatch",
-    "rds_unmatched_billing_usage": "Unmatched RDS billing usage",
-    "collection_no_matching_resources": "No matching resources found during collection",
-}
+def _finding_title(raw: dict[str, Any]) -> str:
+    presentation = _extract_presentation_meta(raw.get("evidence"))
+    title = (
+        raw.get("title")
+        or presentation.get("title")
+        or raw.get("name")
+    )
+
+    if title:
+        return str(title)
+
+    finding_type = raw.get("finding_type")
+    if finding_type:
+        return str(finding_type).replace("_", " ").title()
+
+    return "Unknown finding"
 
 SERVICE_LABELS: dict[str, str] = {
     "nat_gateway": "NAT Gateway",
@@ -493,7 +496,14 @@ def _service_label(
     resource_type: str,
     metadata: dict[str, Any],
 ) -> str:
-    if finding_type == "collection_no_matching_resources":
+    if finding_type in (
+        "historical_unmatched",
+        "collection_no_matching_resources",
+        "billing_resource_current",
+        "billing_resource_mismatch",
+        "billing_no_cost",
+        "billing_reconciliation_unknown",
+    ):
         billing_service = metadata.get("service")
         if billing_service:
             return str(billing_service)
@@ -506,10 +516,7 @@ def _service_label(
 def present_finding(raw: dict[str, Any], region: str | None = None) -> dict[str, Any]:
     finding_type = raw.get("finding_type") or "unknown"
     resource_type = (raw.get("resource_type") or "unknown").lower()
-    title = FINDING_TITLES.get(
-        finding_type,
-        finding_type.replace("_", " ").title(),
-    )
+    title = _finding_title(raw)
     metadata = _extract_metadata(raw)
     service = _service_label(finding_type, resource_type, metadata)
 
@@ -540,6 +547,15 @@ def present_finding(raw: dict[str, Any], region: str | None = None) -> dict[str,
     observation_period = _extract_observation_period(raw)
 
     category = metadata.get("category")
+    if not category and finding_type in (
+        "historical_unmatched",
+        "collection_no_matching_resources",
+        "billing_resource_current",
+        "billing_resource_mismatch",
+        "billing_no_cost",
+        "billing_reconciliation_unknown",
+    ):
+        category = "RECONCILIATION"
     if not category and billing_details:
         category = "DATA_QUALITY"
 
@@ -594,6 +610,7 @@ def present_findings(
                 "resource_type": finding.resource_type,
                 "resource_id": finding.resource_id,
                 "finding_type": finding.finding_type,
+                "title": getattr(finding, "title", None),
                 "analyzer": finding.analyzer,
                 "severity": finding.severity,
                 "confidence": finding.confidence,

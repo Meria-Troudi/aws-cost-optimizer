@@ -1,10 +1,5 @@
 """
 Resource catalog.
-
-YAML is the source of truth for:
-- resource types
-- billing mappings
-- collectors
 """
 
 from __future__ import annotations

@@ -1,106 +1,232 @@
-# aws_cost_optimizer/planner/resource_catalog.yaml
+
+ # NAT GATEWAY
+ 
 nat_gateway:
   category: ec2_other
+
   billing:
     services:
       - EC2 - Other
       - Amazon Virtual Private Cloud
+
     usage_patterns:
       - "*NatGateway*"
+
   collector:
     key: nat_gateway
     resource_type: nat_gateway
+
+  rules:
+    enabled: true
+
+
+ # PUBLIC IPV4 / ELASTIC IP
+ 
 public_ipv4:
-  category: ec2_other
+  category: networking
+
   billing:
     services:
       - Amazon Virtual Private Cloud
+
     usage_patterns:
       - "*PublicIPv4*"
+      - "*PublicIpv4*"
+
   collector:
     key: public_ipv4
     resource_type: public_ipv4
+
+  rules:
+    enabled: true
+
+
+ # TRANSIT GATEWAY
+ 
 transit_gateway:
-  category: ec2_other
+  category: networking
+
   billing:
     services:
       - Amazon Virtual Private Cloud
+
     usage_patterns:
       - "*TransitGateway*"
+
   collector:
     key: transit_gateway
     resource_type: transit_gateway
+
+  rules:
+    enabled: true
+
+
+ # VPC ENDPOINT
+ 
 vpc_endpoint:
-  category: ec2_other
+  category: networking
+
   billing:
     services:
       - Amazon Virtual Private Cloud
+
     usage_patterns:
       - "*VpcEndpoint*"
       - "*VPCEndpoint*"
+      - "*Vpcendpoint*"
+
   collector:
     key: vpc_endpoint
     resource_type: vpc_endpoint
 
+  rules:
+    enabled: true
 
+
+ # RDS INSTANCE
+ 
 rds_instance:
   category: database
+
   billing:
     services:
       - Amazon Relational Database Service
+
     usage_patterns:
       - "*InstanceUsage*"
       - "*RDS:ChargedBackupUsage*"
       - "*RDS*"
+
   collector:
     key: rds
     resource_type: rds_instance
 
-# EKS
+  rules:
+    enabled: true
+
+
+ # EKS CLUSTER
+ 
 eks_cluster:
   category: compute
+
   billing:
     services:
       - Amazon Elastic Container Service for Kubernetes
+
     usage_patterns:
       - "*AmazonEKS*"
       - "*EKS*"
+
   collector:
     key: eks
     resource_type: eks_cluster
 
-# ELB / LOAD BALANCER
+  rules:
+    enabled: true
+
+
+ # ELB / LOAD BALANCER
+ 
 load_balancer:
-  category: network
+  category: networking
+
   billing:
     services:
       - Amazon Elastic Load Balancing
+
     usage_patterns:
       - "*LoadBalancer*"
       - "*ELB*"
+
   collector:
     key: elb
     resource_type: load_balancer
 
-# VPC / NETWORKING - FUTURE
+  rules:
+    enabled: true
+
+
+ # FUTURE: VPC PEERING
+#
+# Disabled until a collector exists.
+# Keeping the catalog entry allows future expansion without causing
+# the planner to schedule a non-existent collector.
+ 
 vpc_peering:
-  category: ec2_other
+  category: networking
+
   billing:
     services:
       - Amazon Virtual Private Cloud
+
     usage_patterns:
       - "*VpcPeering*"
       - "*VPCPeering*"
+
   collector:
     key: vpc_peering
     resource_type: vpc_peering
+
+  rules:
+    enabled: false
+
+
+ # FUTURE: CARRIER GATEWAY
+ 
 carrier_gateway:
-  category: ec2_other
+  category: networking
+
   billing:
     services:
       - Amazon Virtual Private Cloud
+
     usage_patterns:
       - "*CarrierGateway*"
+
   collector:
     key: carrier_gateway
     resource_type: carrier_gateway
+
+  rules:
+    enabled: false
+
+
+ # FUTURE: INTERNET GATEWAY
+ 
+internet_gateway:
+  category: networking
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*InternetGateway*"
+
+  collector:
+    key: internet_gateway
+    resource_type: internet_gateway
+
+  rules:
+    enabled: false
+
+
+ # FUTURE: NAT / OTHER NETWORK TARGETS
+ 
+egress_only_internet_gateway:
+  category: networking
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*EgressOnlyInternetGateway*"
+
+  collector:
+    key: egress_only_internet_gateway
+    resource_type: egress_only_internet_gateway
+
+  rules:
+    enabled: false

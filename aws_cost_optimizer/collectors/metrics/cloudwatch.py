@@ -1,17 +1,21 @@
 """
 Reusable CloudWatch metric collector.
 
-Responsibilities:
-- Preserve the exact analysis window.
-- Select a CloudWatch-compatible effective period.
-- Split large requests into safe chunks.
-- Handle CloudWatch period/retention rules.
-- Filter returned datapoints to the requested window.
-- Preserve raw datapoints.
-- Calculate data coverage and quality.
-- Correctly aggregate supported CloudWatch statistics.
-- Avoid treating missing datapoints as zero.
-- Make requested/effective periods and query boundaries explicit.
+Semantics
+---------
+queried   = CloudWatch request executed successfully
+observed  = usable numeric datapoints returned
+no_data   = request succeeded but returned no datapoints
+error     = CloudWatch request failed
+invalid   = datapoints returned but no usable numeric values existed
+
+Important
+---------
+Unit is optional.
+
+When unit is None, the Unit parameter is NOT sent to CloudWatch.
+This is important for AWS metrics whose published datapoints may report
+Unit="None" or otherwise differ from a requested unit.
 """
 
 from __future__ import annotations
@@ -30,10 +34,21 @@ class CloudWatchMetricCollector:
         "SampleCount",
     }
 
-    # CloudWatch GetMetricStatistics limit.
+    STATISTIC_ALIASES = {
+        "avg": "Average",
+        "average": "Average",
+        "sum": "Sum",
+        "min": "Minimum",
+        "minimum": "Minimum",
+        "max": "Maximum",
+        "maximum": "Maximum",
+        "samplecount": "SampleCount",
+        "sample_count": "SampleCount",
+        "sample-count": "SampleCount",
+    }
+
     MAX_DATAPOINTS_PER_REQUEST = 1440
 
-    # CloudWatch standard-resolution retention rules.
     FIFTEEN_DAYS = timedelta(days=15)
     SIXTY_THREE_DAYS = timedelta(days=63)
 
@@ -41,7 +56,6 @@ class CloudWatchMetricCollector:
     FIVE_MINUTES = 300
     HOUR = 3600
 
-    # Data quality thresholds.
     COMPLETE_THRESHOLD = 0.95
     GOOD_THRESHOLD = 0.80
     PARTIAL_THRESHOLD = 0.50
@@ -49,8 +63,10 @@ class CloudWatchMetricCollector:
     def __init__(self, cloudwatch):
         self.cloudwatch = cloudwatch
 
-       # PUBLIC API
-   
+    # ==================================================================
+    # PUBLIC
+    # ==================================================================
+
     def collect(
         self,
         namespace: str,
@@ -60,90 +76,101 @@ class CloudWatchMetricCollector:
         end: datetime,
         requested_period: int = 3600,
     ) -> List[Dict[str, Any]]:
-        """
-        Collect metrics for the exact requested analysis window.
-
-        The caller's window is never silently changed.
-
-        Example:
-
-            start = 2026-03-01 00:00 UTC
-            end   = 2026-07-01 00:00 UTC
-
-        The result explicitly contains:
-
-            analysis_start
-            analysis_end
-            query_start
-            query_end
-            requested_period
-            effective_period
-            period_adjusted
-            coverage
-            data_quality
-        """
 
         start = self._normalize_datetime(start)
         end = self._normalize_datetime(end)
 
         if start >= end:
+            raise ValueError("end must be later than start")
+
+        try:
+            requested_period = int(requested_period)
+        except (TypeError, ValueError) as exc:
             raise ValueError(
-                "end must be later than start"
-            )
+                "requested_period must be an integer"
+            ) from exc
 
         if requested_period <= 0:
             raise ValueError(
                 "requested_period must be greater than zero"
             )
 
-        requested_period = self._normalize_requested_period(
-            requested_period
+        requested_period = (
+            self._normalize_requested_period(
+                requested_period
+            )
         )
 
-        effective_period = self._calculate_effective_period(
-            start=start,
-            requested_period=requested_period,
+        effective_period = (
+            self._calculate_effective_period(
+                start=start,
+                requested_period=requested_period,
+            )
         )
 
         period_adjusted = (
             effective_period != requested_period
         )
 
-        expected_datapoints = self._expected_datapoints(
-            start=start,
-            end=end,
-            period=effective_period,
+        expected_datapoints = (
+            self._expected_datapoints(
+                start=start,
+                end=end,
+                period=effective_period,
+            )
         )
 
         results: List[Dict[str, Any]] = []
 
-        for metric_spec in metric_specs:
+        for metric_spec in metric_specs or []:
 
-            if "name" not in metric_spec:
+            if not isinstance(metric_spec, dict):
                 raise ValueError(
                     "Every CloudWatch metric specification "
-                    "must contain 'name'"
+                    "must be a mapping"
                 )
 
-            metric_name = metric_spec["name"]
+            metric_name = str(
+                metric_spec.get("name", "")
+            ).strip()
 
-            statistic = metric_spec.get(
+            if not metric_name:
+                raise ValueError(
+                    "CloudWatch metric name cannot be empty"
+                )
+
+            raw_statistic = metric_spec.get(
                 "statistic",
                 "Average",
             )
 
-            unit = metric_spec.get("unit")
-
-            metric_key = metric_spec.get(
-                "key",
-                metric_name,
+            statistic = self.normalize_statistic(
+                raw_statistic
             )
 
-            if statistic not in self.SUPPORTED_STATISTICS:
-                raise ValueError(
-                    f"Unsupported CloudWatch statistic: "
-                    f"{statistic}"
+            configured_unit = metric_spec.get("unit")
+
+            # Explicitly suppress the CloudWatch Unit parameter.
+            #
+            # This is useful for metrics where the AWS service does not
+            # publish the metric under the unit supplied by the profile.
+            omit_unit = bool(
+                metric_spec.get(
+                    "omit_unit",
+                    False,
                 )
+            )
+
+            unit = (
+                None
+                if omit_unit
+                else configured_unit
+            )
+
+            metric_key = (
+                metric_spec.get("key")
+                or metric_name
+            )
 
             response = self._get_datapoints(
                 namespace=namespace,
@@ -157,42 +184,71 @@ class CloudWatchMetricCollector:
             )
 
             common = {
-                "metric_key": metric_key,
-                "metric_name": metric_name,
-                "namespace": namespace,
+                "metric_key":
+                    metric_key,
 
-                "statistic": statistic,
-                "unit": unit,
+                "metric_name":
+                    metric_name,
 
-                "dimensions": dimensions,
+                "namespace":
+                    namespace,
 
-                # Exact requested analysis window.
-                "analysis_start": self._isoformat(start),
-                "analysis_end": self._isoformat(end),
+                "statistic":
+                    statistic,
 
-                # Backwards-compatible aliases.
-                "metric_start": self._isoformat(start),
-                "metric_end": self._isoformat(end),
+                "requested_statistic":
+                    raw_statistic,
 
-                "start": self._isoformat(start),
-                "end": self._isoformat(end),
+                "requested_unit":
+                    configured_unit,
 
-                # Period requested by caller.
-                "requested_period": requested_period,
+                "unit":
+                    unit,
 
-                # Period actually sent to CloudWatch.
-                "effective_period": effective_period,
+                "unit_parameter_sent":
+                    unit is not None,
 
-                "period": effective_period,
+                "dimensions":
+                    dimensions,
 
-                "period_adjusted": period_adjusted,
+                "analysis_start":
+                    self._isoformat(start),
 
-                "expected_datapoints": expected_datapoints,
+                "analysis_end":
+                    self._isoformat(end),
 
-                "request_count": response.get(
-                    "request_count",
-                    0,
-                ),
+                "metric_start":
+                    self._isoformat(start),
+
+                "metric_end":
+                    self._isoformat(end),
+
+                "start":
+                    self._isoformat(start),
+
+                "end":
+                    self._isoformat(end),
+
+                "requested_period":
+                    requested_period,
+
+                "effective_period":
+                    effective_period,
+
+                "period":
+                    effective_period,
+
+                "period_adjusted":
+                    period_adjusted,
+
+                "expected_datapoints":
+                    expected_datapoints,
+
+                "request_count":
+                    response.get(
+                        "request_count",
+                        0,
+                    ),
             }
 
             if response["status"] == "error":
@@ -200,30 +256,21 @@ class CloudWatchMetricCollector:
                 results.append(
                     {
                         **common,
-
                         "status": "error",
-
                         "available": False,
                         "has_data": False,
-
                         "samples": 0,
                         "datapoints": 0,
-
                         "value": None,
                         "total": None,
                         "average": None,
                         "maximum": None,
                         "minimum": None,
-
                         "coverage_ratio": 0.0,
                         "coverage_percent": 0.0,
-
                         "complete": False,
-
                         "data_quality": "error",
-
-                        "error": response["error"],
-
+                        "error": response.get("error"),
                         "raw_datapoints": [],
                     }
                 )
@@ -233,21 +280,60 @@ class CloudWatchMetricCollector:
             results.append(
                 self._build_result(
                     common=common,
-                    datapoints=response["datapoints"],
+                    datapoints=response.get(
+                        "datapoints",
+                        [],
+                    ),
                     statistic=statistic,
                 )
             )
 
         return results
 
-       # PERIOD HANDLING
-   
+    # ==================================================================
+    # STATISTIC
+    # ==================================================================
+
+    @classmethod
+    def normalize_statistic(
+        cls,
+        statistic: Any,
+    ) -> str:
+
+        if statistic is None:
+            return "Average"
+
+        value = str(statistic).strip()
+
+        if not value:
+            return "Average"
+
+        if value in cls.SUPPORTED_STATISTICS:
+            return value
+
+        canonical = cls.STATISTIC_ALIASES.get(
+            value.lower()
+        )
+
+        if canonical:
+            return canonical
+
+        raise ValueError(
+            "Unsupported CloudWatch statistic: "
+            f"{statistic}"
+        )
+
+    # ==================================================================
+    # PERIOD
+    # ==================================================================
+
     @classmethod
     def _normalize_requested_period(
         cls,
         period: int,
     ) -> int:
-    
+
+        period = int(period)
 
         if period < cls.MINUTE:
             return cls.MINUTE
@@ -263,17 +349,14 @@ class CloudWatchMetricCollector:
         start: datetime,
         requested_period: int,
     ) -> int:
-      
-        now = datetime.now(timezone.utc)
 
+        now = datetime.now(timezone.utc)
         age = now - start
 
         if age > cls.SIXTY_THREE_DAYS:
             minimum_period = cls.HOUR
-
         elif age > cls.FIFTEEN_DAYS:
             minimum_period = cls.FIVE_MINUTES
-
         else:
             minimum_period = cls.MINUTE
 
@@ -289,7 +372,11 @@ class CloudWatchMetricCollector:
     ) -> int:
 
         return (
-            (seconds + cls.MINUTE - 1)
+            (
+                seconds
+                + cls.MINUTE
+                - 1
+            )
             // cls.MINUTE
         ) * cls.MINUTE
 
@@ -300,7 +387,6 @@ class CloudWatchMetricCollector:
         end: datetime,
         period: int,
     ) -> int:
-       
 
         duration_seconds = (
             end - start
@@ -309,7 +395,11 @@ class CloudWatchMetricCollector:
         return max(
             1,
             int(
-                (duration_seconds + period - 1)
+                (
+                    duration_seconds
+                    + period
+                    - 1
+                )
                 // period
             ),
         )
@@ -327,8 +417,10 @@ class CloudWatchMetricCollector:
             )
         )
 
-       # CLOUDWATCH REQUEST
-   
+    # ==================================================================
+    # AWS REQUEST
+    # ==================================================================
+
     def _get_datapoints(
         self,
         namespace: str,
@@ -340,14 +432,18 @@ class CloudWatchMetricCollector:
         statistic: str,
         unit: Optional[str],
     ) -> Dict[str, Any]:
+
         chunk_duration = (
-            self._calculate_chunk_duration(period)
+            self._calculate_chunk_duration(
+                period
+            )
         )
 
-        all_datapoints: List[Dict[str, Any]] = []
+        all_datapoints: List[
+            Dict[str, Any]
+        ] = []
 
         request_count = 0
-
         current_start = start
 
         try:
@@ -369,30 +465,46 @@ class CloudWatchMetricCollector:
                     "Statistics": [statistic],
                 }
 
-                if unit:
+                # IMPORTANT:
+                # None means "do not send the Unit parameter".
+                #
+                # Do NOT do:
+                #     kwargs["Unit"] = None
+                #
+                # when the goal is to omit Unit.
+                if unit is not None:
                     kwargs["Unit"] = unit
 
                 response = (
                     self.cloudwatch
-                    .get_metric_statistics(**kwargs)
+                    .get_metric_statistics(
+                        **kwargs
+                    )
                 )
 
                 request_count += 1
 
-                all_datapoints.extend(
-                    response.get(
-                        "Datapoints",
-                        [],
-                    )
+                points = response.get(
+                    "Datapoints",
+                    [],
                 )
+
+                if isinstance(points, list):
+                    all_datapoints.extend(points)
+
+                if current_end <= current_start:
+                    break
 
                 current_start = current_end
 
-             # Filter to the EXACT requested analysis window.
- 
-            filtered = []
+            filtered: List[
+                Dict[str, Any]
+            ] = []
 
             for point in all_datapoints:
+
+                if not isinstance(point, dict):
+                    continue
 
                 timestamp = point.get(
                     "Timestamp"
@@ -401,23 +513,23 @@ class CloudWatchMetricCollector:
                 if timestamp is None:
                     continue
 
-                timestamp = self._normalize_datetime(
-                    timestamp
+                timestamp = (
+                    self._normalize_datetime(
+                        timestamp
+                    )
                 )
 
-                if start <= timestamp < end:
+                if (
+                    start
+                    <= timestamp
+                    < end
+                ):
                     filtered.append(point)
 
-             # Sort.
- 
-            filtered = self._sort_datapoints(
-                filtered
-            )
-
-             # Deduplicate.
- 
-            filtered = self._deduplicate_datapoints(
-                filtered
+            filtered = (
+                self._deduplicate_datapoints(
+                    filtered
+                )
             )
 
             return {
@@ -431,62 +543,15 @@ class CloudWatchMetricCollector:
 
             return {
                 "status": "error",
-                "datapoints": all_datapoints,
+                "datapoints": [],
                 "error": str(exc),
                 "request_count": request_count,
             }
 
-       # DATAPOINT PROCESSING
-   
-    @classmethod
-    def _sort_datapoints(
-        cls,
-        datapoints: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+    # ==================================================================
+    # RESULT
+    # ==================================================================
 
-        return sorted(
-            datapoints,
-            key=lambda point: (
-                cls._normalize_datetime(
-                    point["Timestamp"]
-                )
-                if point.get("Timestamp")
-                else datetime.min.replace(
-                    tzinfo=timezone.utc
-                )
-            ),
-        )
-
-    @classmethod
-    def _deduplicate_datapoints(
-        cls,
-        datapoints: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        deduplicated: Dict[
-            datetime,
-            Dict[str, Any],
-        ] = {}
-
-        for point in datapoints:
-
-            timestamp = point.get(
-                "Timestamp"
-            )
-
-            if timestamp is None:
-                continue
-
-            timestamp = cls._normalize_datetime(
-                timestamp
-            )
-
-            deduplicated[timestamp] = point
-
-        return cls._sort_datapoints(
-            list(
-                deduplicated.values()
-            )
-        )
     def _build_result(
         self,
         common: Dict[str, Any],
@@ -497,11 +562,12 @@ class CloudWatchMetricCollector:
         result = {
             **common,
 
-            "samples": 0,
-            "datapoints": 0,
-
+            "status": "no_data",
             "available": False,
             "has_data": False,
+
+            "samples": 0,
+            "datapoints": 0,
 
             "value": None,
             "total": None,
@@ -513,24 +579,28 @@ class CloudWatchMetricCollector:
             "coverage_percent": 0.0,
 
             "complete": False,
-
             "data_quality": "no_data",
 
-            "status": "no_data",
-
             "error": None,
-
             "raw_datapoints": [],
         }
+
+        if not datapoints:
+            return result
 
         values: List[float] = []
 
         weighted_sum = 0.0
         weighted_count = 0.0
 
-        raw_datapoints: List[Dict[str, Any]] = []
+        raw_datapoints: List[
+            Dict[str, Any]
+        ] = []
 
         for point in datapoints:
+
+            if not isinstance(point, dict):
+                continue
 
             if statistic not in point:
                 continue
@@ -544,7 +614,6 @@ class CloudWatchMetricCollector:
 
             try:
                 value = float(raw_value)
-
             except (
                 TypeError,
                 ValueError,
@@ -558,13 +627,14 @@ class CloudWatchMetricCollector:
             if timestamp is None:
                 continue
 
-            timestamp = self._normalize_datetime(
-                timestamp
+            timestamp = (
+                self._normalize_datetime(
+                    timestamp
+                )
             )
 
             values.append(value)
 
-            # CloudWatch may provide SampleCount.
             sample_count = point.get(
                 "SampleCount"
             )
@@ -587,39 +657,68 @@ class CloudWatchMetricCollector:
                 and sample_count > 0
             ):
                 weighted_sum += (
-                    value * sample_count
+                    value
+                    * sample_count
                 )
 
-                weighted_count += sample_count
+                weighted_count += (
+                    sample_count
+                )
 
             raw_datapoints.append(
                 {
-                    "timestamp": self._isoformat(
-                        timestamp
-                    ),
+                    "timestamp":
+                        self._isoformat(
+                            timestamp
+                        ),
 
-                    "value": value,
+                    "value":
+                        value,
 
-                    "unit": point.get(
-                        "Unit",
-                        common.get("unit"),
-                    ),
+                    "statistic":
+                        statistic,
 
-                    "sample_count": (
-                        sample_count
-                    ),
+                    # Unit returned by AWS.
+                    "unit":
+                        point.get("Unit"),
+
+                    "sample_count":
+                        sample_count,
                 }
             )
 
         if not values:
+
+            result.update(
+                {
+                    "status":
+                        "invalid_data",
+
+                    "available":
+                        True,
+
+                    "has_data":
+                        False,
+
+                    "data_quality":
+                        "invalid",
+
+                    "raw_datapoints":
+                        raw_datapoints,
+                }
+            )
+
             return result
 
         datapoint_count = len(values)
 
         expected_datapoints = max(
-            common.get(
-                "expected_datapoints",
-                datapoint_count,
+            int(
+                common.get(
+                    "expected_datapoints",
+                    datapoint_count,
+                )
+                or datapoint_count
             ),
             1,
         )
@@ -631,7 +730,7 @@ class CloudWatchMetricCollector:
         )
 
         coverage_percent = (
-            coverage_ratio * 100
+            coverage_ratio * 100.0
         )
 
         complete = (
@@ -672,49 +771,77 @@ class CloudWatchMetricCollector:
             )
         )
 
+        # 0.0 is valid observed data.
+        #
+        # Example:
+        #   BytesOut = 0
+        #
+        # must result in:
+        #   status=ok
+        #   has_data=True
+        #   value=0
+        #
+        # It must never become no_data.
+
         result.update(
             {
-                "samples": datapoint_count,
-                "datapoints": datapoint_count,
+                "status":
+                    "ok",
 
-                "available": True,
-                "has_data": True,
+                "available":
+                    True,
 
-                "value": self._round(
-                    selected_value
-                ),
+                "has_data":
+                    True,
 
-                "total": self._round(
-                    total
-                ),
+                "samples":
+                    datapoint_count,
 
-                "average": self._round(
-                    average
-                ),
+                "datapoints":
+                    datapoint_count,
 
-                "maximum": self._round(
-                    maximum
-                ),
+                "value":
+                    self._round(
+                        selected_value
+                    ),
 
-                "minimum": self._round(
-                    minimum
-                ),
+                "total":
+                    self._round(
+                        total
+                    ),
 
-                "coverage_ratio": round(
-                    coverage_ratio,
-                    4,
-                ),
+                "average":
+                    self._round(
+                        average
+                    ),
 
-                "coverage_percent": round(
-                    coverage_percent,
-                    2,
-                ),
+                "maximum":
+                    self._round(
+                        maximum
+                    ),
 
-                "complete": complete,
+                "minimum":
+                    self._round(
+                        minimum
+                    ),
 
-                "data_quality": data_quality,
+                "coverage_ratio":
+                    round(
+                        coverage_ratio,
+                        4,
+                    ),
 
-                "status": "ok",
+                "coverage_percent":
+                    round(
+                        coverage_percent,
+                        2,
+                    ),
+
+                "complete":
+                    complete,
+
+                "data_quality":
+                    data_quality,
 
                 "raw_datapoints":
                     raw_datapoints,
@@ -723,8 +850,10 @@ class CloudWatchMetricCollector:
 
         return result
 
-       # AGGREGATION
-   
+    # ==================================================================
+    # AGGREGATION
+    # ==================================================================
+
     @classmethod
     def _select_metric_value(
         cls,
@@ -732,29 +861,6 @@ class CloudWatchMetricCollector:
         values: List[float],
         weighted_average: Optional[float] = None,
     ) -> float:
-        """
-        Aggregate datapoints according to their CloudWatch statistic.
-
-        Important:
-
-        Sum
-            Sum of period sums.
-
-        Average
-            Weighted average when SampleCount is available.
-
-        Maximum
-            Maximum observed period value.
-
-        Minimum
-            Minimum observed period value.
-
-        SampleCount
-            Sum of sample counts.
-
-        This does not attempt to manufacture values for
-        missing datapoints.
-        """
 
         if not values:
             return 0.0
@@ -786,8 +892,10 @@ class CloudWatchMetricCollector:
             / len(values)
         )
 
-       # DATA QUALITY
-   
+    # ==================================================================
+    # DATA QUALITY
+    # ==================================================================
+
     @classmethod
     def _determine_data_quality(
         cls,
@@ -805,8 +913,50 @@ class CloudWatchMetricCollector:
 
         return "poor"
 
-       # ROUNDING
-   
+    # ==================================================================
+    # HELPERS
+    # ==================================================================
+
+    @staticmethod
+    def _deduplicate_datapoints(
+        datapoints: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+
+        seen: dict[
+            datetime,
+            Dict[str, Any],
+        ] = {}
+
+        for point in datapoints:
+
+            if not isinstance(point, dict):
+                continue
+
+            timestamp = point.get(
+                "Timestamp"
+            )
+
+            if timestamp is None:
+                continue
+
+            timestamp = (
+                CloudWatchMetricCollector
+                ._normalize_datetime(
+                    timestamp
+                )
+            )
+
+            seen[timestamp] = point
+
+        return sorted(
+            seen.values(),
+            key=lambda point:
+                CloudWatchMetricCollector
+                ._normalize_datetime(
+                    point["Timestamp"]
+                ),
+        )
+
     @staticmethod
     def _round(
         value: Optional[float],
@@ -820,13 +970,13 @@ class CloudWatchMetricCollector:
             6,
         )
 
-   
     @staticmethod
     def _normalize_datetime(
         value: datetime,
     ) -> datetime:
 
         if value.tzinfo is None:
+
             return value.replace(
                 tzinfo=timezone.utc
             )

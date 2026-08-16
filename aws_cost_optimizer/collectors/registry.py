@@ -13,6 +13,7 @@ IMPORT_ERRORS: dict[str, str] = {}
 
 
 def register(cls):
+    
     COLLECTORS[cls.key] = cls
     return cls
 

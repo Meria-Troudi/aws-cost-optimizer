@@ -1,3 +1,7 @@
+import os
+import sys
+
+
 def init_db():
     from .connection import engine
     from .base import Base
@@ -16,5 +20,18 @@ def init_db():
 
 
 if __name__ == "__main__":
+    # Allow running as a script by adding project root to path
+    _project_root = os.path.dirname(
+        os.path.dirname(
+            os.path.dirname(
+                os.path.abspath(__file__)
+            )
+        )
+    )
+    if _project_root not in sys.path:
+        sys.path.insert(0, _project_root)
+
+    from backend.database.init_db import init_db
+
     init_db()
     print("Database initialized.")

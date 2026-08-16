@@ -1,5 +1,8 @@
 """
 Analysis context.
+
+Provides a stable interface for analyzers to consume collector
+output without knowing the internal resource document layout.
 """
 
 from __future__ import annotations
@@ -7,9 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .billing_consistency import (
-    billing_from_cost_context,
-    compare_rds_billing_class,
+from .billing import (
+    normalize_billing_context,
 )
 
 from .metrics import (
@@ -26,27 +28,73 @@ from .metrics import (
 class AnalysisContext:
 
     resource: dict[str, Any]
+
     scan_id: int | str | None = None
 
     account_id: str | None = None
 
-    observation_period: dict[str, Any] | None = None
+    observation_period: (
+        dict[str, Any] | None
+    ) = None
 
-    cost_context: dict[str, Any] | None = None
+    cost_context: (
+        dict[str, Any] | None
+    ) = None
+
+    # ==============================================================
+    # IDENTITY
+    # ==============================================================
 
     @property
-    def resource_id(self) -> str | None:
-        return self.resource.get("resource_id")
+    def resource_id(
+        self,
+    ) -> str | None:
+
+        value = self.resource.get(
+            "resource_id"
+        )
+
+        if value is None:
+            return None
+
+        return str(value)
 
     @property
-    def resource_type(self) -> str | None:
-        return self.resource.get("resource_type")
+    def resource_type(
+        self,
+    ) -> str | None:
+
+        value = self.resource.get(
+            "resource_type"
+        )
+
+        if value is None:
+            return None
+
+        return str(value)
 
     @property
-    def region(self) -> str | None:
-        return self.resource.get("region")
+    def region(
+        self,
+    ) -> str | None:
 
-    def observations(self) -> dict[str, Any]:
+        value = self.resource.get(
+            "region"
+        )
+
+        if value is None:
+            return None
+
+        return str(value)
+
+    # ==============================================================
+    # COLLECTOR DATA
+    # ==============================================================
+
+    def observations(
+        self,
+    ) -> dict[str, Any]:
+
         value = self.resource.get(
             "observations",
             {},
@@ -58,10 +106,15 @@ class AnalysisContext:
             else {}
         )
 
-    def cloudwatch(self) -> dict[str, Any]:
-        value = self.observations().get(
-            "cloudwatch",
-            {},
+    def cloudwatch(
+        self,
+    ) -> dict[str, Any]:
+
+        value = (
+            self.observations().get(
+                "cloudwatch",
+                {},
+            )
         )
 
         return (
@@ -70,10 +123,15 @@ class AnalysisContext:
             else {}
         )
 
-    def metrics(self) -> dict[str, Any]:
-        value = self.cloudwatch().get(
-            "metrics",
-            {},
+    def metrics(
+        self,
+    ) -> dict[str, Any]:
+
+        value = (
+            self.cloudwatch().get(
+                "metrics",
+                {},
+            )
         )
 
         return (
@@ -82,10 +140,15 @@ class AnalysisContext:
             else {}
         )
 
-    def derived(self) -> dict[str, Any]:
-        value = self.observations().get(
-            "derived",
-            {},
+    def derived(
+        self,
+    ) -> dict[str, Any]:
+
+        value = (
+            self.observations().get(
+                "derived",
+                {},
+            )
         )
 
         return (
@@ -94,7 +157,10 @@ class AnalysisContext:
             else {}
         )
 
-    def topology(self) -> dict[str, Any]:
+    def topology(
+        self,
+    ) -> dict[str, Any]:
+
         value = self.resource.get(
             "topology",
             {},
@@ -106,7 +172,10 @@ class AnalysisContext:
             else {}
         )
 
-    def configuration(self) -> dict[str, Any]:
+    def configuration(
+        self,
+    ) -> dict[str, Any]:
+
         value = self.resource.get(
             "configuration",
             {},
@@ -118,18 +187,98 @@ class AnalysisContext:
             else {}
         )
 
-    def billing(self) -> dict[str, Any]:
-        return billing_from_cost_context(
-            self.cost_context
-            or self.resource.get("cost_context")
+    def identity(
+        self,
+    ) -> dict[str, Any]:
+
+        value = self.resource.get(
+            "identity",
+            {},
         )
+
+        return (
+            value
+            if isinstance(value, dict)
+            else {}
+        )
+
+    # ==============================================================
+    # BILLING
+    # ==============================================================
+
+    def billing(
+        self,
+    ) -> dict[str, Any]:
+
+        value = (
+            self.cost_context
+            or self.resource.get(
+                "cost_context"
+            )
+        )
+
+        return normalize_billing_context(
+            value
+        )
+
+    def billing_amount(
+        self,
+    ) -> float | None:
+
+        billing = self.billing()
+
+        value = billing.get(
+            "amount"
+        )
+
+        if isinstance(
+            value,
+            (int, float),
+        ):
+            return float(value)
+
+        return None
+
+    # ==============================================================
+    # OBSERVATION PERIOD
+    # ==============================================================
+
+    def period(
+        self,
+    ) -> dict[str, Any]:
+
+        if isinstance(
+            self.observation_period,
+            dict,
+        ):
+
+            return dict(
+                self.observation_period
+            )
+
+        value = self.resource.get(
+            "observation_period",
+            {},
+        )
+
+        return (
+            dict(value)
+            if isinstance(value, dict)
+            else {}
+        )
+
+    # ==============================================================
+    # METRICS
+    # ==============================================================
 
     def metric(
         self,
         name: str,
     ) -> dict[str, Any]:
 
-        value = self.metrics().get(name)
+        value = self.metrics().get(
+            name
+        )
 
         return (
             value
@@ -201,6 +350,10 @@ class AnalysisContext:
             self.metric(name)
         )
 
+    # ==============================================================
+    # DATA QUALITY
+    # ==============================================================
+
     def collector_data_quality(
         self,
     ) -> dict[str, Any]:
@@ -216,6 +369,16 @@ class AnalysisContext:
             else {}
         )
 
+    def data_quality(
+        self,
+    ) -> dict[str, Any]:
+
+        return self.collector_data_quality()
+
+    # ==============================================================
+    # OPTIMIZATION EVIDENCE
+    # ==============================================================
+
     def optimization_evidence(
         self,
     ) -> dict[str, Any]:
@@ -227,45 +390,45 @@ class AnalysisContext:
         if isinstance(value, dict):
             return value
 
-        relationships = self.resource.get(
-            "relationships",
-            {},
+        relationships = (
+            self.resource.get(
+                "relationships",
+                {},
+            )
         )
 
-        if isinstance(relationships, dict):
+        if isinstance(
+            relationships,
+            dict,
+        ):
 
             nested = relationships.get(
                 "optimization_evidence"
             )
 
-            if isinstance(nested, dict):
+            if isinstance(
+                nested,
+                dict,
+            ):
                 return nested
 
         return {}
+
+    # ==============================================================
+    # COMPATIBILITY
+    # ==============================================================
 
     def rds_billing_match(
         self,
     ) -> dict[str, Any]:
 
-        resource_class = (
-            self.configuration().get(
-                "instance_class"
-            )
-            or self.resource.get(
-                "identity",
-                {},
-            ).get(
-                "db_instance_class"
-            )
+        value = self.resource.get(
+            "rds_billing_match",
+            {},
         )
 
-        billing_usage_type = (
-            self.billing().get(
-                "usage_type"
-            )
-        )
-
-        return compare_rds_billing_class(
-            resource_class,
-            billing_usage_type,
+        return (
+            value
+            if isinstance(value, dict)
+            else {}
         )

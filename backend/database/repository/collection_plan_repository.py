@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..models.collection_plan import CollectionPlan
-from ..utils import json_dumps
 
 
 def save_collection_plan(

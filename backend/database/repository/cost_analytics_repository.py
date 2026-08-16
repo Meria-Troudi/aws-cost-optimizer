@@ -25,6 +25,137 @@ def get_monthly_totals(db: Session, scan_run_id: int) -> list[dict]:
     return [{"month": row.month, "cost": float(row.cost or 0)} for row in rows]
 
 
+def get_month_totals_by_month_keys(
+    db: Session, scan_run_id: int, month_keys: list[str]
+) -> dict[str, float]:
+    rows = (
+        db.query(
+            month_expression(CostRecord.start_date).label("month"),
+            func.sum(CostRecord.amount).label("cost"),
+        )
+        .filter(CostRecord.scan_run_id == scan_run_id)
+        .group_by("month")
+        .all()
+    )
+    result: dict[str, float] = {}
+    for row in rows:
+        result[row.month] = float(row.cost or 0)
+    return {mk: result.get(mk, 0.0) for mk in month_keys}
+
+
+def get_service_costs_for_month(
+    db: Session, scan_run_id: int, month_key: str, limit: int = 5
+) -> list[dict]:
+    rows = (
+        db.query(
+            CostRecord.service,
+            func.sum(CostRecord.amount).label("cost"),
+        )
+        .filter(CostRecord.scan_run_id == scan_run_id)
+        .filter(month_expression(CostRecord.start_date) == month_key)
+        .group_by(CostRecord.service)
+        .order_by(func.sum(CostRecord.amount).desc())
+        .limit(limit)
+        .all()
+    )
+    total = sum(float(r.cost or 0) for r in rows)
+    result = []
+    for rank, row in enumerate(rows, 1):
+        cost = float(row.cost or 0)
+        result.append({
+            "service": row.service,
+            "cost": round(cost, 2),
+            "share_pct": round(cost / total * 100, 1) if total else 0,
+            "rank": rank,
+        })
+    return result
+
+
+def get_region_costs_for_month(
+    db: Session, scan_run_id: int, month_key: str, limit: int = 5
+) -> list[dict]:
+    rows = (
+        db.query(
+            CostRecord.region,
+            func.sum(CostRecord.amount).label("cost"),
+        )
+        .filter(CostRecord.scan_run_id == scan_run_id)
+        .filter(month_expression(CostRecord.start_date) == month_key)
+        .filter(CostRecord.region.isnot(None))
+        .filter(CostRecord.region != "")
+        .group_by(CostRecord.region)
+        .order_by(func.sum(CostRecord.amount).desc())
+        .limit(limit)
+        .all()
+    )
+    total = sum(float(r.cost or 0) for r in rows)
+    result = []
+    for rank, row in enumerate(rows, 1):
+        cost = float(row.cost or 0)
+        region = row.region or "unknown"
+        result.append({
+            "region": region,
+            "cost": round(cost, 2),
+            "share_pct": round(cost / total * 100, 1) if total else 0,
+            "rank": rank,
+        })
+    return result
+
+
+def get_service_count_for_month(db: Session, scan_run_id: int, month_key: str) -> int:
+    count = (
+        db.query(func.count(func.distinct(CostRecord.service)))
+        .filter(CostRecord.scan_run_id == scan_run_id)
+        .filter(month_expression(CostRecord.start_date) == month_key)
+        .filter(CostRecord.amount > 0)
+        .scalar()
+    )
+    return count or 0
+
+
+def get_region_count_for_month(db: Session, scan_run_id: int, month_key: str) -> int:
+    count = (
+        db.query(func.count(func.distinct(CostRecord.region)))
+        .filter(CostRecord.scan_run_id == scan_run_id)
+        .filter(month_expression(CostRecord.start_date) == month_key)
+        .filter(CostRecord.region.isnot(None))
+        .filter(CostRecord.region != "")
+        .filter(CostRecord.amount > 0)
+        .scalar()
+    )
+    return count or 0
+
+
+def get_usage_type_costs_for_month(
+    db: Session, scan_run_id: int, month_key: str, limit: int = 5
+) -> list[dict]:
+    rows = (
+        db.query(
+            CostRecord.usage_type,
+            func.sum(CostRecord.amount).label("cost"),
+        )
+        .filter(CostRecord.scan_run_id == scan_run_id)
+        .filter(month_expression(CostRecord.start_date) == month_key)
+        .filter(CostRecord.usage_type.isnot(None))
+        .filter(CostRecord.usage_type != "")
+        .group_by(CostRecord.usage_type)
+        .order_by(func.sum(CostRecord.amount).desc())
+        .limit(limit)
+        .all()
+    )
+    total = sum(float(r.cost or 0) for r in rows)
+    result = []
+    for rank, row in enumerate(rows, 1):
+        cost = float(row.cost or 0)
+        result.append({
+            "usage_type": row.usage_type,
+            "cost": round(cost, 2),
+            "share_pct": round(cost / total * 100, 1) if total else 0,
+            "rank": rank,
+        })
+    return result
+
+
 def get_service_costs_by_month(db: Session, scan_run_id: int) -> list[dict]:
     rows = (
         db.query(

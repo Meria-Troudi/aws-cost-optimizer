@@ -9,7 +9,6 @@ from typing import Any
 
 import yaml
 
-
 class CollectionProfile:
 
     REQUIRED_SECTIONS = {

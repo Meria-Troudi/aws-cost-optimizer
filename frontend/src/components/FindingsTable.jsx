@@ -4,6 +4,7 @@ import { serviceStyle } from '../utils/serviceStyle'
 function sevClass(s) {
   if (s === 'high') return 'sev-high'
   if (s === 'medium') return 'sev-medium'
+  if (s === 'info') return 'sev-info'
   return 'sev-low'
 }
 
@@ -59,6 +60,7 @@ export default function FindingsTable({ findings, onRowClick }) {
           <option value="high">High</option>
           <option value="medium">Medium</option>
           <option value="low">Low</option>
+          <option value="info">Info</option>
         </select>
         <select value={svcFilter} onChange={(e) => setSvcFilter(e.target.value)}>
           <option value="all">Service: All</option>

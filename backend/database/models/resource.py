@@ -1,6 +1,13 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
@@ -9,13 +16,23 @@ from ..base import Base
 class Resource(Base):
     __tablename__ = "resources"
 
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id",
+            "region",
+            "aws_resource_id",
+            name="uq_resource_identity",
+        ),
+    )
+
     id: Mapped[int] = mapped_column(
         Integer,
         primary_key=True,
     )
 
-    scan_run_id: Mapped[int] = mapped_column(
-        ForeignKey("scan_runs.id"),
+    # Stable identity - NOT tied to a specific scan run.
+    account_id: Mapped[str] = mapped_column(
+        String(32),
         nullable=False,
         index=True,
     )
@@ -40,6 +57,7 @@ class Resource(Base):
     region: Mapped[str | None] = mapped_column(
         String(32),
         nullable=True,
+        index=True,
     )
 
     name: Mapped[str | None] = mapped_column(
@@ -48,23 +66,20 @@ class Resource(Base):
     )
 
     tags: Mapped[str | None] = mapped_column(
-        String,
+        Text,
         nullable=True,
     )
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+        nullable=False,
     )
 
     last_seen: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
-    )
-
-    scan_run = relationship(
-        "ScanRun",
-        back_populates="resources",
+        nullable=False,
     )
 
     snapshots = relationship(

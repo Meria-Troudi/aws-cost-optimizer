@@ -1,501 +1,967 @@
 """
-RDS optimization analyzer.
+RDS cost and performance optimization analyzer.
+
+Design
+------
+Resource-oriented, account-independent, evidence-first.
+
+The analyzer separates:
+
+    stopped resource
+        -> retention review
+
+    idle running resource
+        -> unused/retention review
+
+    low-utilization running resource
+        -> rightsizing review
+
+    capacity/performance pressure
+        -> operational finding
+
+    storage pressure
+        -> capacity review
+
+    provisioned IOPS underuse
+        -> IOPS configuration review
+
+    backup retention
+        -> retention review
+
+    instance-class history
+        -> sizing-history review
+
+The analyzer does NOT decide:
+
+- finding aggregation
+- report scope
+- recommendation grouping
+- billing attribution
+- savings amount
+- replacement instance class
+- deletion
+
+Important evidence rules
+-------------------------
+- Missing metrics never become zero.
+- A metric must be observed before it can participate in a rule.
+- The expected CloudWatch statistic is checked.
+- Workload analysis is suppressed for stopped resources.
+- Partial ReadIOPS/WriteIOPS data does not produce an IOPS-underuse finding.
+- RDS latency is interpreted in seconds internally and reported in milliseconds.
+- Storage pressure uses FreeStorageSpace in bytes against configured storage in GiB.
+- No aggregation scope is set by the analyzer.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from ..billing_consistency import extract_rds_class
+from ..base import Analyzer
 from ..condition import EvidenceStatement
 from ..context import AnalysisContext
 from ..evidence import Evidence
 from ..finding import Finding, ObservationPeriod
-from ..metrics import metric_summary
-from .base import Analyzer
-from .registry import register
-
-
-RDS_CONFIGURATION_FIELDS = (
-    "instance_class",
-    "engine",
-    "engine_version",
-    "multi_az",
-    "availability_zone",
-    "backup_retention_days",
-    "publicly_accessible",
-    "performance_insights_enabled",
-    "storage_type",
-    "allocated_storage_gib",
+from ..metrics import (
+    metric_has_observed_data,
+    metric_summary,
 )
+from ..registry import register
+
+
+# ======================================================================
+# DEFAULT CONFIGURATION
+# ======================================================================
+
+DEFAULT_IDLE_CPU_PERCENT = 5.0
+DEFAULT_LOW_CPU_PERCENT = 15.0
+
+DEFAULT_IDLE_CONNECTIONS = 0.0
+DEFAULT_LOW_CONNECTIONS = 2.0
+
+DEFAULT_IDLE_IOPS = 1.0
+DEFAULT_LOW_IOPS = 10.0
+
+DEFAULT_IDLE_NETWORK_BYTES_PER_SECOND = 1_024.0
+
+# CloudWatch RDS ReadLatency / WriteLatency are reported in seconds.
+# 20 ms = 0.020 seconds.
+DEFAULT_HIGH_LATENCY_MS = 20.0
+
+DEFAULT_STORAGE_PRESSURE_RATIO = 0.80
+
+DEFAULT_IOPS_UNDERUSE_RATIO = 0.20
+
+DEFAULT_HIGH_FREE_MEMORY_PRESSURE = 0.15
+
+DEFAULT_HIGH_BACKUP_RETENTION_DAYS = 14
+
+DEFAULT_MIN_HISTORY_EVENTS = 2
+
+
+# ======================================================================
+# METRIC NAMES
+# ======================================================================
+
+CPU_METRIC = "CPUUtilization"
+CONNECTION_METRIC = "DatabaseConnections"
+
+READ_IOPS_METRIC = "ReadIOPS"
+WRITE_IOPS_METRIC = "WriteIOPS"
+
+READ_LATENCY_METRIC = "ReadLatency"
+WRITE_LATENCY_METRIC = "WriteLatency"
+
+NETWORK_RX_METRIC = "NetworkReceiveThroughput"
+NETWORK_TX_METRIC = "NetworkTransmitThroughput"
+
+FREEABLE_MEMORY_METRIC = "FreeableMemory"
+FREE_STORAGE_METRIC = "FreeStorageSpace"
+
+QUEUE_DEPTH_METRIC = "DiskQueueDepth"
+REPLICA_LAG_METRIC = "ReplicaLag"
+
+
+# ======================================================================
+# EXPECTED CLOUDWATCH STATISTICS
+# ======================================================================
+
+EXPECTED_STATISTICS = {
+    CPU_METRIC: "Average",
+    CONNECTION_METRIC: "Average",
+    READ_IOPS_METRIC: "Average",
+    WRITE_IOPS_METRIC: "Average",
+    READ_LATENCY_METRIC: "Average",
+    WRITE_LATENCY_METRIC: "Average",
+    NETWORK_RX_METRIC: "Average",
+    NETWORK_TX_METRIC: "Average",
+    FREEABLE_MEMORY_METRIC: "Average",
+    FREE_STORAGE_METRIC: "Average",
+    QUEUE_DEPTH_METRIC: "Average",
+    REPLICA_LAG_METRIC: "Average",
+}
+
+
+# ======================================================================
+# CONFIGURATION
+# ======================================================================
+
+
+def _analyzer_config(
+    context: AnalysisContext,
+) -> dict[str, Any]:
+
+    resource = context.resource
+
+    for root_name in (
+        "analyzer_config",
+        "analysis_config",
+        "config",
+    ):
+
+        root = resource.get(
+            root_name
+        )
+
+        if not isinstance(
+            root,
+            dict,
+        ):
+            continue
+
+        value = root.get(
+            "rds"
+        )
+
+        if isinstance(
+            value,
+            dict,
+        ):
+            return value
+
+    return {}
+
+
+def _threshold(
+    context: AnalysisContext,
+    key: str,
+    default: float | int | None,
+) -> float | None:
+
+    value = _analyzer_config(context).get(
+        key
+    )
+
+    if value is None:
+
+        return (
+            float(default)
+            if default is not None
+            else None
+        )
+
+    try:
+
+        result = float(
+            value
+        )
+
+        if result < 0:
+            return (
+                float(default)
+                if default is not None
+                else None
+            )
+
+        return result
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
+        return (
+            float(default)
+            if default is not None
+            else None
+        )
+
+
+# ======================================================================
+# GENERIC HELPERS
+# ======================================================================
+
+
+def _as_number(
+    value: Any,
+) -> float | None:
+
+    if value is None:
+        return None
+
+    try:
+
+        return float(
+            value
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
+        return None
+
+
+def _configuration(
+    context: AnalysisContext,
+) -> dict[str, Any]:
+
+    value = context.configuration()
+
+    return (
+        value
+        if isinstance(value, dict)
+        else {}
+    )
+
+
+def _is_aurora(
+    context: AnalysisContext,
+) -> bool:
+
+    engine = str(
+        _configuration(context).get(
+            "engine",
+            "",
+        )
+    ).lower()
+
+    return engine.startswith(
+        "aurora"
+    )
+
+
+def _metrics(
+    context: AnalysisContext,
+) -> dict[str, Any]:
+
+    value = context.metrics()
+
+    return (
+        value
+        if isinstance(value, dict)
+        else {}
+    )
+
+
+def _metric_value(
+    context: AnalysisContext,
+    name: str,
+) -> float | None:
+
+    return context.metric_value(
+        name
+    )
+
+
+def _metric_ready(
+    context: AnalysisContext,
+    name: str,
+) -> bool:
+
+    metric = context.metric(
+        name
+    )
+
+    if not metric_has_observed_data(
+        metric
+    ):
+        return False
+
+    summary = metric_summary(
+        metric
+    )
+
+    expected = EXPECTED_STATISTICS.get(
+        name
+    )
+
+    if expected is None:
+        return True
+
+    actual = summary.get(
+        "statistic"
+    )
+
+    return (
+        str(actual).strip().lower()
+        == expected.lower()
+    )
+
+
+def _all_metrics_ready(
+    context: AnalysisContext,
+    names: tuple[str, ...],
+) -> bool:
+
+    return all(
+        _metric_ready(
+            context,
+            name,
+        )
+        for name in names
+    )
+
+
+def _any_metric_ready(
+    context: AnalysisContext,
+    names: tuple[str, ...],
+) -> bool:
+
+    return any(
+        _metric_ready(
+            context,
+            name,
+        )
+        for name in names
+    )
+
+
+def _instance_status(
+    context: AnalysisContext,
+) -> str:
+
+    configuration = _configuration(
+        context
+    )
+
+    value = (
+        configuration.get(
+            "status"
+        )
+        or context.resource.get(
+            "status"
+        )
+        or ""
+    )
+
+    return str(
+        value
+    ).strip().lower()
+
+
+def _is_stopped(
+    context: AnalysisContext,
+) -> bool:
+
+    return (
+        _instance_status(context)
+        == "stopped"
+    )
+
+
+def _rightsizing_eligible(
+    context: AnalysisContext,
+) -> bool:
+
+    return _instance_status(
+        context
+    ) in {
+        "available",
+        "backing-up",
+        "storage-optimization",
+    }
+
+
+def _metric_analysis_allowed(
+    context: AnalysisContext,
+) -> bool:
+
+    return not _is_stopped(
+        context
+    )
+
+
+def _observation_period(
+    context: AnalysisContext,
+) -> ObservationPeriod | None:
+
+    value = context.observation_period
+
+    if isinstance(
+        value,
+        dict,
+    ):
+
+        return ObservationPeriod(
+            start=value.get(
+                "start"
+            ),
+            end=value.get(
+                "end"
+            ),
+            duration_seconds=value.get(
+                "duration_seconds"
+            ),
+        )
+
+    cloudwatch = context.cloudwatch()
+
+    start = (
+        cloudwatch.get(
+            "start"
+        )
+        or cloudwatch.get(
+            "metric_start"
+        )
+    )
+
+    end = (
+        cloudwatch.get(
+            "end"
+        )
+        or cloudwatch.get(
+            "metric_end"
+        )
+    )
+
+    if not start and not end:
+        return None
+
+    return ObservationPeriod(
+        start=start,
+        end=end,
+    )
+
+
+def _statement(
+    *,
+    name: str,
+    value: Any,
+    description: str,
+    source: list[str],
+) -> EvidenceStatement:
+
+    return EvidenceStatement(
+        name=name,
+        value=value,
+        description=description,
+        source=list(
+            source
+        ),
+    )
+
+
+def _metric_evidence(
+    context: AnalysisContext,
+    name: str,
+    label: str | None = None,
+) -> EvidenceStatement:
+
+    return _statement(
+        name=name,
+        value=context.metric_summary(
+            name
+        ),
+        description=(
+            label
+            or f"{name} observation"
+        ),
+        source=[
+            f"CloudWatch.{name}"
+        ],
+    )
+
+
+# ======================================================================
+# ANALYZER
+# ======================================================================
 
 
 @register
 class RDSAnalyzer(Analyzer):
 
     name = "rds"
-    version = "1.0"
-    resource_type = "rds_instance"
+    version = "4.0"
 
-    IDLE_CPU_PERCENT = 5.0
-    LOW_CPU_PERCENT = 15.0
-    IDLE_CONNECTIONS = 0.0
-    LOW_CONNECTIONS = 2.0
-    LOW_READ_IOPS = 1.0
-    LOW_WRITE_IOPS = 1.0
-    LOW_NETWORK_BYTES_PER_SECOND = 1024.0
+    SUPPORTED_RESOURCE_TYPES = {
+        "rds_instance",
+        "rds",
+    }
 
- 
-    LOW_MEMORY_FREE_RATIO = 0.15
-    HIGH_BACKUP_RETENTION_DAYS = 14
-    HIGH_STORAGE_UTILIZATION = 0.80
-
-
-    OLD_INSTANCE_FAMILIES = (
-        "db.t2.",
-        "db.m3.",
-        "db.m4.",
-        "db.r3.",
-        "db.r4.",
-    )
-
+    # ==================================================================
+    # SUPPORT
+    # ==================================================================
 
     def supports(
         self,
         context: AnalysisContext,
     ) -> bool:
-        return context.resource_type in (
-            "rds_instance",
-            "rds",
+
+        return (
+            context.resource_type
+            in self.SUPPORTED_RESOURCE_TYPES
         )
+
+    # ==================================================================
+    # ANALYZE
+    # ==================================================================
 
     def analyze(
         self,
         context: AnalysisContext,
     ) -> list[Finding]:
-        if not self.supports(context):
+
+        if not self.supports(
+            context
+        ):
             return []
 
-        raw_findings = self._run_checks(context.resource)
-        return [
-            self._to_finding(context, raw)
-            for raw in raw_findings
-        ]
+        findings: list[
+            Finding
+        ] = []
 
-    def _run_checks(self, resource: Dict[str, Any],) -> List[Dict[str, Any]]:
-        if not self._is_rds_resource(resource):
-            return []
-        findings: List[Dict[str, Any]] = []
-        idle = self._check_idle_instance( resource)
+        # --------------------------------------------------------------
+        # Current resource state
+        # --------------------------------------------------------------
 
-        if idle:
-            findings.append(idle)
-        oversized = self._check_oversized_instance( resource)
+        stopped_finding = (
+            self._check_stopped_instance(
+                context
+            )
+        )
 
-        if oversized:
-            findings.append(oversized)
+        if stopped_finding is not None:
+            findings.append(
+                stopped_finding
+            )
 
-        multi_az = self._check_multi_az( resource)
-        if multi_az:
-            findings.append(multi_az)
+        # --------------------------------------------------------------
+        # Configuration findings
+        # --------------------------------------------------------------
 
-        backup = self._check_backup_retention(resource)
+        backup_finding = (
+            self._check_backup_retention(
+                context
+            )
+        )
 
-        if backup:
-            findings.append(backup)
+        if backup_finding is not None:
+            findings.append(
+                backup_finding
+            )
 
+        history_finding = (
+            self._check_class_change_history(
+                context
+            )
+        )
 
-        performance_insights = ( self._check_performance_insights( resource))
-        if performance_insights:
-            findings.append(performance_insights)
+        if history_finding is not None:
+            findings.append(
+                history_finding
+            )
 
+        # --------------------------------------------------------------
+        # Workload findings
+        #
+        # Never interpret metrics from a stopped instance as workload
+        # activity.
+        # --------------------------------------------------------------
 
-        high_io = self._check_high_io( resource)
+        if _metric_analysis_allowed(
+            context
+        ):
 
-        if high_io:
-            findings.append(high_io)
+            checks = (
+                self._check_idle_instance,
+                self._check_low_utilization,
+                self._check_memory_pressure,
+                self._check_io_pressure,
+                self._check_io_latency,
+                self._check_storage_pressure,
+                self._check_iops_underuse,
+                self._check_underused_read_replica,
+            )
 
-        old_generation = (self._check_old_generation(resource ) )
-        if old_generation:
-            findings.append(old_generation)
+            for check in checks:
 
-        replica = self._check_read_replica( resource )
-        if replica:
-            findings.append(replica)
+                finding = check(
+                    context
+                )
 
-        aurora = self._check_aurora_context( resource )
-        if aurora:
-            findings.append(aurora)
+                if finding is not None:
+                    findings.append(
+                        finding
+                    )
 
-        public = self._check_public_accessibility( resource)
-        if public:
-            findings.append(public)
         return findings
 
-    @classmethod
-    def _is_rds_resource(cls, resource: Dict[str, Any]) -> bool:
+    # ==================================================================
+    # RULE 1 — STOPPED
+    # ==================================================================
 
-        resource_type = resource.get( "resource_type")
-        if resource_type == cls.resource_type:
-            return True
-        if resource_type == "rds":
-            return True
-        if resource.get("type") == "rds_instance":
-            return True
+    def _check_stopped_instance(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
 
-        return False
-
-    @staticmethod
-    def _resource_id(
-        resource: Dict[str, Any],
-    ) -> str:
-
-        return str(
-            resource.get( "resource_id")
-            or resource.get("id")
-            or resource.get("configuration",{}, ).get( "db_instance_identifier","unknown", )
-        )
-    @staticmethod
-    def _configuration(
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        configuration = resource.get( "configuration", {}, )
-        if not isinstance(configuration, dict):
-            return {}
-        return configuration
-
-    @staticmethod
-    def _observations(
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        observations = resource.get( "observations", {}, )
-        if not isinstance(observations, dict):
-            return {}
-
-        return observations
-
-    @classmethod
-    def _metrics(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        observations = cls._observations(resource)
-        cloudwatch = observations.get("cloudwatch", {}, )    
-        if not isinstance(cloudwatch, dict):
-            return {}
-
-        metrics = cloudwatch.get("metrics", {}, )
-        if not isinstance(metrics, dict):
-            return {}
-
-        return metrics
-
-  
-    @classmethod
-    def _metric_value(
-        cls,
-        resource: Dict[str, Any],
-        metric_name: str,
-    ) -> Optional[float]:
-
-        metrics = cls._metrics(resource)
-        metric = metrics.get(metric_name)
-        if not isinstance(
-            metric,
-            dict,
+        if not _is_stopped(
+            context
         ):
             return None
 
-        value = metric.get(
-            "value"
+        configuration = _configuration(
+            context
         )
 
-        if value is None:
-            return None
+        engine = configuration.get(
+            "engine"
+        )
 
-        try:
-            return float(value)
-
-        except (
-            TypeError,
-            ValueError,
-        ):
-            return None
-
-    @classmethod
-    def _has_metric(
-        cls,
-        resource: Dict[str, Any],
-        metric_name: str,
-    ) -> bool:
-
-        return (
-            cls._metric_value(
-                resource,
-                metric_name,
+        instance_class = (
+            configuration.get(
+                "instance_class"
             )
-            is not None
-        )
-
-    @staticmethod
-    def _billing_context(
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        context = resource.get(
-            "cost_context",
-            {},
-        )
-
-        if not isinstance(
-            context,
-            dict,
-        ):
-            return {}
-
-        return context
-
-    @classmethod
-    def _billing_usage_type(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[str]:
-
-        context = cls._billing_context(
-            resource
-        )
-
-        candidates = (
-            "usage_type",
-            "billing_usage_type",
-        )
-
-        for key in candidates:
-
-            value = context.get(
-                key
+            or configuration.get(
+                "db_instance_class"
             )
-
-            if value:
-                return str(value)
-
-        billing = context.get(
-            "billing",
-            {},
         )
 
-        if isinstance(
-            billing,
-            dict,
-        ):
+        cluster_id = configuration.get(
+            "db_cluster_identifier"
+        )
 
-            value = (
-                billing.get(
-                    "usage_type"
+        statements = [
+            self._configuration_evidence(
+                context,
+                "status",
+                "stopped",
+            )
+        ]
+
+        if engine:
+
+            statements.append(
+                self._configuration_evidence(
+                    context,
+                    "engine",
+                    engine,
                 )
             )
 
-            if value:
-                return str(value)
+        if instance_class:
 
-        return None
-
-    @classmethod
-    def _billing_instance_class(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[str]:
-
-        usage_type = (
-            cls._billing_usage_type(
-                resource
+            statements.append(
+                self._configuration_evidence(
+                    context,
+                    "instance_class",
+                    instance_class,
+                )
             )
+
+        if cluster_id:
+
+            statements.append(
+                self._configuration_evidence(
+                    context,
+                    "db_cluster_identifier",
+                    cluster_id,
+                )
+            )
+
+        billing_context = (
+            context.rds_billing_match()
         )
 
-        return extract_rds_class(usage_type)
+        if billing_context:
 
+            statements.append(
+                _statement(
+                    name="billing_reconciliation",
+                    value=billing_context,
+                    description=(
+                        "Historical billing/resource "
+                        "reconciliation context."
+                    ),
+                    source=[
+                        "Billing/resource reconciliation"
+                    ],
+                )
+            )
 
-    @classmethod
-    def _check_billing_resource_mismatch(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Deprecated per-resource mismatch check.
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_stopped_instance"
+            ),
+            title=(
+                "RDS instance is stopped"
+            ),
+            severity="medium",
+            confidence="high",
+            reason=(
+                "The current RDS instance is stopped. "
+                "Review whether it is intentionally retained "
+                "and whether storage, backup, recovery, scheduled "
+                "restart, application, or cluster requirements "
+                "justify keeping it."
+            ),
+            statements=statements,
+            metadata={
+                "status":
+                    "stopped",
 
-        Billing attribution is validated at the collection-plan level.
-        A billing usage type must not be attributed to a resource with a
-        different instance class.
-        """
-        return None
+                "engine":
+                    engine,
 
- 
-    @classmethod
+                "instance_class":
+                    instance_class,
+
+                "db_cluster_identifier":
+                    cluster_id,
+
+                "billing_reconciliation":
+                    billing_context,
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=True,
+        )
+
+    # ==================================================================
+    # RULE 2 — IDLE
+    # ==================================================================
+
     def _check_idle_instance(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
 
-        cpu = cls._metric_value(
-            resource,
-            "CPUUtilization",
-        )
-
-        connections = cls._metric_value(
-            resource,
-            "DatabaseConnections",
-        )
-
-        read_iops = cls._metric_value(
-            resource,
-            "ReadIOPS",
-        )
-
-        write_iops = cls._metric_value(
-            resource,
-            "WriteIOPS",
-        )
-
-        network_rx = cls._metric_value(
-            resource,
-            "NetworkReceiveThroughput",
-        )
-
-        network_tx = cls._metric_value(
-            resource,
-            "NetworkTransmitThroughput",
-        )
-        if cpu is None:
-            return None
-
-        if connections is None:
-            return None
-
-        if read_iops is None:
-            return None
-
-        if write_iops is None:
-            return None
-
-      
-        idle_compute = (
-            cpu <= cls.IDLE_CPU_PERCENT
-        )
-
-        idle_connections = (
-            connections <= cls.IDLE_CONNECTIONS
-        )
-
-        idle_io = (
-            read_iops <= cls.LOW_READ_IOPS
-            and
-            write_iops <= cls.LOW_WRITE_IOPS
-        )
-
-        if not (
-            idle_compute
-            and idle_connections
-            and idle_io
+        if not _rightsizing_eligible(
+            context
         ):
             return None
 
-        network_idle = True
+        required = (
+            CPU_METRIC,
+            CONNECTION_METRIC,
+            READ_IOPS_METRIC,
+            WRITE_IOPS_METRIC,
+        )
+
+        if not _all_metrics_ready(
+            context,
+            required,
+        ):
+            return None
+
+        cpu = _metric_value(
+            context,
+            CPU_METRIC,
+        )
+
+        connections = _metric_value(
+            context,
+            CONNECTION_METRIC,
+        )
+
+        read_iops = _metric_value(
+            context,
+            READ_IOPS_METRIC,
+        )
+
+        write_iops = _metric_value(
+            context,
+            WRITE_IOPS_METRIC,
+        )
+
+        if any(
+            value is None
+            for value in (
+                cpu,
+                connections,
+                read_iops,
+                write_iops,
+            )
+        ):
+            return None
+
+        idle_cpu_threshold = (
+            _threshold(
+                context,
+                "idle_cpu_percent",
+                DEFAULT_IDLE_CPU_PERCENT,
+            )
+        )
+
+        idle_connection_threshold = (
+            _threshold(
+                context,
+                "idle_connections",
+                DEFAULT_IDLE_CONNECTIONS,
+            )
+        )
+
+        idle_iops_threshold = (
+            _threshold(
+                context,
+                "idle_iops",
+                DEFAULT_IDLE_IOPS,
+            )
+        )
+
+        if any(
+            value is None
+            for value in (
+                idle_cpu_threshold,
+                idle_connection_threshold,
+                idle_iops_threshold,
+            )
+        ):
+            return None
+
+        if not (
+            cpu <= idle_cpu_threshold
+            and connections <= idle_connection_threshold
+            and read_iops <= idle_iops_threshold
+            and write_iops <= idle_iops_threshold
+        ):
+            return None
+
+        network_rx = _metric_value(
+            context,
+            NETWORK_RX_METRIC,
+        )
+
+        network_tx = _metric_value(
+            context,
+            NETWORK_TX_METRIC,
+        )
+
+        network_threshold = _threshold(
+            context,
+            "idle_network_bytes_per_second",
+            DEFAULT_IDLE_NETWORK_BYTES_PER_SECOND,
+        )
 
         if (
             network_rx is not None
             and network_tx is not None
-        ):
-
-            network_idle = (
-                network_rx
-                <= cls.LOW_NETWORK_BYTES_PER_SECOND
-                and
-                network_tx
-                <= cls.LOW_NETWORK_BYTES_PER_SECOND
+            and network_threshold is not None
+            and (
+                network_rx > network_threshold
+                or network_tx > network_threshold
             )
-
-        if not network_idle:
+        ):
             return None
 
-        return cls._finding(
+        statements = [
+            _metric_evidence(
+                context,
+                CPU_METRIC,
+                "CPU utilization is very low.",
+            ),
+            _metric_evidence(
+                context,
+                CONNECTION_METRIC,
+                "Database connections are negligible.",
+            ),
+            _metric_evidence(
+                context,
+                READ_IOPS_METRIC,
+                "Read I/O is negligible.",
+            ),
+            _metric_evidence(
+                context,
+                WRITE_IOPS_METRIC,
+                "Write I/O is negligible.",
+            ),
+        ]
+
+        if (
+            _metric_ready(
+                context,
+                NETWORK_RX_METRIC,
+            )
+            and _metric_ready(
+                context,
+                NETWORK_TX_METRIC,
+            )
+        ):
+
+            statements.extend(
+                [
+                    _metric_evidence(
+                        context,
+                        NETWORK_RX_METRIC,
+                    ),
+                    _metric_evidence(
+                        context,
+                        NETWORK_TX_METRIC,
+                    ),
+                ]
+            )
+
+        return self._build_finding(
+            context=context,
             finding_type=(
-                "rds_no_activity"
+                "rds_idle_instance"
             ),
-
-            severity="MEDIUM",
-
-            confidence="HIGH",
-
-            resource=resource,
-
+            title=(
+                "RDS instance appears idle"
+            ),
+            severity="medium",
+            confidence="medium",
             reason=(
-                "The RDS instance shows very low "
-                "CPU utilization, zero database "
-                "connections, and negligible I/O "
-                "during the observation period."
+                "Very low CPU, database connections and "
+                "I/O were observed using complete and "
+                "semantically compatible CloudWatch metrics "
+                "during the analysis period."
             ),
-
-            conditions=[
-                {
-                    "name":
-                        "cpu_low",
-
-                    "expected":
-                        f"<= {cls.IDLE_CPU_PERCENT}%",
-
-                    "actual":
-                        cpu,
-
-                    "status":
-                        "PASS",
-                },
-
-                {
-                    "name":
-                        "connections_low",
-
-                    "expected":
-                        f"<= {cls.IDLE_CONNECTIONS}",
-
-                    "actual":
-                        connections,
-
-                    "status":
-                        "PASS",
-                },
-
-                {
-                    "name":
-                        "read_iops_low",
-
-                    "expected":
-                        f"<= {cls.LOW_READ_IOPS}",
-
-                    "actual":
-                        read_iops,
-
-                    "status":
-                        "PASS",
-                },
-
-                {
-                    "name":
-                        "write_iops_low",
-
-                    "expected":
-                        f"<= {cls.LOW_WRITE_IOPS}",
-
-                    "actual":
-                        write_iops,
-
-                    "status":
-                        "PASS",
-                },
-            ],
-
+            statements=statements,
             metadata={
                 "cpu_percent":
                     cpu,
@@ -508,696 +974,672 @@ class RDSAnalyzer(Analyzer):
 
                 "write_iops":
                     write_iops,
-
-                "network_receive_bytes_per_second":
-                    network_rx,
-
-                "network_transmit_bytes_per_second":
-                    network_tx,
-            },
-        )
-
-   
-    @classmethod
-    def _check_oversized_instance(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        configuration = cls._configuration(
-            resource
-        )
-
-        instance_class = configuration.get(
-            "instance_class"
-        )
-
-        if not instance_class:
-            return None
-
-        cpu = cls._metric_value(
-            resource,
-            "CPUUtilization",
-        )
-
-        connections = cls._metric_value(
-            resource,
-            "DatabaseConnections",
-        )
-
-        read_iops = cls._metric_value(
-            resource,
-            "ReadIOPS",
-        )
-
-        write_iops = cls._metric_value(
-            resource,
-            "WriteIOPS",
-        )
-
-        if cpu is None:
-            return None
-
-        if connections is None:
-            return None
-
-        if read_iops is None:
-            return None
-
-        if write_iops is None:
-            return None
-
-        if (
-            cpu <= cls.IDLE_CPU_PERCENT
-            and connections == 0
-            and read_iops <= cls.LOW_READ_IOPS
-            and write_iops <= cls.LOW_WRITE_IOPS
-        ):
-            return None
-
-        low_utilization = (
-            cpu <= cls.LOW_CPU_PERCENT
-        )
-
-        low_connections = (
-            connections <= cls.LOW_CONNECTIONS
-        )
-
-        low_io = (
-            read_iops <= 10.0
-            and
-            write_iops <= 10.0
-        )
-
-        if not (
-            low_utilization
-            and low_connections
-            and low_io
-        ):
-            return None
-
-  
-      
-
-        return cls._finding(
-            finding_type=(
-                "rds_instance_possible_oversized"
-            ),
-
-            severity="MEDIUM",
-
-            confidence="MEDIUM",
-
-            resource=resource,
-
-            reason=(
-                f"RDS instance {instance_class} "
-                "shows consistently low CPU, "
-                "low connections, and low I/O "
-                "during the observation period. "
-                "The instance size should be reviewed "
-                "against workload requirements."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "cpu_low",
-
-                    "expected":
-                        f"<= {cls.LOW_CPU_PERCENT}%",
-
-                    "actual":
-                        cpu,
-
-                    "status":
-                        "PASS",
-                },
-
-                {
-                    "name":
-                        "connections_low",
-
-                    "expected":
-                        f"<= {cls.LOW_CONNECTIONS}",
-
-                    "actual":
-                        connections,
-
-                    "status":
-                        "PASS",
-                },
-
-                {
-                    "name":
-                        "io_low",
-
-                    "expected":
-                        "<= 10 IOPS",
-
-                    "actual":
-                        {
-                            "read":
-                                read_iops,
-
-                            "write":
-                                write_iops,
-                        },
-
-                    "status":
-                        "PASS",
-                },
-            ],
-
-            metadata={
-                "instance_class":
-                    instance_class,
-
-                "cpu_percent":
-                    cpu,
-
-                "database_connections":
-                    connections,
-
-                "read_iops":
-                    read_iops,
-
-                "write_iops":
-                    write_iops,
-            },
-        )
-
-  
-    @classmethod
-    def _check_multi_az(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        configuration = cls._configuration(
-            resource
-        )
-
-        multi_az = configuration.get(
-            "multi_az"
-        )
-
-        if multi_az is not True:
-            return None
-
-        cpu = cls._metric_value(
-            resource,
-            "CPUUtilization",
-        )
-
-        connections = cls._metric_value(
-            resource,
-            "DatabaseConnections",
-        )
-
-        evidence: Dict[str, Any] = {
-            "multi_az":
-                True,
-        }
-
-        if cpu is not None:
-            evidence["cpu_percent"] = cpu
-
-        if connections is not None:
-            evidence["database_connections"] = connections
-
-        return cls._finding(
-            finding_type=(
-                "rds_multi_az_cost_review"
-            ),
-
-            severity="LOW",
-
-            confidence="MEDIUM",
-
-            resource=resource,
-
-            reason=(
-                "The RDS instance is configured for "
-                "Multi-AZ. Review whether the workload "
-                "requires the current availability "
-                "configuration before considering a "
-                "Single-AZ configuration."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "multi_az_enabled",
-
-                    "expected":
-                        False,
-
-                    "actual":
-                        True,
-
-                    "status":
-                        "INFO",
-                }
-            ],
-
-            metadata=evidence,
-        )
-
-    @classmethod
-    def _check_backup_retention(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        configuration = cls._configuration(
-            resource
-        )
-
-        retention = configuration.get(
-            "backup_retention_days"
-        )
-
-        if retention is None:
-            return None
-
-        try:
-            retention = int(
-                retention
-            )
-
-        except (
-            TypeError,
-            ValueError,
-        ):
-            return None
-
-        if (
-            retention
-            <= cls.HIGH_BACKUP_RETENTION_DAYS
-        ):
-            return None
-
-        return cls._finding(
-            finding_type=(
-                "rds_excessive_backup_retention"
-            ),
-
-            severity="LOW",
-
-            confidence="MEDIUM",
-
-            resource=resource,
-
-            reason=(
-                f"Backup retention is configured "
-                f"for {retention} days. Review whether "
-                "the recovery requirements justify "
-                "the current retention period and "
-                "associated backup storage."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "backup_retention_high",
-
-                    "expected":
-                        f"> {cls.HIGH_BACKUP_RETENTION_DAYS} days",
-
-                    "actual":
-                        retention,
-
-                    "status":
-                        "PASS",
-                }
-            ],
-
-            metadata={
-                "backup_retention_days":
-                    retention,
-            },
-        )
-
-    @classmethod
-    def _check_performance_insights(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        configuration = cls._configuration(
-            resource
-        )
-
-        enabled = configuration.get(
-            "performance_insights_enabled"
-        )
-
-        if enabled is not True:
-            return None
-
-        return cls._finding(
-            finding_type=(
-                "rds_performance_insights_review"
-            ),
-
-            severity="LOW",
-
-            confidence="LOW",
-
-            resource=resource,
-
-            reason=(
-                "Performance Insights is enabled. "
-                "Review whether its monitoring capability "
-                "is still required for this workload."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "performance_insights_enabled",
-
-                    "expected":
-                        False,
-
-                    "actual":
-                        True,
-
-                    "status":
-                        "INFO",
-                }
-            ],
-
-            metadata={
-                "performance_insights_enabled":
-                    True,
-            },
-        )
-
-  
-    @classmethod
-    def _check_high_io(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        read_iops = cls._metric_value(
-            resource,
-            "ReadIOPS",
-        )
-
-        write_iops = cls._metric_value(
-            resource,
-            "WriteIOPS",
-        )
-
-        read_latency = cls._metric_value(
-            resource,
-            "ReadLatency",
-        )
-
-        write_latency = cls._metric_value(
-            resource,
-            "WriteLatency",
-        )
-
-        if (
-            read_iops is None
-            and write_iops is None
-        ):
-            return None
-
-        read_iops = (
-            read_iops or 0.0
-        )
-
-        write_iops = (
-            write_iops or 0.0
-        )
-
-        total_iops = (
-            read_iops
-            + write_iops
-        )
-
-       
-        if total_iops < 100:
-            return None
-
-        return cls._finding(
-            finding_type=(
-                "rds_io_intensive_workload"
-            ),
-
-            severity="INFO",
-
-            confidence="HIGH",
-
-            resource=resource,
-
-            reason=(
-                "The RDS workload shows significant "
-                "I/O activity. Storage configuration "
-                "and I/O requirements should be reviewed "
-                "before considering instance downsizing."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "total_iops_high",
-
-                    "expected":
-                        ">= 100 IOPS",
-
-                    "actual":
-                        total_iops,
-
-                    "status":
-                        "PASS",
-                }
-            ],
-
-            metadata={
-                "read_iops":
-                    read_iops,
-
-                "write_iops":
-                    write_iops,
-
-                "total_iops":
-                    total_iops,
-
-                "read_latency":
-                    read_latency,
-
-                "write_latency":
-                    write_latency,
-            },
-        )
-
- 
-    @classmethod
-    def _check_old_generation(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        configuration = cls._configuration(
-            resource
-        )
-
-        instance_class = configuration.get(
-            "instance_class"
-        )
-
-        if not instance_class:
-            return None
-
-        if not any(
-            instance_class.startswith(prefix)
-            for prefix
-            in cls.OLD_INSTANCE_FAMILIES
-        ):
-            return None
-
-        return cls._finding(
-            finding_type=(
-                "rds_old_instance_generation"
-            ),
-
-            severity="LOW",
-
-            confidence="HIGH",
-
-            resource=resource,
-
-            reason=(
-                f"The RDS instance uses "
-                f"{instance_class}, which belongs "
-                "to an older instance generation. "
-                "Evaluate newer generations for "
-                "potentially better price/performance."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "old_instance_generation",
-
-                    "expected":
-                        "newer generation",
-
-                    "actual":
-                        instance_class,
-
-                    "status":
-                        "PASS",
-                }
-            ],
-
-            metadata={
-                "instance_class":
-                    instance_class,
-            },
-        )
-
-  
-    @classmethod
-    def _check_read_replica(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        configuration = cls._configuration(
-            resource
-        )
-
-        replica_source = configuration.get(
-            "read_replica_source"
-        )
-
-        if not replica_source:
-            return None
-
-        connections = cls._metric_value(
-            resource,
-            "DatabaseConnections",
-        )
-
-        network_rx = cls._metric_value(
-            resource,
-            "NetworkReceiveThroughput",
-        )
-
-        network_tx = cls._metric_value(
-            resource,
-            "NetworkTransmitThroughput",
-        )
-
-        low_connections = (
-            connections is not None
-            and
-            connections <= cls.LOW_CONNECTIONS
-        )
-
-        low_network = (
-            network_rx is not None
-            and
-            network_tx is not None
-            and
-            network_rx
-            <= cls.LOW_NETWORK_BYTES_PER_SECOND
-            and
-            network_tx
-            <= cls.LOW_NETWORK_BYTES_PER_SECOND
-        )
-
-        if not (
-            low_connections
-            and low_network
-        ):
-            return None
-
-        return cls._finding(
-            finding_type=(
-                "rds_underused_read_replica"
-            ),
-
-            severity="MEDIUM",
-
-            confidence="MEDIUM",
-
-            resource=resource,
-
-            reason=(
-                "The RDS instance is a read replica "
-                "with very low observed connections "
-                "and network activity. Review whether "
-                "the replica is still required."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "connections_low",
-
-                    "expected":
-                        f"<= {cls.LOW_CONNECTIONS}",
-
-                    "actual":
-                        connections,
-
-                    "status":
-                        "PASS",
-                },
-
-                {
-                    "name":
-                        "network_low",
-
-                    "expected":
-                        "low",
-
-                    "actual":
-                        {
-                            "receive":
-                                network_rx,
-
-                            "transmit":
-                                network_tx,
-                        },
-
-                    "status":
-                        "PASS",
-                },
-            ],
-
-            metadata={
-                "read_replica_source":
-                    replica_source,
-
-                "database_connections":
-                    connections,
 
                 "network_receive":
                     network_rx,
 
                 "network_transmit":
                     network_tx,
+
+                "region":
+                    context.region,
             },
+            recommendation_eligible=True,
         )
 
-  
-    @classmethod
-    def _check_aurora_context(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+    # ==================================================================
+    # RULE 3 — LOW UTILIZATION
+    # ==================================================================
 
-        configuration = cls._configuration(
-            resource
+    def _check_low_utilization(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        if not _rightsizing_eligible(
+            context
+        ):
+            return None
+
+        required = (
+            CPU_METRIC,
+            CONNECTION_METRIC,
+            READ_IOPS_METRIC,
+            WRITE_IOPS_METRIC,
+        )
+
+        if not _all_metrics_ready(
+            context,
+            required,
+        ):
+            return None
+
+        cpu = _metric_value(
+            context,
+            CPU_METRIC,
+        )
+
+        connections = _metric_value(
+            context,
+            CONNECTION_METRIC,
+        )
+
+        read_iops = _metric_value(
+            context,
+            READ_IOPS_METRIC,
+        )
+
+        write_iops = _metric_value(
+            context,
+            WRITE_IOPS_METRIC,
+        )
+
+        if any(
+            value is None
+            for value in (
+                cpu,
+                connections,
+                read_iops,
+                write_iops,
+            )
+        ):
+            return None
+
+        idle_cpu = (
+            cpu
+            <= (
+                _threshold(
+                    context,
+                    "idle_cpu_percent",
+                    DEFAULT_IDLE_CPU_PERCENT,
+                )
+                or 0
+            )
+        )
+
+        idle_connections = (
+            connections
+            <= (
+                _threshold(
+                    context,
+                    "idle_connections",
+                    DEFAULT_IDLE_CONNECTIONS,
+                )
+                or 0
+            )
+        )
+
+        idle_iops = (
+            read_iops
+            <= (
+                _threshold(
+                    context,
+                    "idle_iops",
+                    DEFAULT_IDLE_IOPS,
+                )
+                or 0
+            )
+            and write_iops
+            <= (
+                _threshold(
+                    context,
+                    "idle_iops",
+                    DEFAULT_IDLE_IOPS,
+                )
+                or 0
+            )
+        )
+
+        # Idle already owns the stronger state.
+        if (
+            idle_cpu
+            and idle_connections
+            and idle_iops
+        ):
+            return None
+
+        low_cpu_threshold = (
+            _threshold(
+                context,
+                "low_cpu_percent",
+                DEFAULT_LOW_CPU_PERCENT,
+            )
+        )
+
+        low_connections_threshold = (
+            _threshold(
+                context,
+                "low_connections",
+                DEFAULT_LOW_CONNECTIONS,
+            )
+        )
+
+        low_iops_threshold = (
+            _threshold(
+                context,
+                "low_iops",
+                DEFAULT_LOW_IOPS,
+            )
+        )
+
+        if any(
+            value is None
+            for value in (
+                low_cpu_threshold,
+                low_connections_threshold,
+                low_iops_threshold,
+            )
+        ):
+            return None
+
+        if not (
+            cpu <= low_cpu_threshold
+            and connections <= low_connections_threshold
+            and read_iops <= low_iops_threshold
+            and write_iops <= low_iops_threshold
+        ):
+            return None
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_low_utilization"
+            ),
+            title=(
+                "RDS instance has low utilization"
+            ),
+            severity="medium",
+            confidence="medium",
+            reason=(
+                "CPU, database connections and I/O remain "
+                "low during the analysis period. Review whether "
+                "the current instance capacity exceeds workload "
+                "requirements."
+            ),
+            statements=[
+                _metric_evidence(
+                    context,
+                    CPU_METRIC,
+                ),
+                _metric_evidence(
+                    context,
+                    CONNECTION_METRIC,
+                ),
+                _metric_evidence(
+                    context,
+                    READ_IOPS_METRIC,
+                ),
+                _metric_evidence(
+                    context,
+                    WRITE_IOPS_METRIC,
+                ),
+            ],
+            metadata={
+                "instance_class":
+                    _configuration(
+                        context
+                    ).get(
+                        "instance_class"
+                    ),
+
+                "cpu_percent":
+                    cpu,
+
+                "database_connections":
+                    connections,
+
+                "read_iops":
+                    read_iops,
+
+                "write_iops":
+                    write_iops,
+
+                "thresholds": {
+                    "cpu_percent":
+                        low_cpu_threshold,
+
+                    "connections":
+                        low_connections_threshold,
+
+                    "iops":
+                        low_iops_threshold,
+                },
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=True,
+        )
+
+    # ==================================================================
+    # RULE 4 — MEMORY PRESSURE
+    # ==================================================================
+
+    def _check_memory_pressure(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        if not _metric_ready(
+            context,
+            FREEABLE_MEMORY_METRIC,
+        ):
+            return None
+
+        free_memory = _metric_value(
+            context,
+            FREEABLE_MEMORY_METRIC,
+        )
+
+        if free_memory is None:
+            return None
+
+        configuration = _configuration(
+            context
+        )
+
+        allocated_memory = _as_number(
+            configuration.get(
+                "instance_memory_bytes"
+            )
+        )
+
+        if allocated_memory is None:
+
+            allocated_memory = _as_number(
+                configuration.get(
+                    "memory_bytes"
+                )
+            )
+
+        # Do not guess instance memory.
+        if (
+            allocated_memory is None
+            or allocated_memory <= 0
+        ):
+            return None
+
+        free_ratio = (
+            free_memory
+            / allocated_memory
+        )
+
+        threshold = _threshold(
+            context,
+            "low_free_memory_ratio",
+            DEFAULT_HIGH_FREE_MEMORY_PRESSURE,
+        )
+
+        if (
+            threshold is None
+            or free_ratio >= threshold
+        ):
+            return None
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_memory_pressure"
+            ),
+            title=(
+                "RDS memory pressure"
+            ),
+            severity="medium",
+            confidence="medium",
+            reason=(
+                "Observed freeable memory is low relative "
+                "to the available instance memory."
+            ),
+            statements=[
+                _metric_evidence(
+                    context,
+                    FREEABLE_MEMORY_METRIC,
+                ),
+                self._configuration_evidence(
+                    context,
+                    "instance_memory_bytes",
+                    allocated_memory,
+                ),
+            ],
+            metadata={
+                "freeable_memory_bytes":
+                    free_memory,
+
+                "instance_memory_bytes":
+                    allocated_memory,
+
+                "free_memory_ratio":
+                    round(
+                        free_ratio,
+                        4,
+                    ),
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=False,
+        )
+
+    # ==================================================================
+    # RULE 5 — I/O PRESSURE
+    # ==================================================================
+
+    def _check_io_pressure(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        read_ready = _metric_ready(
+            context,
+            READ_IOPS_METRIC,
+        )
+
+        write_ready = _metric_ready(
+            context,
+            WRITE_IOPS_METRIC,
+        )
+
+        queue_ready = _metric_ready(
+            context,
+            QUEUE_DEPTH_METRIC,
+        )
+
+        if not (
+            read_ready
+            or write_ready
+            or queue_ready
+        ):
+            return None
+
+        read_iops = (
+            _metric_value(
+                context,
+                READ_IOPS_METRIC,
+            )
+            if read_ready
+            else None
+        )
+
+        write_iops = (
+            _metric_value(
+                context,
+                WRITE_IOPS_METRIC,
+            )
+            if write_ready
+            else None
+        )
+
+        queue_depth = (
+            _metric_value(
+                context,
+                QUEUE_DEPTH_METRIC,
+            )
+            if queue_ready
+            else None
+        )
+
+        queue_threshold = _threshold(
+            context,
+            "high_disk_queue_depth",
+            1.0,
+        )
+
+        queue_pressure = (
+            queue_depth is not None
+            and queue_threshold is not None
+            and queue_depth >= queue_threshold
+        )
+
+        total_iops = None
+
+        # Sum only when BOTH directions are available.
+        if (
+            read_iops is not None
+            and write_iops is not None
+        ):
+            total_iops = (
+                read_iops
+                + write_iops
+            )
+
+        iops_threshold = _threshold(
+            context,
+            "high_iops",
+            None,
+        )
+
+        iops_pressure = (
+            total_iops is not None
+            and iops_threshold is not None
+            and total_iops >= iops_threshold
+        )
+
+        if not (
+            queue_pressure
+            or iops_pressure
+        ):
+            return None
+
+        statements: list[
+            EvidenceStatement
+        ] = []
+
+        if read_ready:
+            statements.append(
+                _metric_evidence(
+                    context,
+                    READ_IOPS_METRIC,
+                )
+            )
+
+        if write_ready:
+            statements.append(
+                _metric_evidence(
+                    context,
+                    WRITE_IOPS_METRIC,
+                )
+            )
+
+        if queue_ready:
+            statements.append(
+                _metric_evidence(
+                    context,
+                    QUEUE_DEPTH_METRIC,
+                )
+            )
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_io_pressure"
+            ),
+            title=(
+                "RDS I/O pressure"
+            ),
+            severity="medium",
+            confidence="medium",
+            reason=(
+                "Observed I/O activity or queue depth "
+                "indicates that storage performance should "
+                "be reviewed before reducing capacity."
+            ),
+            statements=statements,
+            metadata={
+                "read_iops":
+                    read_iops,
+
+                "write_iops":
+                    write_iops,
+
+                "queue_depth":
+                    queue_depth,
+
+                "total_iops":
+                    total_iops,
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=False,
+        )
+
+    # ==================================================================
+    # RULE 6 — I/O LATENCY
+    # ==================================================================
+
+    def _check_io_latency(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        read_ready = _metric_ready(
+            context,
+            READ_LATENCY_METRIC,
+        )
+
+        write_ready = _metric_ready(
+            context,
+            WRITE_LATENCY_METRIC,
+        )
+
+        if not (
+            read_ready
+            or write_ready
+        ):
+            return None
+
+        read_latency_seconds = (
+            _metric_value(
+                context,
+                READ_LATENCY_METRIC,
+            )
+            if read_ready
+            else None
+        )
+
+        write_latency_seconds = (
+            _metric_value(
+                context,
+                WRITE_LATENCY_METRIC,
+            )
+            if write_ready
+            else None
+        )
+
+        threshold_ms = _threshold(
+            context,
+            "high_latency_ms",
+            DEFAULT_HIGH_LATENCY_MS,
+        )
+
+        if threshold_ms is None:
+            return None
+
+        read_latency_ms = (
+            read_latency_seconds * 1000.0
+            if read_latency_seconds is not None
+            else None
+        )
+
+        write_latency_ms = (
+            write_latency_seconds * 1000.0
+            if write_latency_seconds is not None
+            else None
+        )
+
+        high_read = (
+            read_latency_ms is not None
+            and read_latency_ms >= threshold_ms
+        )
+
+        high_write = (
+            write_latency_ms is not None
+            and write_latency_ms >= threshold_ms
+        )
+
+        if not (
+            high_read
+            or high_write
+        ):
+            return None
+
+        statements: list[
+            EvidenceStatement
+        ] = []
+
+        if read_ready:
+            statements.append(
+                _metric_evidence(
+                    context,
+                    READ_LATENCY_METRIC,
+                    (
+                        "CloudWatch reports the raw "
+                        "latency value in seconds."
+                    ),
+                )
+            )
+
+        if write_ready:
+            statements.append(
+                _metric_evidence(
+                    context,
+                    WRITE_LATENCY_METRIC,
+                    (
+                        "CloudWatch reports the raw "
+                        "latency value in seconds."
+                    ),
+                )
+            )
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_io_latency"
+            ),
+            title=(
+                "RDS I/O latency"
+            ),
+            severity="medium",
+            confidence="medium",
+            reason=(
+                "Observed read or write latency is above "
+                f"the configured review threshold of "
+                f"{threshold_ms:.2f} ms."
+            ),
+            statements=statements,
+            metadata={
+                "read_latency_seconds":
+                    read_latency_seconds,
+
+                "write_latency_seconds":
+                    write_latency_seconds,
+
+                "read_latency_ms":
+                    read_latency_ms,
+
+                "write_latency_ms":
+                    write_latency_ms,
+
+                "threshold_ms":
+                    threshold_ms,
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=False,
+        )
+
+    # ==================================================================
+    # RULE 7 — STORAGE PRESSURE
+    # ==================================================================
+
+    def _check_storage_pressure(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        configuration = _configuration(
+            context
         )
 
         engine = str(
@@ -1207,260 +1649,850 @@ class RDSAnalyzer(Analyzer):
             )
         ).lower()
 
-        if not engine.startswith(
+        # Aurora storage is managed at cluster/storage-layer level;
+        # do not treat allocated instance storage as an Aurora
+        # instance capacity signal.
+        if engine.startswith(
             "aurora"
         ):
             return None
 
-        cluster_identifier = (
+        if not _metric_ready(
+            context,
+            FREE_STORAGE_METRIC,
+        ):
+            return None
+
+        free_storage_bytes = _metric_value(
+            context,
+            FREE_STORAGE_METRIC,
+        )
+
+        if free_storage_bytes is None:
+            return None
+
+        allocated_gib = _as_number(
             configuration.get(
-                "db_cluster_identifier"
+                "allocated_storage_gib"
             )
         )
 
-        if not cluster_identifier:
-            cluster_identifier = (
-                configuration.get(
-                    "db_cluster_id"
-                )
-            )
-
-        if not cluster_identifier:
+        if (
+            allocated_gib is None
+            or allocated_gib <= 0
+        ):
             return None
 
-       
-        return cls._finding(
+        allocated_bytes = (
+            allocated_gib
+            * (1024 ** 3)
+        )
+
+        if allocated_bytes <= 0:
+            return None
+
+        # Impossible/invalid telemetry should not create a finding.
+        if free_storage_bytes < 0:
+            return None
+
+        if free_storage_bytes > allocated_bytes:
+            return None
+
+        used_ratio = (
+            1.0
+            - (
+                free_storage_bytes
+                / allocated_bytes
+            )
+        )
+
+        threshold = _threshold(
+            context,
+            "storage_pressure_ratio",
+            DEFAULT_STORAGE_PRESSURE_RATIO,
+        )
+
+        if (
+            threshold is None
+            or threshold <= 0
+            or threshold > 1
+        ):
+            return None
+
+        if used_ratio < threshold:
+            return None
+
+        free_gib = (
+            free_storage_bytes
+            / (1024 ** 3)
+        )
+
+        return self._build_finding(
+            context=context,
             finding_type=(
-                "rds_aurora_cluster_context"
+                "rds_storage_pressure"
             ),
-
-            severity="INFO",
-
-            confidence="HIGH",
-
-            resource=resource,
-
+            title=(
+                "RDS storage is highly utilized"
+            ),
+            severity="medium",
+            confidence="high",
             reason=(
-                "The RDS instance belongs to an "
-                "Aurora cluster. Instance-level "
-                "right-sizing should be evaluated "
-                "together with the cluster writer/"
-                "reader topology."
+                f"Observed FreeStorageSpace indicates "
+                f"approximately {used_ratio * 100:.1f}% "
+                f"of allocated storage is in use, above "
+                f"the configured pressure threshold of "
+                f"{threshold * 100:.1f}%."
             ),
-
-            conditions=[
-                {
-                    "name":
-                        "aurora_cluster_detected",
-
-                    "expected":
-                        True,
-
-                    "actual":
-                        True,
-
-                    "status":
-                        "INFO",
-                }
+            statements=[
+                _metric_evidence(
+                    context,
+                    FREE_STORAGE_METRIC,
+                ),
+                self._configuration_evidence(
+                    context,
+                    "allocated_storage_gib",
+                    allocated_gib,
+                ),
             ],
-
             metadata={
-                "engine":
-                    engine,
+                "allocated_storage_gib":
+                    allocated_gib,
 
-                "cluster_identifier":
-                    cluster_identifier,
+                "free_storage_bytes":
+                    free_storage_bytes,
+
+                "free_storage_gib":
+                    free_gib,
+
+                "used_ratio":
+                    round(
+                        used_ratio,
+                        4,
+                    ),
+
+                "pressure_threshold":
+                    threshold,
+
+                "region":
+                    context.region,
             },
+            recommendation_eligible=False,
         )
 
-  
-    @classmethod
-    def _check_public_accessibility(
-        cls,
-        resource: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+    # ==================================================================
+    # RULE 8 — PROVISIONED IOPS UNDERUSE
+    # ==================================================================
 
-        configuration = cls._configuration(
-            resource
-        )
-
-        publicly_accessible = (
-            configuration.get(
-                "publicly_accessible"
-            )
-        )
-
-        if publicly_accessible is not True:
-            return None
-
-        return cls._finding(
-            finding_type=(
-                "rds_public_accessibility"
-            ),
-
-            severity="LOW",
-
-            confidence="HIGH",
-
-            resource=resource,
-
-            reason=(
-                "The RDS instance is publicly "
-                "accessible. Review whether public "
-                "access is required."
-            ),
-
-            conditions=[
-                {
-                    "name":
-                        "publicly_accessible",
-
-                    "expected":
-                        False,
-
-                    "actual":
-                        True,
-
-                    "status":
-                        "FAIL",
-                }
-            ],
-        )
-
-    @classmethod
-    def _finding(
-        cls,
-        *,
-        finding_type: str,
-        severity: str,
-        confidence: str,
-        resource: Dict[str, Any],
-        reason: str,
-        conditions: List[Dict[str, Any]],
-        metadata: Optional[Dict[str, Any]] = None,
-        limitations: Optional[List[str]] = None,
-        recommendation_eligible: bool = True,
-    ) -> Dict[str, Any]:
-        return {
-            "finding_type": finding_type,
-            "severity": severity.lower(),
-            "confidence": confidence.lower(),
-            "resource_id": cls._resource_id(resource),
-            "resource_type": cls.resource_type,
-            "reason": reason,
-            "conditions": conditions,
-            "metadata": metadata or {},
-            "limitations": limitations or [],
-            "recommendation_eligible": recommendation_eligible,
-        }
-
-    def _to_finding(
+    def _check_iops_underuse(
         self,
         context: AnalysisContext,
-        raw: Dict[str, Any],
+    ) -> Finding | None:
+
+        if _is_aurora(
+            context
+        ):
+            return None
+
+        configuration = _configuration(
+            context
+        )
+
+        provisioned_iops = _as_number(
+            configuration.get(
+                "iops"
+            )
+        )
+
+        if (
+            provisioned_iops is None
+            or provisioned_iops <= 0
+        ):
+            return None
+
+        required = (
+            READ_IOPS_METRIC,
+            WRITE_IOPS_METRIC,
+        )
+
+        if not _all_metrics_ready(
+            context,
+            required,
+        ):
+            return None
+
+        read_iops = _metric_value(
+            context,
+            READ_IOPS_METRIC,
+        )
+
+        write_iops = _metric_value(
+            context,
+            WRITE_IOPS_METRIC,
+        )
+
+        if (
+            read_iops is None
+            or write_iops is None
+        ):
+            return None
+
+        observed_iops = (
+            read_iops
+            + write_iops
+        )
+
+        ratio = (
+            observed_iops
+            / provisioned_iops
+        )
+
+        threshold = _threshold(
+            context,
+            "iops_underuse_ratio",
+            DEFAULT_IOPS_UNDERUSE_RATIO,
+        )
+
+        if (
+            threshold is None
+            or threshold <= 0
+            or threshold >= 1
+        ):
+            return None
+
+        if ratio > threshold:
+            return None
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_provisioned_iops_underuse"
+            ),
+            title=(
+                "Provisioned RDS IOPS appears underused"
+            ),
+            severity="low",
+            confidence="medium",
+            reason=(
+                f"Observed average read/write IOPS total "
+                f"about {ratio * 100:.1f}% of provisioned "
+                f"IOPS during the analysis period."
+            ),
+            statements=[
+                self._configuration_evidence(
+                    context,
+                    "iops",
+                    provisioned_iops,
+                ),
+                _metric_evidence(
+                    context,
+                    READ_IOPS_METRIC,
+                ),
+                _metric_evidence(
+                    context,
+                    WRITE_IOPS_METRIC,
+                ),
+            ],
+            metadata={
+                "provisioned_iops":
+                    provisioned_iops,
+
+                "read_iops":
+                    read_iops,
+
+                "write_iops":
+                    write_iops,
+
+                "observed_iops":
+                    observed_iops,
+
+                "utilization_ratio":
+                    round(
+                        ratio,
+                        4,
+                    ),
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=True,
+        )
+
+    # ==================================================================
+    # RULE 9 — READ REPLICA
+    # ==================================================================
+
+    def _check_underused_read_replica(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        configuration = _configuration(
+            context
+        )
+
+        source = configuration.get(
+            "read_replica_source"
+        )
+
+        if not source:
+            return None
+
+        required = (
+            CONNECTION_METRIC,
+            NETWORK_RX_METRIC,
+            NETWORK_TX_METRIC,
+        )
+
+        if not _all_metrics_ready(
+            context,
+            required,
+        ):
+            return None
+
+        connections = _metric_value(
+            context,
+            CONNECTION_METRIC,
+        )
+
+        network_rx = _metric_value(
+            context,
+            NETWORK_RX_METRIC,
+        )
+
+        network_tx = _metric_value(
+            context,
+            NETWORK_TX_METRIC,
+        )
+
+        if any(
+            value is None
+            for value in (
+                connections,
+                network_rx,
+                network_tx,
+            )
+        ):
+            return None
+
+        connection_threshold = _threshold(
+            context,
+            "replica_low_connections",
+            DEFAULT_LOW_CONNECTIONS,
+        )
+
+        network_threshold = _threshold(
+            context,
+            "replica_low_network_bytes_per_second",
+            DEFAULT_IDLE_NETWORK_BYTES_PER_SECOND,
+        )
+
+        if (
+            connection_threshold is None
+            or network_threshold is None
+        ):
+            return None
+
+        if not (
+            connections <= connection_threshold
+            and network_rx <= network_threshold
+            and network_tx <= network_threshold
+        ):
+            return None
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_underused_read_replica"
+            ),
+            title=(
+                "RDS read replica is lightly used"
+            ),
+            severity="medium",
+            confidence="medium",
+            reason=(
+                "The read replica shows low observed "
+                "connections and network activity. "
+                "Review whether it is still required "
+                "for availability, failover, reporting, "
+                "or read-scaling purposes."
+            ),
+            statements=[
+                _metric_evidence(
+                    context,
+                    CONNECTION_METRIC,
+                ),
+                _metric_evidence(
+                    context,
+                    NETWORK_RX_METRIC,
+                ),
+                _metric_evidence(
+                    context,
+                    NETWORK_TX_METRIC,
+                ),
+                self._configuration_evidence(
+                    context,
+                    "read_replica_source",
+                    source,
+                ),
+            ],
+            metadata={
+                "source":
+                    source,
+
+                "connections":
+                    connections,
+
+                "network_receive":
+                    network_rx,
+
+                "network_transmit":
+                    network_tx,
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=True,
+        )
+
+    # ==================================================================
+    # RULE 10 — BACKUP RETENTION
+    # ==================================================================
+
+    def _check_backup_retention(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        retention = _as_number(
+            _configuration(
+                context
+            ).get(
+                "backup_retention_days"
+            )
+        )
+
+        if retention is None:
+            return None
+
+        threshold = _threshold(
+            context,
+            "high_backup_retention_days",
+            DEFAULT_HIGH_BACKUP_RETENTION_DAYS,
+        )
+
+        if (
+            threshold is None
+            or retention <= threshold
+        ):
+            return None
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_backup_retention_review"
+            ),
+            title=(
+                "RDS backup retention review"
+            ),
+            severity="low",
+            confidence="medium",
+            reason=(
+                f"Backup retention is {int(retention)} days. "
+                "Review whether the recovery requirement "
+                "justifies the current retention period."
+            ),
+            statements=[
+                self._configuration_evidence(
+                    context,
+                    "backup_retention_days",
+                    int(retention),
+                )
+            ],
+            metadata={
+                "backup_retention_days":
+                    int(retention),
+
+                "review_threshold_days":
+                    int(threshold),
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=True,
+        )
+
+    # ==================================================================
+    # RULE 11 — CLASS HISTORY
+    # ==================================================================
+
+    def _check_class_change_history(
+        self,
+        context: AnalysisContext,
+    ) -> Finding | None:
+
+        observations = context.observations()
+
+        cloudtrail = observations.get(
+            "cloudtrail",
+            {},
+        )
+
+        if not isinstance(
+            cloudtrail,
+            dict,
+        ):
+            return None
+
+        history = cloudtrail.get(
+            "instance_class_history",
+            [],
+        )
+
+        events = cloudtrail.get(
+            "events",
+            [],
+        )
+
+        if not isinstance(
+            history,
+            list,
+        ):
+            history = []
+
+        if not isinstance(
+            events,
+            list,
+        ):
+            events = []
+
+        classes: list[str] = []
+
+        for value in history:
+
+            if value is None:
+                continue
+
+            text = str(
+                value
+            ).strip()
+
+            if (
+                text
+                and text not in classes
+            ):
+                classes.append(
+                    text
+                )
+
+        minimum_events = int(
+            _threshold(
+                context,
+                "minimum_class_change_events",
+                DEFAULT_MIN_HISTORY_EVENTS,
+            )
+            or DEFAULT_MIN_HISTORY_EVENTS
+        )
+
+        if (
+            len(events)
+            < minimum_events
+        ):
+            return None
+
+        if len(classes) < 2:
+            return None
+
+        return self._build_finding(
+            context=context,
+            finding_type=(
+                "rds_instance_class_changes"
+            ),
+            title=(
+                "RDS sizing changed repeatedly"
+            ),
+            severity="low",
+            confidence="high",
+            reason=(
+                "CloudTrail shows multiple instance-class "
+                "changes during the analysis period. Review "
+                "workload sizing against observed demand before "
+                "making another change."
+            ),
+            statements=[
+                self._cloudtrail_history_evidence(
+                    classes,
+                    events,
+                )
+            ],
+            metadata={
+                "instance_classes":
+                    classes,
+
+                "change_event_count":
+                    len(events),
+
+                "region":
+                    context.region,
+            },
+            recommendation_eligible=False,
+        )
+
+    # ==================================================================
+    # FINDING BUILDER
+    # ==================================================================
+
+    def _build_finding(
+        self,
+        *,
+        context: AnalysisContext,
+        finding_type: str,
+        title: str,
+        severity: str,
+        confidence: str,
+        reason: str,
+        statements: list[
+            EvidenceStatement
+        ],
+        metadata: dict[str, Any],
+        recommendation_eligible: bool,
     ) -> Finding:
-        statements = [
-            self._condition_to_statement(condition)
-            for condition in raw.get("conditions", [])
-            if isinstance(condition, dict)
-        ]
 
-        configuration = context.configuration()
-        metrics = {
-            name: metric_summary(context.metric(name))
-            for name in context.metrics()
-        }
-
-        billing_match = context.rds_billing_match()
+        # --------------------------------------------------------------
+        # IMPORTANT:
+        #
+        # Do not set aggregation_scope here.
+        # FindingAggregator owns report scope.
+        # --------------------------------------------------------------
 
         return Finding(
-            finding_type=raw["finding_type"],
-            resource_type=context.resource_type or self.resource_type,
-            resource_id=context.resource_id or raw.get("resource_id", "unknown"),
+            finding_type=finding_type,
+
+            title=title,
+
+            resource_type=(
+                context.resource_type
+                or "rds_instance"
+            ),
+
+            resource_id=(
+                context.resource_id
+                or "unknown"
+            ),
+
             analyzer=self.name,
+
             analyzer_version=self.version,
-            severity=raw.get("severity", "medium"),
-            confidence=raw.get("confidence", "medium"),
-            reason=raw.get("reason", ""),
+
+            severity=severity.lower(),
+
+            confidence=confidence.lower(),
+
+            reason=reason,
+
             conditions=statements,
-            evidence=Evidence(
-                metrics=metrics,
-                configuration={
-                    key: configuration.get(key)
-                    for key in RDS_CONFIGURATION_FIELDS
-                    if key in configuration
-                },
-                topology=context.topology(),
-                resource={
-                    "resource_id": context.resource_id,
-                    "resource_type": context.resource_type,
-                    "region": context.region,
-                },
-                derived={
-                    "billing_instance_class": raw.get("metadata", {}).get(
-                        "billing_instance_class"
-                    ),
-                    "actual_instance_class": raw.get("metadata", {}).get(
-                        "actual_instance_class"
-                    ),
-                },
-                data_quality={
-                    "billing_resource_match": billing_match,
-                    "category": raw.get("metadata", {}).get("category"),
-                    "blocks_optimization": raw.get("metadata", {}).get(
-                        "blocks_optimization"
-                    ),
-                },
+
+            evidence=self._build_evidence(
+                context,
+                metadata,
             ),
-            observation_period=self._observation_period(context),
-            limitations=raw.get("limitations") or [],
-            metadata=raw.get("metadata") or {},
-            recommendation_eligible=bool(
-                raw.get("recommendation_eligible", True)
+
+            observation_period=(
+                _observation_period(
+                    context
+                )
+            ),
+
+            limitations=[
+                (
+                    "Workload findings use the CloudWatch "
+                    "statistics and observation window collected "
+                    "for this scan; they do not prove that future "
+                    "or intermittent workload behavior will remain "
+                    "the same."
+                )
+                for finding_type_value in (
+                    "rds_idle_instance",
+                    "rds_low_utilization",
+                    "rds_provisioned_iops_underuse",
+                    "rds_underused_read_replica",
+                )
+                if finding_type == finding_type_value
+            ],
+
+            metadata=dict(
+                metadata
+            ),
+
+            recommendation_eligible=(
+                recommendation_eligible
             ),
         )
 
-    @staticmethod
-    def _condition_to_statement(
-        condition: Dict[str, Any],
-    ) -> EvidenceStatement:
-        expected = condition.get("expected")
-        actual = condition.get("actual")
-        status = condition.get("status")
-        if status is None:
-            status = "PASS" if condition.get("passed") else "FAIL"
+    # ==================================================================
+    # EVIDENCE
+    # ==================================================================
 
-        description = condition.get("description")
-        if not description:
-            description = (
-                f"expected={expected!r}, actual={actual!r}, status={status}"
-            )
-
-        return EvidenceStatement(
-            name=condition.get("name") or "condition",
-            value={
-                "expected": expected,
-                "actual": actual,
-                "status": status,
-            },
-            description=description,
-            source=condition.get("source") or [],
-        )
-
-    @staticmethod
-    def _observation_period(
+    def _build_evidence(
+        self,
         context: AnalysisContext,
-    ) -> ObservationPeriod | None:
-        cloudwatch = context.cloudwatch()
-        start = cloudwatch.get("start") or cloudwatch.get("metric_start")
-        end = cloudwatch.get("end") or cloudwatch.get("metric_end")
-        if not start and not end:
-            value = context.observation_period
-            if not value:
-                return None
-            return ObservationPeriod(
-                start=value.get("start"),
-                end=value.get("end"),
-                duration_seconds=value.get("duration_seconds"),
+        metadata: dict[str, Any],
+    ) -> Evidence:
+
+        configuration = _configuration(
+            context
+        )
+
+        metrics = {
+            name:
+                context.metric_summary(
+                    name
+                )
+            for name in _metrics(
+                context
             )
-        return ObservationPeriod(start=start, end=end)
+        }
+
+        allowed_fields = (
+            "instance_class",
+            "db_instance_class",
+            "engine",
+            "engine_version",
+            "status",
+            "multi_az",
+            "availability_zone",
+            "backup_retention_days",
+            "publicly_accessible",
+            "performance_insights_enabled",
+            "storage_type",
+            "allocated_storage_gib",
+            "max_allocated_storage_gib",
+            "iops",
+            "storage_throughput",
+            "storage_encrypted",
+            "db_cluster_identifier",
+            "db_subnet_group",
+            "vpc_id",
+            "read_replica_source",
+            "read_replicas",
+            "monitoring_interval",
+            "promotion_tier",
+            "deletion_protection",
+            "instance_memory_bytes",
+            "memory_bytes",
+        )
+
+        selected_configuration = {
+            key:
+                configuration[key]
+            for key in allowed_fields
+            if key in configuration
+        }
+
+        return Evidence(
+            metrics=metrics,
+
+            configuration=(
+                selected_configuration
+            ),
+
+            topology=(
+                context.topology()
+            ),
+
+            resource={
+                "resource_id":
+                    context.resource_id,
+
+                "resource_type":
+                    context.resource_type,
+
+                "region":
+                    context.region,
+            },
+
+            derived=dict(
+                metadata
+            ),
+
+            data_quality={
+                **context.data_quality(),
+
+                "cloudwatch_metrics":
+                    len(metrics),
+
+                "observation_period_available":
+                    (
+                        _observation_period(
+                            context
+                        )
+                        is not None
+                    ),
+
+                "billing_reconciliation_available":
+                    bool(
+                        context.rds_billing_match()
+                    ),
+
+                "required_statistics": {
+                    key:
+                        EXPECTED_STATISTICS[key]
+                    for key in EXPECTED_STATISTICS
+                    if key in metrics
+                },
+            },
+        )
+
+    # ==================================================================
+    # EVIDENCE HELPERS
+    # ==================================================================
+
+    @staticmethod
+    def _configuration_evidence(
+        context: AnalysisContext,
+        name: str,
+        value: Any,
+    ) -> EvidenceStatement:
+
+        return _statement(
+            name=name,
+
+            value=value,
+
+            description=(
+                "Current RDS configuration: "
+                f"{name}={value}."
+            ),
+
+            source=[
+                "RDS configuration"
+            ],
+        )
+
+    @staticmethod
+    def _cloudtrail_history_evidence(
+        classes: list[str],
+        events: list[Any],
+    ) -> EvidenceStatement:
+
+        return _statement(
+            name="instance_class_history",
+
+            value={
+                "classes":
+                    classes,
+
+                "event_count":
+                    len(events),
+            },
+
+            description=(
+                "CloudTrail records multiple "
+                "instance-class changes during "
+                "the analysis period."
+            ),
+
+            source=[
+                "CloudTrail.ModifyDBInstance"
+            ],
+        )

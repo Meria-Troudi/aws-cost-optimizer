@@ -14,17 +14,8 @@ from aws_cost_optimizer.config.settings import CE_REGION
 
 
 class DashboardCostService:
-    """
-    Read-only Cost Explorer service used by the dashboard.
-    """
-
     def __init__(self) -> None:
         self.client = get_client("ce", CE_REGION)
-
-    # ------------------------------------------------------------------
-    # Generic Cost Explorer helpers
-    # ------------------------------------------------------------------
-
     def _get_cost_and_usage(
         self,
         start: date,
@@ -35,12 +26,6 @@ class DashboardCostService:
         filter_expression: dict[str, Any] | None = None,
         metrics: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """
-        Execute Cost Explorer GetCostAndUsage.
-
-        Handles pagination and merges ResultsByTime blocks.
-        """
-
         params: dict[str, Any] = {
             "TimePeriod": {
                 "Start": start.isoformat(),
@@ -84,10 +69,6 @@ class DashboardCostService:
         results_by_time: dict[str, dict[str, Any]],
         response: dict[str, Any],
     ) -> None:
-        """
-        Merge paginated Cost Explorer responses.
-        """
-
         for block in response.get("ResultsByTime", []):
             period_start = block["TimePeriod"]["Start"]
 
@@ -160,18 +141,6 @@ class DashboardCostService:
     def _amount(
         block: dict[str, Any],
     ) -> float:
-        """
-        Safely extract UnblendedCost.
-
-        Handles two Cost Explorer shapes:
-
-            1. {"Metrics": {"UnblendedCost": {"Amount": "..."}}}
-               (group objects)
-
-            2. {"UnblendedCost": {"Amount": "...", "Unit": "USD"}}
-               (Total objects)
-        """
-
         try:
             if "Metrics" in block:
                 return float(
@@ -187,24 +156,10 @@ class DashboardCostService:
         ):
             return 0.0
 
-    # ------------------------------------------------------------------
-    # Current month / MTD
-    # ------------------------------------------------------------------
-
     def get_mtd(
         self,
         today: date | None = None,
     ) -> dict[str, Any]:
-        """
-        Return current month-to-date spend.
-
-        Example:
-
-            2026-08-01 -> 2026-08-13
-
-        Cost Explorer's end date is exclusive.
-        """
-
         today = today or date.today()
 
         month_start = today.replace(day=1)
@@ -230,29 +185,11 @@ class DashboardCostService:
             "amount": round(total, 2),
             "currency": "USD",
         }
-
-    # ------------------------------------------------------------------
-    # Previous month comparable MTD
-    # ------------------------------------------------------------------
-
     def get_previous_month_comparable_mtd(
         self,
         today: date | None = None,
     ) -> dict[str, Any]:
-        """
-        Compare the same number of elapsed calendar days
-        in the previous month.
 
-        Example:
-
-            Current:
-                August 1 -> August 13
-
-            Previous:
-                July 1 -> July 13
-
-        The end date sent to Cost Explorer is exclusive.
-        """
 
         today = today or date.today()
 
@@ -297,18 +234,10 @@ class DashboardCostService:
             "amount": round(total, 2),
             "currency": "USD",
         }
-
-    # ------------------------------------------------------------------
-    # MTD comparison
-    # ------------------------------------------------------------------
-
     def get_mtd_comparison(
         self,
         today: date | None = None,
     ) -> dict[str, Any]:
-        """
-        Return MTD and previous comparable MTD together.
-        """
 
         current = self.get_mtd(today)
         previous = self.get_previous_month_comparable_mtd(
@@ -348,22 +277,11 @@ class DashboardCostService:
             ),
             "direction": direction,
         }
-
-    # ------------------------------------------------------------------
-    # Monthly historical cost
-    # ------------------------------------------------------------------
-
     def get_monthly_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return monthly total cost.
-
-        This is the main source for the historical
-        cost graph.
-        """
 
         results = self._get_cost_and_usage(
             start,
@@ -406,20 +324,11 @@ class DashboardCostService:
             )
 
         return output
-
-    # ------------------------------------------------------------------
-    # Service cost
-    # ------------------------------------------------------------------
-
     def get_service_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return total cost grouped by AWS service.
-        """
-
         results = self._get_cost_and_usage(
             start,
             end,
@@ -458,25 +367,11 @@ class DashboardCostService:
             totals,
             "service",
         )
-
-    # ------------------------------------------------------------------
-    # Service monthly history
-    # ------------------------------------------------------------------
-
     def get_service_monthly_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return monthly service costs.
-
-        Useful for:
-            - service trend graph
-            - MoM service changes
-            - service breakdown
-        """
-
         results = self._get_cost_and_usage(
             start,
             end,
@@ -520,20 +415,11 @@ class DashboardCostService:
                 )
 
         return output
-
-    # ------------------------------------------------------------------
-    # Regional cost
-    # ------------------------------------------------------------------
-
     def get_region_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return total cost grouped by AWS region.
-        """
-
         results = self._get_cost_and_usage(
             start,
             end,
@@ -572,20 +458,11 @@ class DashboardCostService:
             totals,
             "region",
         )
-
-    # ------------------------------------------------------------------
-    # Regional monthly history
-    # ------------------------------------------------------------------
-
     def get_region_monthly_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return monthly regional cost.
-        """
-
         results = self._get_cost_and_usage(
             start,
             end,
@@ -629,19 +506,12 @@ class DashboardCostService:
                 )
 
         return output
-
-    # ------------------------------------------------------------------
-    # Usage type
-    # ------------------------------------------------------------------
-
     def get_usage_type_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return cost grouped by usage type.
-        """
+
 
         results = self._get_cost_and_usage(
             start,
@@ -685,24 +555,11 @@ class DashboardCostService:
             "usage_type",
         )
 
-    # ------------------------------------------------------------------
-    # Service + usage type
-    # ------------------------------------------------------------------
-
     def get_service_usage_type_cost(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Return:
-
-            service
-                usage type
-                    cost
-
-        This is useful for identifying cost drivers.
-        """
 
         results = self._get_cost_and_usage(
             start,
@@ -752,19 +609,11 @@ class DashboardCostService:
                 )
 
         return output
-
-    # ------------------------------------------------------------------
-    # Number of services
-    # ------------------------------------------------------------------
-
     def get_service_count(
         self,
         start: date,
         end: date,
     ) -> int:
-        """
-        Number of services with positive cost.
-        """
 
         services = self.get_service_cost(
             start,
@@ -778,19 +627,11 @@ class DashboardCostService:
                 if item["amount"] > 0
             ]
         )
-
-    # ------------------------------------------------------------------
-    # Number of regions
-    # ------------------------------------------------------------------
-
     def get_region_count(
         self,
         start: date,
         end: date,
     ) -> int:
-        """
-        Number of regions with positive cost.
-        """
 
         regions = self.get_region_cost(
             start,
@@ -804,25 +645,11 @@ class DashboardCostService:
                 if item["amount"] > 0
             ]
         )
-
-    # ------------------------------------------------------------------
-    # Average / highest / lowest
-    # ------------------------------------------------------------------
-
     def get_monthly_statistics(
         self,
         start: date,
         end: date,
     ) -> dict[str, Any]:
-        """
-        Calculate:
-
-            - total spend
-            - average monthly spend
-            - highest month
-            - lowest month
-        """
-
         months = self.get_monthly_cost(
             start,
             end,
@@ -862,20 +689,11 @@ class DashboardCostService:
             "lowest": lowest,
             "months": months,
         }
-
-    # ------------------------------------------------------------------
-    # Month-over-month service changes
-    # ------------------------------------------------------------------
-
     def get_service_month_over_month(
         self,
         start: date,
         end: date,
     ) -> list[dict[str, Any]]:
-        """
-        Compare each service against its previous month.
-        """
-
         history = self.get_service_monthly_cost(
             start,
             end,
@@ -987,24 +805,13 @@ class DashboardCostService:
 
         return output
 
-    # ------------------------------------------------------------------
-    # Complete dashboard overview
-    # ------------------------------------------------------------------
-
     def get_dashboard_overview(
         self,
         history_start: date,
         history_end: date,
         today: date | None = None,
     ) -> dict[str, Any]:
-        """
-        Build the dashboard overview.
 
-        `history_start` and `history_end` belong exclusively
-        to the dashboard.
-
-        They have no relationship to an optimization ScanRun.
-        """
 
         monthly_statistics = (
             self.get_monthly_statistics(
@@ -1110,18 +917,12 @@ class DashboardCostService:
             "cost_drivers": usage_types,
         }
 
-    # ------------------------------------------------------------------
-    # Ranking
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _rank_costs(
         totals: dict[str, float],
         field_name: str,
     ) -> list[dict[str, Any]]:
-        """
-        Convert cost dictionary to ranked records.
-        """
+
 
         total = sum(
             amount

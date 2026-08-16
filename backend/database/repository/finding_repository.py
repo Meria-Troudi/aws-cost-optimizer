@@ -1,10 +1,11 @@
 """
 Finding persistence.
+
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -15,75 +16,204 @@ from backend.database.utils import json_dumps
 def save_findings(
     db: Session,
     scan_run_id: int,
-    findings: List[Dict[str, Any]],
-) -> List[Finding]:
+    findings: list[dict[str, Any]],
+) -> list[Finding]:
 
-    saved = []
+    saved: list[Finding] = []
 
     for data in findings:
 
-        if not isinstance(data, dict):
+        if not isinstance(
+            data,
+            dict,
+        ):
             continue
 
-        resource_id = data.get("resource_id")
+        resource_id = (
+            data.get(
+                "resource_id"
+            )
+        )
 
         if not resource_id:
-            resource_ids = data.get("resource_ids", [])
-            if resource_ids:
+
+            resource_ids = data.get(
+                "resource_ids"
+            )
+
+            if (
+                isinstance(
+                    resource_ids,
+                    list,
+                )
+                and resource_ids
+            ):
+
                 resource_id = resource_ids[0]
 
         if not resource_id:
-            affected = data.get("affected_resources", [])
-            if affected and isinstance(affected[0], dict):
-                resource_id = affected[0].get("resource_id")
 
-        evidence = data.get("evidence", {})
-        presentation = {
-            "resource_ids": data.get("resource_ids") or [],
-            "resource_count": data.get("resource_count"),
-            "scope": data.get("scope"),
-            "aggregate_evidence": data.get("aggregate_evidence"),
-            "metadata": data.get("metadata"),
-            "observation_periods": data.get("observation_periods"),
-        }
-        if any(presentation.values()):
-            if isinstance(evidence, list):
-                evidence = {
-                    "items": evidence,
-                    "_presentation": presentation,
-                }
-            elif isinstance(evidence, dict):
-                evidence = {
-                    **evidence,
-                    "_presentation": presentation,
-                }
-            else:
-                evidence = {"_presentation": presentation}
+            raise ValueError(
+                "Raw finding is missing resource_id."
+            )
 
+        resource_type = str(
+            data.get(
+                "resource_type"
+            )
+            or "unknown"
+        ).strip()
+
+        finding_type = str(
+            data.get(
+                "finding_type"
+            )
+            or data.get(
+                "finding_key"
+            )
+            or "unknown"
+        ).strip()
+
+        finding_key = str(
+            data.get(
+                "finding_key"
+            )
+            or finding_type
+        ).strip()
+
+        category = str(
+            data.get(
+                "category"
+            )
+            or "optimization"
+        ).strip().lower()
+
+        severity = str(
+            data.get(
+                "severity"
+            )
+            or "info"
+        ).strip().lower()
+
+        confidence = str(
+            data.get(
+                "confidence"
+            )
+            or "medium"
+        ).strip().lower()
+
+        status = str(
+            data.get(
+                "status"
+            )
+            or "active"
+        ).strip().lower()
         finding = Finding(
-            scan_run_id=scan_run_id,
-            analyzer=data.get("analyzer"),
-            analyzer_version=data.get("analyzer_version"),
-            resource_type=data.get("resource_type"),
-            resource_id=resource_id,
-            finding_type=data.get("finding_type"),
-            recommendation_eligible=data.get(
-                "recommendation_eligible",
-                False,
-            ),
-            severity=data.get("severity"),
-            confidence=data.get("confidence"),
-            reason=data.get("reason"),
-            conditions=json_dumps(
-                data.get("conditions", [])
-            ),
-            evidence=json_dumps(
-                evidence
-            ),
-            limitations=json_dumps(
-                data.get("limitations", [])
-            ),
-        )
+                scan_run_id=scan_run_id,
+
+                resource_type=resource_type,
+
+                resource_id=str(
+                    resource_id
+                ),
+
+                finding_key=finding_key,
+
+                finding_type=finding_type,
+
+                category=category,
+
+                aggregation_scope="resource",
+
+                analyzer=str(
+                    data.get("analyzer")
+                    or "unknown"
+                ),
+
+                analyzer_version=str(
+                    data.get("analyzer_version")
+                    or "1.0"
+                ),
+
+                severity=severity,
+
+                confidence=confidence,
+
+                reason=str(
+                    data.get("reason")
+                    or ""
+                ),
+
+                recommendation_eligible=bool(
+                    data.get(
+                        "recommendation_eligible",
+                        False,
+                    )
+                ),
+
+                status=status,
+
+                conditions=json_dumps(
+                    data.get(
+                        "conditions",
+                        [],
+                    )
+                ),
+
+                evidence=json_dumps(
+                    data.get(
+                        "evidence",
+                        {},
+                    )
+                ),
+
+                evidence_summary=json_dumps(
+                    data.get(
+                        "evidence_summary",
+                        [],
+                    )
+                ),
+
+                impact=json_dumps(
+                    data.get(
+                        "impact",
+                        {},
+                    )
+                ),
+
+                limitations=json_dumps(
+                    data.get(
+                        "limitations",
+                        [],
+                    )
+                ),
+
+                account_id=(
+                    str(
+                        data.get("account_id")
+                    )
+                    if data.get("account_id")
+                    else None
+                ),
+
+                region=(
+                    str(
+                        data.get("region")
+                    )
+                    if data.get("region")
+                    else None
+                ),
+
+                observation_period=json_dumps(
+                    data.get(
+                        "observation_period"
+                    )
+                    if data.get(
+                        "observation_period"
+                    )
+                    else None
+                ),
+            )
 
         db.add(
             finding
@@ -93,7 +223,8 @@ def save_findings(
             finding
         )
 
-    db.flush()
+    if saved:
+        db.flush()
 
     return saved
 
@@ -101,31 +232,49 @@ def save_findings(
 def get_findings_by_scan(
     db: Session,
     scan_run_id: int,
-):
+) -> list[Finding]:
 
-    return (
+    severity_order = {
+        "critical": 4,
+        "high": 3,
+        "medium": 2,
+        "low": 1,
+        "info": 0,
+    }
+
+    findings = (
         db.query(Finding)
         .filter(
             Finding.scan_run_id
             == scan_run_id
         )
-        .order_by(
-            Finding.severity.desc()
-        )
         .all()
     )
+
+    findings.sort(
+        key=lambda item: (
+            -severity_order.get(
+                item.severity,
+                0,
+            ),
+
+            item.id,
+        )
+    )
+
+    return findings
 
 
 def get_findings_by_resource(
     db: Session,
     resource_id: str,
-):
+) -> list[Finding]:
 
     return (
         db.query(Finding)
         .filter(
             Finding.resource_id
-            == resource_id
+            == str(resource_id)
         )
         .all()
     )

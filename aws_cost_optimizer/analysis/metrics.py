@@ -1,5 +1,5 @@
 """
-CloudWatch metric semantics for analysis.
+CloudWatch metric semantics.
 """
 
 from __future__ import annotations
@@ -7,19 +7,25 @@ from __future__ import annotations
 from typing import Any
 
 
-def metric_status(metric: dict[str, Any] | None) -> str:
-    """
-    Return a simple metric state.
+def metric_status(
+    metric: dict[str, Any] | None,
+) -> str:
 
-    observed -> metric has datapoints and a numeric value
-    zero     -> metric has datapoints and numeric value is zero
-    missing  -> metric has no observed datapoints
-    unknown  -> metric exists but cannot be evaluated
-    """
-    if not metric:
+    if not isinstance(metric, dict):
         return "missing"
 
-    if metric.get("status") != "ok":
+    status = metric.get("status")
+
+    if status == "error":
+        return "error"
+
+    if status == "invalid_data":
+        return "unknown"
+
+    if status in {
+        "no_data",
+        "missing",
+    }:
         return "missing"
 
     if metric.get("has_data") is not True:
@@ -27,42 +33,92 @@ def metric_status(metric: dict[str, Any] | None) -> str:
 
     value = metric.get("value")
 
-    if not isinstance(value, (int, float)):
+    if not isinstance(
+        value,
+        (int, float),
+    ):
         return "unknown"
 
-    if float(value) == 0:
+    if float(value) == 0.0:
         return "zero"
 
     return "observed"
 
 
+def metric_was_queried(
+    metric: dict[str, Any] | None,
+) -> bool:
+
+    if not isinstance(metric, dict):
+        return False
+
+    return bool(
+        metric.get("metric_name")
+    )
+
+
+def metric_query_succeeded(
+    metric: dict[str, Any] | None,
+) -> bool:
+
+    if not metric_was_queried(metric):
+        return False
+
+    return (
+        metric.get("status")
+        != "error"
+    )
+
+
 def metric_has_observed_data(
     metric: dict[str, Any] | None,
 ) -> bool:
-    if not metric:
+
+    if not isinstance(metric, dict):
         return False
 
     return (
         metric.get("status") == "ok"
         and metric.get("has_data") is True
-        and isinstance(metric.get("value"), (int, float))
+        and isinstance(
+            metric.get("value"),
+            (int, float),
+        )
+    )
+
+
+def metric_has_no_observed_data(
+    metric: dict[str, Any] | None,
+) -> bool:
+
+    return (
+        metric_query_succeeded(metric)
+        and not metric_has_observed_data(
+            metric
+        )
     )
 
 
 def metric_is_zero(
     metric: dict[str, Any] | None,
 ) -> bool:
-    if not metric_has_observed_data(metric):
-        return False
 
-    return float(metric["value"]) == 0.0
+    return (
+        metric_has_observed_data(metric)
+        and float(
+            metric["value"]
+        ) == 0.0
+    )
 
 
 def metric_is_detected(
     metric: dict[str, Any] | None,
 ) -> bool:
-    """True when the metric has confirmed datapoints with a non-zero value."""
-    return metric_status(metric) == "observed"
+
+    return (
+        metric_status(metric)
+        == "observed"
+    )
 
 
 def metric_numeric_value(
@@ -74,30 +130,175 @@ def metric_numeric_value(
 
     value = metric.get("value")
 
-    if isinstance(value, (int, float)):
+    if isinstance(
+        value,
+        (int, float),
+    ):
         return float(value)
 
     return None
+
+
+def metric_statistic(
+    metric: dict[str, Any] | None,
+) -> str | None:
+
+    if not isinstance(metric, dict):
+        return None
+
+    value = metric.get(
+        "statistic"
+    )
+
+    return str(value) if value else None
+
+
+def metric_is_sum(
+    metric: dict[str, Any] | None,
+) -> bool:
+
+    return (
+        metric_statistic(metric)
+        == "Sum"
+    )
+
+
+def metric_sum_value(
+    metric: dict[str, Any] | None,
+) -> float | None:
+
+    if not metric_has_observed_data(metric):
+        return None
+
+    if not metric_is_sum(metric):
+        return None
+
+    return metric_numeric_value(metric)
 
 
 def metric_datapoint_count(
     metric: dict[str, Any] | None,
 ) -> int:
 
-    if not metric:
+    if not isinstance(metric, dict):
         return 0
 
-    datapoints = metric.get("datapoints")
+    datapoints = metric.get(
+        "datapoints"
+    )
 
     if isinstance(datapoints, int):
         return datapoints
 
-    raw = metric.get("raw_datapoints")
+    raw = metric.get(
+        "raw_datapoints"
+    )
 
     if isinstance(raw, list):
         return len(raw)
 
     return 0
+
+
+def _metric_list(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> list[dict[str, Any]]:
+
+    if isinstance(metrics, dict):
+
+        return [
+            metric
+            for metric in metrics.values()
+            if isinstance(metric, dict)
+        ]
+
+    if isinstance(metrics, list):
+
+        return [
+            metric
+            for metric in metrics
+            if isinstance(metric, dict)
+        ]
+
+    return []
+
+
+def count_queried_metrics(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> int:
+
+    return sum(
+        metric_was_queried(metric)
+        for metric in _metric_list(metrics)
+    )
+
+
+def count_observed_metrics(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> int:
+
+    return sum(
+        metric_has_observed_data(metric)
+        for metric in _metric_list(metrics)
+    )
+
+
+def count_zero_metrics(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> int:
+
+    return sum(
+        metric_is_zero(metric)
+        for metric in _metric_list(metrics)
+    )
+
+
+def count_missing_metrics(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> int:
+
+    return sum(
+        metric_has_no_observed_data(metric)
+        for metric in _metric_list(metrics)
+    )
+
+
+def count_metric_errors(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> int:
+
+    return sum(
+        metric_status(metric) == "error"
+        for metric in _metric_list(metrics)
+    )
+
+
+def count_persistable_metrics(
+    metrics:
+        dict[str, Any]
+        | list[Any]
+        | None,
+) -> int:
+
+    return count_observed_metrics(metrics)
 
 
 def all_metrics_observed(
@@ -164,42 +365,16 @@ def sum_observed_values(
         for name in names
     ]
 
-    if any(value is None for value in values):
+    values = [
+        value
+        for value in values
+        if value is not None
+    ]
+
+    if not values:
         return None
 
     return float(sum(values))
-
-
-def metric_statistic(
-    metric: dict[str, Any] | None,
-) -> str | None:
-
-    if not metric:
-        return None
-
-    value = metric.get("statistic")
-
-    return str(value) if value else None
-
-
-def metric_is_sum(
-    metric: dict[str, Any] | None,
-) -> bool:
-
-    return metric_statistic(metric) == "Sum"
-
-
-def metric_sum_value(
-    metric: dict[str, Any] | None,
-) -> float | None:
-
-    if not metric_has_observed_data(metric):
-        return None
-
-    if not metric_is_sum(metric):
-        return None
-
-    return metric_numeric_value(metric)
 
 
 def sum_sum_metrics(
@@ -214,61 +389,104 @@ def sum_sum_metrics(
         for name in names
     ]
 
-    if any(value is None for value in values):
+    values = [
+        value
+        for value in values
+        if value is not None
+    ]
+
+    if not values:
         return None
 
     return float(sum(values))
-
-
-def count_persistable_metrics(
-    metrics: dict[str, Any] | list[Any],
-) -> int:
-
-    if isinstance(metrics, dict):
-        metric_list = list(metrics.values())
-    else:
-        metric_list = list(metrics or [])
-
-    return sum(
-        1
-        for metric in metric_list
-        if metric_has_observed_data(metric)
-    )
 
 
 def metric_summary(
     metric: dict[str, Any] | None,
 ) -> dict[str, Any]:
 
-    if not metric:
+    if not isinstance(metric, dict):
+
         return {
             "status": "missing",
+            "state": "missing",
+            "queried": False,
+            "query_succeeded": False,
             "has_data": False,
+            "observed": False,
+            "zero": False,
             "value": None,
             "datapoints": 0,
+            "statistic": None,
+            "unit": None,
         }
 
+    state = metric_status(metric)
+
+    observed = metric_has_observed_data(
+        metric
+    )
+
     return {
-        "status": metric_status(metric),
-        "has_data": metric_has_observed_data(metric),
-        "value": (
+        "status": state,
+        "state": state,
+
+        "queried":
+            metric_was_queried(metric),
+
+        "query_succeeded":
+            metric_query_succeeded(metric),
+
+        "has_data":
+            observed,
+
+        "observed":
+            observed,
+
+        "zero":
+            metric_is_zero(metric),
+
+        "value":
             metric.get("value")
-            if metric_has_observed_data(metric)
-            else None
-        ),
-        "datapoints": metric_datapoint_count(metric),
-        "requested_period": metric.get(
-            "requested_period"
-        ),
-        "effective_period": metric.get(
-            "effective_period"
-        ),
-        "metric_start": (
-            metric.get("metric_start")
-            or metric.get("start")
-        ),
-        "metric_end": (
-            metric.get("metric_end")
-            or metric.get("end")
-        ),
+            if observed
+            else None,
+
+        "statistic":
+            metric.get("statistic"),
+
+        "unit":
+            metric.get("unit"),
+
+        "datapoints":
+            metric_datapoint_count(metric),
+
+        "requested_period":
+            metric.get("requested_period"),
+
+        "effective_period":
+            metric.get("effective_period"),
+
+        "coverage_ratio":
+            metric.get("coverage_ratio"),
+
+        "coverage_percent":
+            metric.get("coverage_percent"),
+
+        "data_quality":
+            metric.get("data_quality"),
+
+        "metric_start":
+            (
+                metric.get("metric_start")
+                or metric.get("start")
+            ),
+
+        "metric_end":
+            (
+                metric.get("metric_end")
+                or metric.get("end")
+            ),
+
+        "error":
+            metric.get("error"),
     }

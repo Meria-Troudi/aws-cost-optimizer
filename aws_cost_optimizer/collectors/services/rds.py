@@ -1,13 +1,29 @@
 """
 RDS Collector.
+
+Collects:
+- RDS instance identity
+- Instance configuration
+- Storage configuration
+- Availability configuration
+- Backup configuration
+- Performance configuration
+- RDS relationships
+- Aurora cluster context
+- CloudWatch utilization
+- CloudTrail instance-class history
+- VPC/network topology
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from aws_cost_optimizer.config.client import get_client
+from aws_cost_optimizer.config.client import (
+    get_client,
+)
 
 from collectors.base import BaseCollector
 from collectors.registry import register
@@ -33,6 +49,7 @@ class RDSCollector(BaseCollector):
         region: Optional[str] = None,
         profile: Optional[dict] = None,
     ):
+
         super().__init__(
             scan=scan,
             region=region,
@@ -65,14 +82,15 @@ class RDSCollector(BaseCollector):
                 self.region
             )
         )
-
- 
     def _profile_section(
         self,
         section: str,
     ) -> Dict[str, Any]:
 
-        if not self.profile:
+        if not isinstance(
+            self.profile,
+            dict,
+        ):
             return {}
 
         value = self.profile.get(
@@ -94,6 +112,12 @@ class RDSCollector(BaseCollector):
         default: bool = False,
     ) -> bool:
 
+        if not isinstance(
+            section,
+            dict,
+        ):
+            return default
+
         return (
             section.get(
                 "enabled",
@@ -101,8 +125,6 @@ class RDSCollector(BaseCollector):
             )
             is True
         )
-
- 
     def discover(
         self,
     ) -> List[Dict[str, Any]]:
@@ -133,8 +155,11 @@ class RDSCollector(BaseCollector):
 
                 resources.append(
                     {
-                        "id": identifier,
-                        "raw": db,
+                        "id":
+                            identifier,
+
+                        "raw":
+                            db,
                     }
                 )
 
@@ -145,9 +170,9 @@ class RDSCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> str:
 
-        return resource["id"]
-
- 
+        return str(
+            resource["id"]
+        )
     @staticmethod
     def _field_definition(
         field: Any,
@@ -194,13 +219,15 @@ class RDSCollector(BaseCollector):
 
     @staticmethod
     def _get_nested(
-        data: Dict[str, Any],
+        data: Any,
         path: str,
     ) -> Any:
 
-        current: Any = data
+        current = data
 
-        for part in path.split("."):
+        for part in str(
+            path
+        ).split("."):
 
             if not isinstance(
                 current,
@@ -248,7 +275,10 @@ class RDSCollector(BaseCollector):
                 "must be a list"
             )
 
-        result: Dict[str, Any] = {}
+        result: Dict[
+            str,
+            Any,
+        ] = {}
 
         for field in fields:
 
@@ -258,11 +288,11 @@ class RDSCollector(BaseCollector):
                 )
             )
 
-            result[output_name] = (
-                self._get_nested(
-                    source,
-                    source_path,
-                )
+            result[
+                output_name
+            ] = self._get_nested(
+                source,
+                source_path,
             )
 
         return result
@@ -272,15 +302,80 @@ class RDSCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        return self._collect_fields(
-            resource["raw"],
+        raw = resource.get(
+            "raw",
+            {},
+        )
+
+        if not isinstance(
+            raw,
+            dict,
+        ):
+            raw = {}
+
+        result = self._collect_fields(
+            raw,
             "identity",
         )
 
+        result.setdefault(
+            "db_instance_identifier",
+            resource.get(
+                "id"
+            ),
+        )
+
+        result.setdefault(
+            "db_instance_arn",
+            raw.get(
+                "DBInstanceArn"
+            ),
+        )
+
+        result.setdefault(
+            "db_instance_class",
+            raw.get(
+                "DBInstanceClass"
+            ),
+        )
+
+        result.setdefault(
+            "engine",
+            raw.get(
+                "Engine"
+            ),
+        )
+
+        result.setdefault(
+            "engine_version",
+            raw.get(
+                "EngineVersion"
+            ),
+        )
+
+        result.setdefault(
+            "status",
+            raw.get(
+                "DBInstanceStatus"
+            ),
+        )
+
+        return result
     def collect_configuration(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
+
+        raw = resource.get(
+            "raw",
+            {},
+        )
+
+        if not isinstance(
+            raw,
+            dict,
+        ):
+            raw = {}
 
         sections = (
             "configuration",
@@ -290,23 +385,180 @@ class RDSCollector(BaseCollector):
             "performance",
         )
 
-        result: Dict[str, Any] = {}
+        result: Dict[
+            str,
+            Any,
+        ] = {}
 
         for section in sections:
 
             result.update(
                 self._collect_fields(
-                    resource["raw"],
+                    raw,
                     section,
                 )
             )
+        fallback_fields = {
+            "instance_class":
+                raw.get(
+                    "DBInstanceClass"
+                ),
+
+            "engine":
+                raw.get(
+                    "Engine"
+                ),
+
+            "engine_version":
+                raw.get(
+                    "EngineVersion"
+                ),
+
+            "status":
+                raw.get(
+                    "DBInstanceStatus"
+                ),
+
+            "publicly_accessible":
+                raw.get(
+                    "PubliclyAccessible"
+                ),
+
+            "deletion_protection":
+                raw.get(
+                    "DeletionProtection"
+                ),
+
+            "multi_az":
+                raw.get(
+                    "MultiAZ"
+                ),
+
+            "availability_zone":
+                raw.get(
+                    "AvailabilityZone"
+                ),
+
+            "storage_type":
+                raw.get(
+                    "StorageType"
+                ),
+
+            "allocated_storage_gib":
+                raw.get(
+                    "AllocatedStorage"
+                ),
+
+            "max_allocated_storage_gib":
+                raw.get(
+                    "MaxAllocatedStorage"
+                ),
+
+            "iops":
+                raw.get(
+                    "Iops"
+                ),
+
+            "storage_throughput":
+                raw.get(
+                    "StorageThroughput"
+                ),
+
+            "storage_encrypted":
+                raw.get(
+                    "StorageEncrypted"
+                ),
+
+            "kms_key_id":
+                raw.get(
+                    "KmsKeyId"
+                ),
+
+            "backup_retention_days":
+                raw.get(
+                    "BackupRetentionPeriod"
+                ),
+
+            "performance_insights_enabled":
+                raw.get(
+                    "PerformanceInsightsEnabled"
+                ),
+
+            "performance_insights_retention_days":
+                raw.get(
+                    "PerformanceInsightsRetentionPeriod"
+                ),
+
+            "monitoring_interval":
+                raw.get(
+                    "MonitoringInterval"
+                ),
+
+            "promotion_tier":
+                raw.get(
+                    "PromotionTier"
+                ),
+
+            "db_cluster_identifier":
+                raw.get(
+                    "DBClusterIdentifier"
+                ),
+        }
+
+        for key, value in (
+            fallback_fields.items()
+        ):
+
+            if (
+                key not in result
+                or result[key] is None
+            ):
+                result[
+                    key
+                ] = value
+
+        subnet_group = (
+            raw.get(
+                "DBSubnetGroup"
+            )
+            or {}
+        )
+
+        if isinstance(
+            subnet_group,
+            dict,
+        ):
+
+            result.setdefault(
+                "db_subnet_group",
+                subnet_group.get(
+                    "DBSubnetGroupName"
+                ),
+            )
+
+            result.setdefault(
+                "vpc_id",
+                subnet_group.get(
+                    "VpcId"
+                ),
+            )
 
         return result
-
     def collect_relationships(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
+
+        raw = resource.get(
+            "raw",
+            {},
+        )
+
+        if not isinstance(
+            raw,
+            dict,
+        ):
+            raw = {}
 
         section = (
             self._profile_section(
@@ -314,45 +566,110 @@ class RDSCollector(BaseCollector):
             )
         )
 
-        if not self._enabled(
+        result: Dict[
+            str,
+            Any,
+        ] = {}
+
+        if self._enabled(
             section
         ):
-            return {}
 
-        fields = section.get(
-            "fields",
-            [],
-        )
-
-        if not isinstance(
-            fields,
-            list,
-        ):
-            raise ValueError(
-                "'relationships.fields' "
-                "must be a list"
+            fields = section.get(
+                "fields",
+                [],
             )
 
-        result: Dict[str, Any] = {}
-
-        for field in fields:
-
-            source_path, output_name = (
-                self._field_definition(
-                    field
+            if not isinstance(
+                fields,
+                list,
+            ):
+                raise ValueError(
+                    "'relationships.fields' "
+                    "must be a list"
                 )
-            )
 
-            result[output_name] = (
-                self._get_nested(
-                    resource["raw"],
+            for field in fields:
+
+                source_path, output_name = (
+                    self._field_definition(
+                        field
+                    )
+                )
+
+                result[
+                    output_name
+                ] = self._get_nested(
+                    raw,
                     source_path,
                 )
+
+        subnet_group = (
+            raw.get(
+                "DBSubnetGroup"
+            )
+            or {}
+        )
+
+        if isinstance(
+            subnet_group,
+            dict,
+        ):
+
+            result.setdefault(
+                "db_subnet_group",
+                subnet_group.get(
+                    "DBSubnetGroupName"
+                ),
             )
 
+            result.setdefault(
+                "vpc_id",
+                subnet_group.get(
+                    "VpcId"
+                ),
+            )
+
+        result.setdefault(
+            "db_cluster_identifier",
+            raw.get(
+                "DBClusterIdentifier"
+            ),
+        )
+
+        result.setdefault(
+            "read_replica_source",
+            raw.get(
+                "ReadReplicaSourceDBInstanceIdentifier"
+            ),
+        )
+
+        result.setdefault(
+            "read_replicas",
+            raw.get(
+                "ReadReplicaDBInstanceIdentifiers",
+                [],
+            )
+            or [],
+        )
+
+        cluster_id = result.get(
+            "db_cluster_identifier"
+        )
+
+        cluster_context = (
+            self._collect_cluster_context(
+                cluster_id
+            )
+            if cluster_id
+            else {}
+        )
+
+        result[
+            "cluster"
+        ] = cluster_context
+
         return result
-
-
     def collect_topology(
         self,
         resource: Dict[str, Any],
@@ -382,10 +699,34 @@ class RDSCollector(BaseCollector):
         if enabled is not True:
             return {}
 
+        raw = resource.get(
+            "raw",
+            {},
+        )
+
+        if not isinstance(
+            raw,
+            dict,
+        ):
+            raw = {}
+
         vpc_id = self._get_nested(
-            resource["raw"],
+            raw,
             "DBSubnetGroup.VpcId",
         )
+
+        if not vpc_id:
+
+            vpc_id = (
+                collected_resource
+                .get(
+                    "configuration",
+                    {},
+                )
+                .get(
+                    "vpc_id"
+                )
+            )
 
         if not vpc_id:
 
@@ -397,27 +738,65 @@ class RDSCollector(BaseCollector):
                     "RDS instance has no VPC ID",
             }
 
-        return self.topology_collector.collect(
-            vpc_id=vpc_id,
-            resource_type=self.resource_type,
-            resource_id=self.get_resource_id(
-                resource
-            ),
+        topology = (
+            self.topology_collector.collect(
+                vpc_id=vpc_id,
+                resource_type=self.resource_type,
+                resource_id=self.get_resource_id(
+                    resource
+                ),
+            )
         )
 
+        topology = dict(
+            topology
+        )
+
+        topology[
+            "rds"
+        ] = {
+            "db_instance_identifier":
+                resource.get(
+                    "id"
+                ),
+
+            "db_cluster_identifier":
+                raw.get(
+                    "DBClusterIdentifier"
+                ),
+
+            "db_subnet_group":
+                (
+                    raw.get(
+                        "DBSubnetGroup"
+                    )
+                    or {}
+                ),
+        }
+
+        return topology
     def collect_observations(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        observations = (
+        observations_profile = (
             self._profile_section(
                 "observations"
             )
         )
 
+        if not self._enabled(
+            observations_profile,
+            default=True,
+        ):
+            return {
+                "status":
+                    "disabled",
+            }
+
         cloudwatch_profile = (
-            observations.get(
+            observations_profile.get(
                 "cloudwatch",
                 {},
             )
@@ -427,13 +806,24 @@ class RDSCollector(BaseCollector):
             cloudwatch_profile,
             dict,
         ):
-            return {}
+            return {
+                "status":
+                    "invalid",
+            }
 
         if not self._enabled(
             cloudwatch_profile,
             default=True,
         ):
-            return {}
+            return {
+                "cloudwatch": {
+                    "status":
+                        "disabled",
+
+                    "metrics":
+                        {},
+                }
+            }
 
         namespace = (
             cloudwatch_profile.get(
@@ -450,7 +840,8 @@ class RDSCollector(BaseCollector):
 
         period = (
             cloudwatch_profile.get(
-                "period"
+                "period",
+                3600,
             )
         )
 
@@ -461,22 +852,40 @@ class RDSCollector(BaseCollector):
             )
 
         if not metrics:
-            return {}
+            return {
+                "cloudwatch": {
+                    "status":
+                        "no_metrics",
 
-        if period is None:
-            raise ValueError(
-                "CloudWatch profile is missing "
-                "'period'"
-            )
+                    "namespace":
+                        namespace,
+
+                    "metrics":
+                        {},
+                }
+            }
 
         identifier = (
-            resource["raw"].get(
+            resource
+            .get(
+                "raw",
+                {},
+            )
+            .get(
                 "DBInstanceIdentifier"
             )
         )
 
         if not identifier:
-            return {}
+            return {
+                "cloudwatch": {
+                    "status":
+                        "incomplete",
+
+                    "metrics":
+                        {},
+                }
+            }
 
         start, end = (
             self.get_analysis_period()
@@ -510,16 +919,50 @@ class RDSCollector(BaseCollector):
             Any,
         ] = {}
 
+        errors: List[
+            Dict[str, Any]
+        ] = []
+
+        available_count = 0
+
         for result in results:
+
+            if not isinstance(
+                result,
+                dict,
+            ):
+                continue
 
             metric_name = result.get(
                 "metric_name"
             )
 
             if metric_name:
+
                 metric_results[
                     metric_name
                 ] = result
+
+            if result.get(
+                "has_data"
+            ):
+                available_count += 1
+
+            if result.get(
+                "status"
+            ) == "error":
+
+                errors.append(
+                    {
+                        "metric_name":
+                            metric_name,
+
+                        "error":
+                            result.get(
+                                "error"
+                            ),
+                    }
+                )
 
         effective_period = (
             results[0].get(
@@ -530,31 +973,70 @@ class RDSCollector(BaseCollector):
             else period
         )
 
-        result = {
-            "cloudwatch": {
-                "namespace":
-                    namespace,
+        cloudwatch_result = {
+            "status":
+                (
+                    "error"
+                    if (
+                        results
+                        and all(
+                            item.get(
+                                "status"
+                            ) == "error"
+                            for item in results
+                            if isinstance(
+                                item,
+                                dict,
+                            )
+                        )
+                    )
+                    else "ok"
+                ),
 
-                "requested_period":
-                    period,
+            "namespace":
+                namespace,
 
-                "effective_period":
-                    effective_period,
+            "requested_period":
+                int(period),
 
-                "start":
-                    start.isoformat(),
+            "effective_period":
+                effective_period,
 
-                "end":
-                    end.isoformat(),
+            "start":
+                start.isoformat(),
 
-                "dimensions":
-                    dimensions,
+            "end":
+                end.isoformat(),
 
-                "metrics":
-                    metric_results,
-            }
+            "dimensions":
+                dimensions,
+
+            "metric_count":
+                len(
+                    metric_results
+                ),
+
+            "available_metric_count":
+                available_count,
+
+            "error_count":
+                len(
+                    errors
+                ),
+
+            "metrics":
+                metric_results,
         }
 
+        if errors:
+            cloudwatch_result[
+                "errors"
+            ] = errors
+
+        result = {
+            "cloudwatch":
+                cloudwatch_result
+        }
         cloudtrail_history = (
             self._collect_instance_class_history(
                 identifier=identifier,
@@ -562,13 +1044,227 @@ class RDSCollector(BaseCollector):
                 end=end,
             )
         )
-
-        if cloudtrail_history:
-            result["cloudtrail"] = (
-                cloudtrail_history
-            )
+        result[
+            "cloudtrail"
+        ] = cloudtrail_history
 
         return result
+
+
+    def _collect_cluster_context(
+        self,
+        cluster_id: Optional[str],
+    ) -> Dict[str, Any]:
+
+        if not cluster_id:
+            return {
+                "present":
+                    False,
+
+                "status":
+                    "not_applicable",
+
+                "cluster_id":
+                    None,
+            }
+
+        try:
+
+            response = (
+                self.rds.describe_db_clusters(
+                    DBClusterIdentifier=cluster_id
+                )
+            )
+
+        except Exception as exc:
+
+            return {
+                "present":
+                    True,
+
+                "status":
+                    "error",
+
+                "cluster_id":
+                    cluster_id,
+
+                "error":
+                    str(exc),
+            }
+
+        clusters = response.get(
+            "DBClusters",
+            [],
+        )
+
+        if not clusters:
+            return {
+                "present":
+                    True,
+
+                "status":
+                    "not_found",
+
+                "cluster_id":
+                    cluster_id,
+            }
+
+        cluster = clusters[0]
+
+        members = []
+
+        for member in (
+            cluster.get(
+                "DBClusterMembers",
+                [],
+            )
+            or []
+        ):
+
+            if not isinstance(
+                member,
+                dict,
+            ):
+                continue
+
+            members.append(
+                {
+                    "db_instance_identifier":
+                        member.get(
+                            "DBInstanceIdentifier"
+                        ),
+
+                    "is_cluster_writer":
+                        bool(
+                            member.get(
+                                "IsClusterWriter"
+                            )
+                        ),
+
+                    "promotion_tier":
+                        member.get(
+                            "PromotionTier"
+                        ),
+                }
+            )
+
+        writer_instances = [
+            member[
+                "db_instance_identifier"
+            ]
+            for member in members
+            if (
+                member.get(
+                    "is_cluster_writer"
+                )
+                and member.get(
+                    "db_instance_identifier"
+                )
+            )
+        ]
+
+        reader_instances = [
+            member[
+                "db_instance_identifier"
+            ]
+            for member in members
+            if (
+                not member.get(
+                    "is_cluster_writer"
+                )
+                and member.get(
+                    "db_instance_identifier"
+                )
+            )
+        ]
+
+        return {
+            "present":
+                True,
+
+            "status":
+                "ok",
+
+            "cluster_id":
+                cluster.get(
+                    "DBClusterIdentifier"
+                ),
+
+            "engine":
+                cluster.get(
+                    "Engine"
+                ),
+
+            "engine_version":
+                cluster.get(
+                    "EngineVersion"
+                ),
+
+            "status_value":
+                cluster.get(
+                    "Status"
+                ),
+
+            "multi_az":
+                cluster.get(
+                    "MultiAZ"
+                ),
+
+            "availability_zones":
+                cluster.get(
+                    "AvailabilityZones",
+                    [],
+                ),
+
+            "backup_retention_days":
+                cluster.get(
+                    "BackupRetentionPeriod"
+                ),
+
+            "storage_type":
+                cluster.get(
+                    "StorageType"
+                ),
+
+            "members":
+                members,
+
+            "member_count":
+                len(
+                    members
+                ),
+
+            "writer_count":
+                len(
+                    writer_instances
+                ),
+
+            "reader_count":
+                len(
+                    reader_instances
+                ),
+
+            "writer_instances":
+                writer_instances,
+
+            "reader_instances":
+                reader_instances,
+
+            "deletion_protection":
+                cluster.get(
+                    "DeletionProtection"
+                ),
+
+            "storage_encrypted":
+                cluster.get(
+                    "StorageEncrypted"
+                ),
+
+            "kms_key_id":
+                cluster.get(
+                    "KmsKeyId"
+                ),
+        }
 
     def _collect_instance_class_history(
         self,
@@ -576,16 +1272,6 @@ class RDSCollector(BaseCollector):
         start: datetime,
         end: datetime,
     ) -> Dict[str, Any]:
-
-        """
-        Find ModifyDBInstance events for the current
-        RDS instance and extract instance-class changes.
-
-        This is historical evidence only.
-
-        DescribeDBInstances gives the current state.
-        CloudTrail is used to reconstruct previous changes.
-        """
 
         cloudtrail_profile = (
             self._profile_section(
@@ -597,79 +1283,116 @@ class RDSCollector(BaseCollector):
             cloudtrail_profile,
             default=False,
         ):
-            return {}
+            return {
+                "status":
+                    "disabled",
+
+                "instance_class_history":
+                    [],
+
+                "events":
+                    [],
+
+                "source":
+                    "cloudtrail",
+            }
 
         events: List[
             Dict[str, Any]
         ] = []
 
-        next_token: Optional[str] = None
+        next_token: Optional[
+            str
+        ] = None
 
-        while True:
+        try:
 
-            params: Dict[str, Any] = {
-                "LookupAttributes": [
-                    {
-                        "AttributeKey":
-                            "EventName",
+            while True:
 
-                        "AttributeValue":
-                            "ModifyDBInstance",
-                    }
-                ],
+                params: Dict[
+                    str,
+                    Any,
+                ] = {
+                    "LookupAttributes": [
+                        {
+                            "AttributeKey":
+                                "EventName",
 
-                "StartTime":
-                    start,
+                            "AttributeValue":
+                                "ModifyDBInstance",
+                        }
+                    ],
 
-                "EndTime":
-                    end,
+                    "StartTime":
+                        start,
 
-                "MaxResults":
-                    50,
-            }
+                    "EndTime":
+                        end,
 
-            if next_token:
-                params["NextToken"] = (
-                    next_token
+                    "MaxResults":
+                        50,
+                }
+
+                if next_token:
+                    params[
+                        "NextToken"
+                    ] = next_token
+
+                response = (
+                    self.cloudtrail
+                    .lookup_events(
+                        **params
+                    )
                 )
 
-            response = (
-                self.cloudtrail.lookup_events(
-                    **params
+                events.extend(
+                    response.get(
+                        "Events",
+                        [],
+                    )
                 )
-            )
 
-            events.extend(
-                response.get(
-                    "Events",
+                next_token = (
+                    response.get(
+                        "NextToken"
+                    )
+                )
+
+                if not next_token:
+                    break
+
+        except Exception as exc:
+
+            return {
+                "status":
+                    "error",
+
+                "instance_class_history":
                     [],
-                )
-            )
 
-            next_token = (
-                response.get(
-                    "NextToken"
-                )
-            )
+                "events":
+                    [],
 
-            if not next_token:
-                break
+                "source":
+                    "cloudtrail",
+
+                "error":
+                    str(exc),
+            }
 
         history: List[
             Dict[str, Any]
         ] = []
 
-        classes: List[str] = []
+        classes: List[
+            str
+        ] = []
 
         for event in events:
 
-            event_name = event.get(
+            if event.get(
                 "EventName"
-            )
-
-            if event_name != (
-                "ModifyDBInstance"
-            ):
+            ) != "ModifyDBInstance":
                 continue
 
             cloudtrail_event = (
@@ -682,7 +1405,6 @@ class RDSCollector(BaseCollector):
                 continue
 
             try:
-                import json
 
                 parsed = json.loads(
                     cloudtrail_event
@@ -719,7 +1441,10 @@ class RDSCollector(BaseCollector):
 
             if (
                 event_identifier
-                and event_identifier != identifier
+                and str(
+                    event_identifier
+                )
+                != str(identifier)
             ):
                 continue
 
@@ -740,7 +1465,10 @@ class RDSCollector(BaseCollector):
                 instance_class
             )
 
-            if instance_class not in classes:
+            if (
+                instance_class
+                not in classes
+            ):
                 classes.append(
                     instance_class
                 )
@@ -749,19 +1477,22 @@ class RDSCollector(BaseCollector):
                 "EventTime"
             )
 
+            if hasattr(
+                event_time,
+                "isoformat",
+            ):
+                event_time_value = (
+                    event_time.isoformat()
+                )
+            else:
+                event_time_value = str(
+                    event_time
+                )
+
             history.append(
                 {
                     "event_time":
-                        (
-                            event_time.isoformat()
-                            if hasattr(
-                                event_time,
-                                "isoformat",
-                            )
-                            else str(
-                                event_time
-                            )
-                        ),
+                        event_time_value,
 
                     "event_name":
                         "ModifyDBInstance",
@@ -785,11 +1516,19 @@ class RDSCollector(BaseCollector):
         )
 
         return {
+            "status":
+                "ok",
+
             "instance_class_history":
                 classes,
 
             "events":
                 history,
+
+            "event_count":
+                len(
+                    history
+                ),
 
             "source":
                 "cloudtrail",

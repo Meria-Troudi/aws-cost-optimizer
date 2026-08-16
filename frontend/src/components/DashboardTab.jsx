@@ -1,9 +1,46 @@
 import CostHeroChart, { HeroBottomFigure } from './dashboard/CostHeroChart'
 import CostByServiceGrid from './dashboard/CostByServiceGrid'
-import CostDriversPanel from './dashboard/CostDriversPanel'
 import RegionBreakdownPanel from './dashboard/RegionBreakdownPanel'
 import ServiceChangesPanel from './dashboard/ServiceChangesPanel'
+import PeriodComparisonPanel from './dashboard/PeriodComparisonPanel'
 import { formatDate, formatDateTime, formatMoneyOrDash, formatPct } from '../utils/format'
+
+function CostDriversPanelFallback({ drivers, statistics, serviceChanges }) {
+  if (!drivers || !drivers.length) return null
+
+  return (
+    <div className="panel section-gap">
+      <div className="panel-head">
+        <div>
+          <div className="panel-title">Top Cost Drivers</div>
+          <div className="panel-sub">Services contributing to total spend across the period</div>
+        </div>
+      </div>
+      <div className="drivers-grid">
+        {drivers.slice(0, 6).map((d) => (
+          <div className="driver-row" key={d.service || d.usage_type || d.cost}>
+            <div className="driver-name">{d.service_short || d.service || d.usage_type}</div>
+            <div className="driver-bar">
+              <div
+                className="driver-bar-fill"
+                style={{ width: `${Math.min(100, d.share_pct || 0)}%` }}
+              />
+            </div>
+            <div className="driver-values">
+              <span className="driver-cost mono">{formatMoneyOrDash(d.cost)}</span>
+              <span className="driver-share">{(d.share_pct ?? 0).toFixed(1)}%</span>
+              {d.change_pct != null && (
+                <span className={`driver-change ${d.change_pct >= 0 ? 'up' : 'down'}`}>
+                  {formatPct(d.change_pct, true)}
+                </span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export default function DashboardTab({
   dashboardData,
@@ -28,6 +65,7 @@ export default function DashboardTab({
   const concentration = dashboardData?.concentration
   const costByService = dashboardData?.cost_by_service || dashboardData?.service_costs || []
   const costByRegion = dashboardData?.cost_by_region || dashboardData?.region_costs || []
+  const periodComparison = dashboardData?.period_comparison
   const isAnalyzed = optimization.status === 'analyzed'
 
   const mtdAvailable = currentMtd?.status === 'available'
@@ -209,6 +247,8 @@ export default function DashboardTab({
             </div>
           )}
 
+          <PeriodComparisonPanel periodComparison={periodComparison} />
+
           <div className="grid section-gap">
             <div className="hero-card">
               <div className="hero-top">
@@ -227,7 +267,7 @@ export default function DashboardTab({
             </div>
           </div>
 
-          <CostDriversPanel
+          <CostDriversPanelFallback
             drivers={dashboardData?.cost_drivers || dashboardData?.top_cost_drivers}
             statistics={stats}
             serviceChanges={dashboardData?.service_changes}

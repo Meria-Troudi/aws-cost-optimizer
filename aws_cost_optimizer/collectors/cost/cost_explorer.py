@@ -179,11 +179,7 @@ def get_monthly_totals(
     end: str,
     region: str | None = None,
 ) -> list[dict[str, Any]]:
-    """
-    Return monthly total cost for the period.
 
-    Optionally filtered to a single region.
-    """
 
     client = get_client("ce", CE_REGION)
 

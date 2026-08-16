@@ -1,10 +1,42 @@
+import { useMemo } from 'react'
 import FindingsTable from './FindingsTable'
 import { countBySeverity } from '../data/findings'
 
 function sevClass(s) {
   if (s === 'high') return 'sev-high'
   if (s === 'medium') return 'sev-medium'
+  if (s === 'info') return 'sev-info'
   return 'sev-low'
+}
+
+const RECONCILIATION_TYPES = new Set([
+  'historical_unmatched',
+  'collection_no_matching_resources',
+  'unmatched_billing_usage',
+  'billing_reconciliation_unknown',
+  'historical_resource_not_found',
+  'current_configuration_changed',
+  'historical_spend_no_current_resource',
+])
+
+function splitFindings(findings) {
+  const optimization = {}
+  const reconciliation = {}
+  for (const [id, finding] of Object.entries(findings || {})) {
+    const isReconciliationType = RECONCILIATION_TYPES.has(finding.findingType)
+    const isReconciliationCategory = finding.category === 'RECONCILIATION'
+    const recommendationEligible = finding.recommendationEligible !== false
+
+    if (
+      (isReconciliationType || isReconciliationCategory)
+      && !recommendationEligible
+    ) {
+      reconciliation[id] = finding
+    } else {
+      optimization[id] = finding
+    }
+  }
+  return { optimization, reconciliation }
 }
 
 export default function ScanResults({
@@ -19,8 +51,13 @@ export default function ScanResults({
   onRecommendationClick,
   onBackToDashboard,
 }) {
-  const counts = countBySeverity(findings)
-  const totalFindings = Object.keys(findings).length
+  const { optimization, reconciliation } = useMemo(
+    () => splitFindings(findings),
+    [findings],
+  )
+  const counts = countBySeverity(optimization)
+  const totalFindings = Object.keys(optimization).length
+  const reconciliationCount = Object.keys(reconciliation).length
   const showFailedBanner =
     latestAttempt?.status === 'failed' && hasResults
 
@@ -106,9 +143,23 @@ export default function ScanResults({
                 <p>This analysis did not produce any detected findings.</p>
               </div>
             ) : (
-              <FindingsTable findings={findings} onRowClick={onFindingClick} />
+              <FindingsTable findings={optimization} onRowClick={onFindingClick} />
             )}
           </div>
+
+          {reconciliationCount > 0 && (
+            <div className="dash-section">
+              <div className="section-label">Billing Reconciliation</div>
+              <p className="tab-note">
+                Historical billing lines that could not be matched to a current resource.
+                These are informational and do not generate optimization recommendations.
+              </p>
+              <FindingsTable
+                findings={reconciliation}
+                onRowClick={onFindingClick}
+              />
+            </div>
+          )}
 
           {presentedRecs.length > 0 && (
             <div className="dash-section">

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { sevLabel, truncateId } from '../utils/format'
+import { truncateId } from '../utils/format'
 
 function sevClass(s) {
   if (s === 'high') return 'sev-high'
@@ -32,6 +32,17 @@ export default function FindingsModal({ finding, onClose }) {
 
   if (!finding) return null
 
+  // Defensive defaults: a finding may come from an older scan payload that
+  // predates one of these fields. Every array read below is guarded so a
+  // partial record shows an empty-state instead of throwing.
+  const conditionGroups = finding.conditionGroups || []
+  const evidenceItems = finding.evidenceItems || []
+  const metrics = finding.metrics || []
+  const limitations = finding.limitations || []
+  const topo = finding.topo || []
+  const costCards = finding.costCards || []
+  const resourceIds = finding.resourceIds?.length ? finding.resourceIds : [finding.resource].filter(Boolean)
+
   const tabs = ['overview', 'conditions', 'evidence', 'resources', 'cost']
   const periodLabel = formatPeriod(finding.observationPeriod)
 
@@ -46,9 +57,7 @@ export default function FindingsModal({ finding, onClose }) {
             ✕
           </button>
           <div className="modal-eyebrow">
-            <span className={`sev-badge ${sevClass(finding.severity)}`}>
-              {sevLabel(finding.severity)}
-            </span>
+            <span className={`sev-badge ${sevClass(finding.severity)}`}>{finding.sevLabel}</span>
             <span>{finding.confidence} confidence</span>
             {finding.category && <span>{finding.category}</span>}
           </div>
@@ -60,8 +69,7 @@ export default function FindingsModal({ finding, onClose }) {
               <div className="modal-title">{finding.fullTitle}</div>
               <div className="modal-meta">
                 <span>
-                  {finding.resourceCount} affected resource
-                  {finding.resourceCount === 1 ? '' : 's'}
+                  {finding.resourceCount} affected resource{finding.resourceCount === 1 ? '' : 's'}
                 </span>
                 <span>
                   Region <span className="mono">{finding.region}</span>
@@ -101,15 +109,11 @@ export default function FindingsModal({ finding, onClose }) {
                   <div className="topo-grid">
                     <div className="topo-item">
                       <div className="k">Billing class</div>
-                      <div className="v mono">
-                        {finding.billingDetails.billing_class || '—'}
-                      </div>
+                      <div className="v mono">{finding.billingDetails.billing_class || '—'}</div>
                     </div>
                     <div className="topo-item">
                       <div className="k">Discovered class</div>
-                      <div className="v mono">
-                        {finding.billingDetails.resource_class || '—'}
-                      </div>
+                      <div className="v mono">{finding.billingDetails.resource_class || '—'}</div>
                     </div>
                     <div className="topo-item">
                       <div className="k">Status</div>
@@ -123,17 +127,17 @@ export default function FindingsModal({ finding, onClose }) {
                 <div className="warn-box">
                   <span>⚠️</span>
                   <span>
-                    This finding blocks optimization recommendations until the underlying
-                    data issue is resolved.
+                    This finding blocks optimization recommendations until the underlying data
+                    issue is resolved.
                   </span>
                 </div>
               )}
 
-              {finding.limitations?.length > 0 && (
+              {limitations.length > 0 && (
                 <>
                   <div className="block-label">Limitations</div>
                   <ul className="limit-list">
-                    {finding.limitations.map((item, i) => (
+                    {limitations.map((item, i) => (
                       <li key={i}>{item}</li>
                     ))}
                   </ul>
@@ -149,21 +153,21 @@ export default function FindingsModal({ finding, onClose }) {
           {tab === 'conditions' && (
             <div className="modal-pane active">
               <div className="block-label">Conditions</div>
-              {finding.conditionGroups.length === 0 ? (
+              {conditionGroups.length === 0 ? (
                 <div className="evidence-empty">
                   No per-resource conditions available for this finding.
                 </div>
               ) : (
-                finding.conditionGroups.map((group) => (
+                conditionGroups.map((group) => (
                   <div className="condition-group" key={group.resourceId || 'global'}>
                     {group.resourceId && (
                       <div className="condition-resource mono">
                         Resource: {truncateId(group.resourceId, 32)}
                       </div>
                     )}
-                    {group.statements.map((stmt, i) => (
+                    {(group.statements || []).map((stmt, i) => (
                       <div className="cond-item" key={`${group.resourceId}-${stmt.name}-${i}`}>
-                        <span className={`cond-check ${stmt.statusClass}`}>
+                        <span className={`cond-check ${stmt.statusClass || ''}`}>
                           {stmt.supportsFinding ? '✓' : '○'}
                         </span>
                         <div className="cond-body">
@@ -180,19 +184,13 @@ export default function FindingsModal({ finding, onClose }) {
                             {stmt.status && (
                               <div>
                                 <span className="cond-k">Status</span>
-                                <span className={`cond-v ${stmt.statusClass}`}>
-                                  {stmt.status}
-                                </span>
+                                <span className={`cond-v ${stmt.statusClass || ''}`}>{stmt.status}</span>
                               </div>
                             )}
                           </div>
-                          {stmt.description && (
-                            <div className="cond-desc">{stmt.description}</div>
-                          )}
-                          {stmt.source.length > 0 && (
-                            <div className="cond-source mono">
-                              source: {stmt.source.join(', ')}
-                            </div>
+                          {stmt.description && <div className="cond-desc">{stmt.description}</div>}
+                          {stmt.source?.length > 0 && (
+                            <div className="cond-source mono">source: {stmt.source.join(', ')}</div>
                           )}
                         </div>
                       </div>
@@ -206,12 +204,10 @@ export default function FindingsModal({ finding, onClose }) {
           {tab === 'evidence' && (
             <div className="modal-pane active">
               <div className="block-label">Evidence</div>
-              {finding.evidenceItems.length === 0 ? (
-                <div className="evidence-empty">
-                  No structured evidence available for this finding.
-                </div>
+              {evidenceItems.length === 0 ? (
+                <div className="evidence-empty">No structured evidence available for this finding.</div>
               ) : (
-                finding.evidenceItems.map((item, i) => (
+                evidenceItems.map((item, i) => (
                   <div className="cond-item" key={i}>
                     <span className="cond-check">{item.supports_finding ? '✓' : '○'}</span>
                     <div>
@@ -237,23 +233,19 @@ export default function FindingsModal({ finding, onClose }) {
                         )}
                       </div>
                       {item.observed && <div className="actual">{item.observed}</div>}
-                      {item.description && (
-                        <div className="cond-desc">{item.description}</div>
-                      )}
+                      {item.description && <div className="cond-desc">{item.description}</div>}
                       {item.source?.length > 0 && (
-                        <div className="cond-source mono">
-                          source: {item.source.join(', ')}
-                        </div>
+                        <div className="cond-source mono">source: {item.source.join(', ')}</div>
                       )}
                     </div>
                   </div>
                 ))
               )}
 
-              {finding.metrics.length > 0 && (
+              {metrics.length > 0 && (
                 <>
                   <div className="block-label">Metrics</div>
-                  {finding.metrics.map((m, i) => (
+                  {metrics.map((m, i) => (
                     <div className="metric-block" key={i}>
                       <div className="metric-head">
                         <span className="metric-name">{m.name}</span>
@@ -271,9 +263,7 @@ export default function FindingsModal({ finding, onClose }) {
                           {m.datapoints.map((pt, j) => (
                             <span
                               key={j}
-                              style={{
-                                height: `${Math.max(3, (pt / Math.max(...m.datapoints, 1)) * 24)}px`,
-                              }}
+                              style={{ height: `${Math.max(3, (pt / Math.max(...m.datapoints, 1)) * 24)}px` }}
                             />
                           ))}
                         </div>
@@ -289,31 +279,37 @@ export default function FindingsModal({ finding, onClose }) {
 
           {tab === 'resources' && (
             <div className="modal-pane active">
-              <div className="block-label">
-                Affected resources · {finding.resourceCount}
-              </div>
+              <div className="block-label">Affected resources · {finding.resourceCount}</div>
               <div className="resource-id-list">
-                {(finding.resourceIds?.length ? finding.resourceIds : [finding.resource]).map(
-                  (rid) => (
+                {resourceIds.length === 0 ? (
+                  <div className="evidence-empty">No resource identifiers recorded.</div>
+                ) : (
+                  resourceIds.map((rid) => (
                     <div className="resource-id-row mono" key={rid}>
                       {truncateId(rid, 32)}
                     </div>
-                  ),
+                  ))
                 )}
               </div>
-              <div className="block-label">Dependencies</div>
-              <div className="topo-grid">
-                {finding.topo.map((t, i) => (
-                  <div className="topo-item" key={i}>
-                    <div className="k">{t.k}</div>
-                    <div className="v">{t.v}</div>
+              {topo.length > 0 && (
+                <>
+                  <div className="block-label">Dependencies</div>
+                  <div className="topo-grid">
+                    {topo.map((t, i) => (
+                      <div className="topo-item" key={i}>
+                        <div className="k">{t.k}</div>
+                        <div className="v">{t.v}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="warn-box">
-                <span>⚠️</span>
-                <span>{finding.topoWarn}</span>
-              </div>
+                </>
+              )}
+              {finding.topoWarn && (
+                <div className="warn-box">
+                  <span>⚠️</span>
+                  <span>{finding.topoWarn}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -321,7 +317,7 @@ export default function FindingsModal({ finding, onClose }) {
             <div className="modal-pane active">
               <div className="block-label">Cost context</div>
               <div className="cost-grid">
-                {finding.costCards.map((c, i) => (
+                {costCards.map((c, i) => (
                   <div className="cost-card" key={i}>
                     <div className="k">{c.k}</div>
                     <div className="v">{c.v}</div>

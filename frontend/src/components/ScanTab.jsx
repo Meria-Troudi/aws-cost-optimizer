@@ -150,6 +150,10 @@ export default function ScanTab({
               />
             </div>
           </div>
+          <p className="tab-note">
+            Cost Explorer uses an exclusive end date. For example, end date 2026-06-01
+            includes April and May only (through 2026-05-31), not June.
+          </p>
 
           <div className="scan-section-label">Scope</div>
           <div className="credential-grid">
@@ -169,6 +173,10 @@ export default function ScanTab({
                   </option>
                 ))}
               </select>
+              <p className="field-hint">
+                Leave as all regions to match account-wide Cost Explorer totals.
+                A single region shows only that region&apos;s spend.
+              </p>
             </div>
             <div className="field">
               <label htmlFor="scan-cost-threshold">Minimum cost driver</label>

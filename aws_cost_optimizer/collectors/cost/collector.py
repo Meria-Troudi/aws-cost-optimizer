@@ -11,6 +11,10 @@ from collectors.cost.cost_explorer import (
     get_monthly_totals,
     get_regions_with_costs,
 )
+from aws_cost_optimizer.collectors.cost.periods import (
+    breakdown_from_ce_monthly,
+    month_keys_in_period,
+)
 
 
 class CostCollector:
@@ -138,6 +142,8 @@ class CostCollector:
             end,
             collected_total,
             scan.region,
+            scan_start=scan.start_date,
+            scan_end=scan.end_date,
         )
 
         validation["saved_count"] = saved_count
@@ -150,6 +156,9 @@ class CostCollector:
         end: str,
         collected_total: float,
         region: str | None = None,
+        *,
+        scan_start: date | None = None,
+        scan_end: date | None = None,
     ) -> dict[str, Any]:
 
         monthly_results = get_monthly_totals(
@@ -159,13 +168,15 @@ class CostCollector:
         )
 
         monthly_total = 0.0
+        monthly_breakdown = breakdown_from_ce_monthly(monthly_results)
 
-        for result in monthly_results:
+        for row in monthly_breakdown:
+            monthly_total += float(row["cost"])
 
-            monthly_total += float(
-                result.get("Total", {})
-                .get("UnblendedCost", {})
-                .get("Amount", 0.0)
+        account_breakdown: list[dict[str, float | str]] = []
+        if region:
+            account_breakdown = breakdown_from_ce_monthly(
+                get_monthly_totals(start, end, region=None)
             )
 
         difference = abs(
@@ -174,15 +185,32 @@ class CostCollector:
 
         matches = difference < 0.01
 
+        months_included = (
+            month_keys_in_period(scan_start, scan_end)
+            if scan_start and scan_end
+            else [row["month"] for row in monthly_breakdown]
+        )
+
         print(
             f"    Collected total:  "
             f"${collected_total:.2f}"
         )
 
         print(
-            f"    Monthly total:    "
+            f"    Monthly sum:      "
             f"${monthly_total:.2f}"
         )
+
+        if region:
+            print(f"    Billing scope:    {region}")
+        else:
+            print("    Billing scope:    all regions")
+
+        for row in monthly_breakdown:
+            print(
+                f"      {row['month']}: "
+                f"${float(row['cost']):,.2f}"
+            )
 
         print(
             f"    Difference:       "
@@ -199,4 +227,8 @@ class CostCollector:
             "monthly_total": monthly_total,
             "difference": difference,
             "matches": matches,
+            "monthly_breakdown": monthly_breakdown,
+            "account_monthly_breakdown": account_breakdown,
+            "months_included": months_included,
+            "billing_scope": region or "all regions",
         }

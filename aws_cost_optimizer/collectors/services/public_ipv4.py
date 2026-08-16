@@ -1,5 +1,13 @@
 """
-Public IPv4 Collector.
+AWS Public IPv4 Collector.
+
+Collects:
+- Elastic IP allocations
+- public IPv4 addresses associated with ENIs
+- EC2 instance state when an address is attached to an EC2 instance
+
+The collector exposes evidence.
+It does not make optimization decisions.
 """
 
 from __future__ import annotations
@@ -7,21 +15,28 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from aws_cost_optimizer.config.client import get_client
+
 from collectors.base import BaseCollector
 from collectors.registry import register
+
+from collectors.network.topology import (
+    NetworkTopologyCollector,
+)
 
 
 @register
 class PublicIPv4Collector(BaseCollector):
+
     key = "public_ipv4"
     resource_type = "public_ipv4"
 
     def __init__(
         self,
         scan,
-        region=None,
-        profile=None,
+        region: Optional[str] = None,
+        profile: Optional[dict] = None,
     ):
+
         super().__init__(
             scan=scan,
             region=region,
@@ -33,78 +48,154 @@ class PublicIPv4Collector(BaseCollector):
             self.region,
         )
 
-    def discover(self) -> List[Dict[str, Any]]:
+        self.network_collector = (
+            NetworkTopologyCollector(
+                self.region
+            )
+        )
 
+    # ==================================================================
+    # DISCOVERY
+    # ==================================================================
 
-        resources: List[Dict[str, Any]] = []
+    def discover(
+        self,
+    ) -> List[Dict[str, Any]]:
 
-        eip_response = self.ec2.describe_addresses()
+        resources: List[
+            Dict[str, Any]
+        ] = []
 
-        for address in eip_response.get("Addresses", []):
-            public_ip = address.get("PublicIp")
+        try:
+
+            response = (
+                self.ec2.describe_addresses()
+            )
+
+        except Exception as exc:
+
+            raise RuntimeError(
+                "Failed to collect Elastic IP "
+                f"addresses in {self.region}: {exc}"
+            ) from exc
+
+        for address in response.get(
+            "Addresses",
+            [],
+        ):
+
+            public_ip = address.get(
+                "PublicIp"
+            )
 
             if not public_ip:
                 continue
 
             resources.append(
                 {
-                    "id": self._eip_resource_id(address),
-                    "raw": address,
-                    "source": "elastic_ip",
+                    "id":
+                        self._eip_resource_id(
+                            address
+                        ),
+
+                    "raw":
+                        address,
+
+                    "source":
+                        "elastic_ip",
                 }
             )
 
-        paginator = self.ec2.get_paginator(
-            "describe_network_interfaces"
+        paginator = (
+            self.ec2.get_paginator(
+                "describe_network_interfaces"
+            )
         )
 
-        seen_ips = {
-            resource["raw"].get("PublicIp")
+        seen_public_ips = {
+            resource["raw"].get(
+                "PublicIp"
+            )
             for resource in resources
-            if resource.get("raw")
+            if (
+                resource.get("raw")
+                and resource.get("source")
+                == "elastic_ip"
+            )
         }
 
         for page in paginator.paginate():
-            for eni in page.get("NetworkInterfaces", []):
 
-                association = eni.get("Association", {})
-                public_ip = association.get("PublicIp")
+            for eni in page.get(
+                "NetworkInterfaces",
+                [],
+            ):
+
+                association = (
+                    eni.get(
+                        "Association",
+                        {},
+                    )
+                    or {}
+                )
+
+                public_ip = association.get(
+                    "PublicIp"
+                )
 
                 if not public_ip:
                     continue
 
-                if public_ip in seen_ips:
+                if public_ip in seen_public_ips:
                     continue
 
-                seen_ips.add(public_ip)
+                seen_public_ips.add(
+                    public_ip
+                )
 
                 resources.append(
                     {
-                        "id": self._public_ip_resource_id(
-                            public_ip
-                        ),
-                        "raw": eni,
-                        "source": "network_interface",
+                        "id":
+                            self._public_ip_resource_id(
+                                public_ip
+                            ),
+
+                        "raw":
+                            eni,
+
+                        "source":
+                            "network_interface",
                     }
                 )
 
         return resources
+
     def get_resource_id(
         self,
         resource: Dict[str, Any],
     ) -> str:
+
         return resource["id"]
+
+    # ==================================================================
+    # IDENTIFIERS
+    # ==================================================================
 
     @staticmethod
     def _eip_resource_id(
         address: Dict[str, Any],
     ) -> str:
-        allocation_id = address.get("AllocationId")
+
+        allocation_id = address.get(
+            "AllocationId"
+        )
 
         if allocation_id:
             return allocation_id
 
-        public_ip = address.get("PublicIp")
+        public_ip = address.get(
+            "PublicIp"
+        )
 
         if public_ip:
             return f"public-ip:{public_ip}"
@@ -115,18 +206,30 @@ class PublicIPv4Collector(BaseCollector):
     def _public_ip_resource_id(
         public_ip: str,
     ) -> str:
+
         return f"public-ip:{public_ip}"
+
+    # ==================================================================
+    # IDENTITY
+    # ==================================================================
+
     def collect_identity(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        source = resource.get("source")
+        if (
+            resource.get("source")
+            == "elastic_ip"
+        ):
 
-        if source == "elastic_ip":
-            return self._collect_eip_identity(resource)
+            return self._collect_eip_identity(
+                resource
+            )
 
-        return self._collect_eni_identity(resource)
+        return self._collect_eni_identity(
+            resource
+        )
 
     def _collect_eip_identity(
         self,
@@ -135,18 +238,36 @@ class PublicIPv4Collector(BaseCollector):
 
         address = resource["raw"]
 
-        public_ip = address.get("PublicIp")
-        allocation_id = address.get("AllocationId")
-        association_id = address.get("AssociationId")
-
         return {
-            "name": public_ip or allocation_id,
-            "public_ip": public_ip,
-            "resource_id": resource["id"],
-            "resource_type": "elastic_ip",
-            "tags": self._tags(
-                address.get("Tags", [])
-            ),
+            "name":
+                address.get("PublicIp")
+                or address.get("AllocationId"),
+
+            "public_ip":
+                address.get("PublicIp"),
+
+            "allocation_id":
+                address.get("AllocationId"),
+
+            "association_id":
+                address.get("AssociationId"),
+
+            "resource_id":
+                resource["id"],
+
+            "resource_type":
+                "elastic_ip",
+
+            "source":
+                "elastic_ip",
+
+            "tags":
+                self._tags(
+                    address.get(
+                        "Tags",
+                        [],
+                    )
+                ),
         }
 
     def _collect_eni_identity(
@@ -156,28 +277,84 @@ class PublicIPv4Collector(BaseCollector):
 
         eni = resource["raw"]
 
-        association = eni.get("Association", {})
-
-        public_ip = association.get("PublicIp")
-        eni_id = eni.get("NetworkInterfaceId")
+        association = (
+            eni.get(
+                "Association",
+                {},
+            )
+            or {}
+        )
 
         return {
-            "name": public_ip or eni_id,
-            "public_ip": public_ip,
-            "resource_id": resource["id"],
-            "resource_type": "public_ipv4",
-            "tags": self._tags(
-                eni.get("TagSet", [])
-            ),
+            "name":
+                association.get("PublicIp")
+                or eni.get(
+                    "NetworkInterfaceId"
+                ),
+
+            "public_ip":
+                association.get(
+                    "PublicIp"
+                ),
+
+            "network_interface_id":
+                eni.get(
+                    "NetworkInterfaceId"
+                ),
+
+            "resource_id":
+                resource["id"],
+
+            "resource_type":
+                "public_ipv4",
+
+            "source":
+                "network_interface",
+
+            "requester_managed":
+                bool(
+                    eni.get(
+                        "RequesterManaged",
+                        False,
+                    )
+                ),
+
+            "network_interface_type":
+                eni.get(
+                    "InterfaceType"
+                ),
+
+            "service_managed":
+                bool(
+                    eni.get(
+                        "RequesterManaged",
+                        False,
+                    )
+                ),
+
+            "tags":
+                self._tags(
+                    eni.get(
+                        "TagSet",
+                        [],
+                    )
+                ),
         }
+
+    # ==================================================================
+    # CONFIGURATION
+    # ==================================================================
+
     def collect_configuration(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        source = resource.get("source")
+        if (
+            resource.get("source")
+            == "elastic_ip"
+        ):
 
-        if source == "elastic_ip":
             return self._collect_eip_configuration(
                 resource
             )
@@ -185,6 +362,7 @@ class PublicIPv4Collector(BaseCollector):
         return self._collect_eni_configuration(
             resource
         )
+
     def _collect_eip_configuration(
         self,
         resource: Dict[str, Any],
@@ -204,99 +382,184 @@ class PublicIPv4Collector(BaseCollector):
             "NetworkInterfaceId"
         )
 
+        instance_id = address.get(
+            "InstanceId"
+        )
+
         network_interface = None
 
         if network_interface_id:
+
             network_interface = (
                 self._get_network_interface(
                     network_interface_id
                 )
             )
 
+        if network_interface:
+
+            requester_managed = (
+                self._is_requester_managed(
+                    network_interface
+                )
+            )
+
+            network_interface_type = (
+                network_interface.get(
+                    "InterfaceType"
+                )
+            )
+
+            requester_id = (
+                network_interface.get(
+                    "RequesterId"
+                )
+            )
+
+            vpc_id = network_interface.get(
+                "VpcId"
+            )
+
+            subnet_id = network_interface.get(
+                "SubnetId"
+            )
+
+            availability_zone = (
+                network_interface.get(
+                    "AvailabilityZone"
+                )
+            )
+
+            interface_description = (
+                network_interface.get(
+                    "Description"
+                )
+            )
+
+        else:
+
+            requester_managed = False
+            network_interface_type = None
+            requester_id = None
+            vpc_id = None
+            subnet_id = None
+            availability_zone = None
+            interface_description = None
+
+        associated = bool(
+            association_id
+            or network_interface_id
+            or instance_id
+        )
+
+        instance_state = (
+            self._get_instance_state(
+                instance_id
+            )
+            if instance_id
+            else None
+        )
+
+        public_ip_type = (
+            self._classify_eip(
+                requester_managed=
+                    requester_managed,
+                network_interface_type=
+                    network_interface_type,
+            )
+        )
+
         return {
-            "allocation_id": allocation_id,
-            "association_id": association_id,
+            "public_ip":
+                address.get(
+                    "PublicIp"
+                ),
 
-            "public_ip": address.get(
-                "PublicIp"
-            ),
+            "allocation_id":
+                allocation_id,
 
-            "private_ip": address.get(
-                "PrivateIpAddress"
-            ),
+            "association_id":
+                association_id,
 
-            "instance_id": address.get(
-                "InstanceId"
-            ),
+            "associated":
+                associated,
+
+            "state":
+                (
+                    "associated"
+                    if associated
+                    else "idle"
+                ),
+
+            "instance_id":
+                instance_id,
+
+            "instance_state":
+                instance_state,
 
             "network_interface_id":
                 network_interface_id,
 
             "network_interface_type":
-                self._get(
-                    network_interface,
-                    "InterfaceType",
-                ),
+                network_interface_type,
 
             "network_interface_owner_id":
-                self._get(
-                    network_interface,
-                    "RequesterId",
-                ),
-
-            "requester_managed":
-                self._is_requester_managed(
-                    network_interface
-                ),
+                requester_id,
 
             "requester_id":
-                self._get(
-                    network_interface,
-                    "RequesterId",
-                ),
+                requester_id,
+
+            "requester_managed":
+                requester_managed,
+
+            "service_managed":
+                requester_managed,
 
             "vpc_id":
-                self._get(
-                    network_interface,
-                    "VpcId",
-                ),
+                vpc_id,
 
             "subnet_id":
-                self._get(
-                    network_interface,
-                    "SubnetId",
-                ),
+                subnet_id,
 
             "availability_zone":
-                self._get(
-                    network_interface,
-                    "AvailabilityZone",
-                ),
+                availability_zone,
 
-            "state": (
-                "associated"
-                if association_id
-                else "idle"
-            ),
+            "public_ip_type":
+                public_ip_type,
 
-            "public_ip_type": "elastic_ip",
+            "address_source":
+                "elastic_ip",
 
             "service_principal":
-                self._get(
-                    network_interface,
-                    "RequesterId",
-                ),
+                requester_id,
 
             "interface_description":
-                self._get(
-                    network_interface,
-                    "Description",
+                interface_description,
+
+            "tags":
+                self._tags(
+                    address.get(
+                        "Tags",
+                        [],
+                    )
                 ),
 
-            "tags": self._tags(
-                address.get("Tags", [])
-            ),
+            "optimization_allowed":
+                not requester_managed,
+
+            "release_allowed":
+                (
+                    not requester_managed
+                    and not associated
+                ),
+
+            "requires_resource_review":
+                bool(
+                    associated
+                    and instance_id
+                ),
         }
+
     def _collect_eni_configuration(
         self,
         resource: Dict[str, Any],
@@ -304,34 +567,70 @@ class PublicIPv4Collector(BaseCollector):
 
         eni = resource["raw"]
 
-        association = eni.get(
-            "Association",
-            {},
+        association = (
+            eni.get(
+                "Association",
+                {},
+            )
+            or {}
         )
 
         public_ip = association.get(
             "PublicIp"
         )
 
+        association_id = (
+            association.get(
+                "AssociationId"
+            )
+        )
+
+        requester_managed = (
+            self._is_requester_managed(
+                eni
+            )
+        )
+
+        instance_id = (
+            self._get_instance_id(
+                eni
+            )
+        )
+
         return {
-            "allocation_id": None,
-
-            "association_id":
-                association.get(
-                    "AssociationId"
-                ),
-
             "public_ip":
                 public_ip,
 
-            "private_ip":
-                self._get_primary_private_ip(
-                    eni
+            "allocation_id":
+                None,
+
+            "association_id":
+                association_id,
+
+            "associated":
+                bool(
+                    public_ip
+                    and (
+                        association_id
+                        or eni.get(
+                            "NetworkInterfaceId"
+                        )
+                    )
                 ),
 
+            "state":
+                "associated",
+
             "instance_id":
-                self._get_instance_id(
-                    eni
+                instance_id,
+
+            "instance_state":
+                (
+                    self._get_instance_state(
+                        instance_id
+                    )
+                    if instance_id
+                    else None
                 ),
 
             "network_interface_id":
@@ -350,14 +649,15 @@ class PublicIPv4Collector(BaseCollector):
                 ),
 
             "requester_managed":
-                self._is_requester_managed(
-                    eni
-                ),
+                requester_managed,
 
             "requester_id":
                 eni.get(
                     "RequesterId"
                 ),
+
+            "service_managed":
+                requester_managed,
 
             "vpc_id":
                 eni.get(
@@ -374,13 +674,13 @@ class PublicIPv4Collector(BaseCollector):
                     "AvailabilityZone"
                 ),
 
-            "state":
-                "associated",
-
             "public_ip_type":
                 self._determine_eni_public_ip_type(
                     eni
                 ),
+
+            "address_source":
+                "network_interface",
 
             "service_principal":
                 eni.get(
@@ -392,13 +692,28 @@ class PublicIPv4Collector(BaseCollector):
                     "Description"
                 ),
 
-            "tags": self._tags(
-                eni.get(
-                    "TagSet",
-                    []
-                )
-            ),
+            "tags":
+                self._tags(
+                    eni.get(
+                        "TagSet",
+                        [],
+                    )
+                ),
+
+            "optimization_allowed":
+                not requester_managed,
+
+            "release_allowed":
+                False,
+
+            "requires_resource_review":
+                True,
         }
+
+    # ==================================================================
+    # TOPOLOGY
+    # ==================================================================
+
     def collect_topology(
         self,
         resource: Dict[str, Any],
@@ -412,47 +727,166 @@ class PublicIPv4Collector(BaseCollector):
             )
         )
 
+        if not isinstance(
+            configuration,
+            dict,
+        ):
+            configuration = {}
+
+        vpc_id = configuration.get(
+            "vpc_id"
+        )
+
+        resource_id = resource.get(
+            "id"
+        )
+
+        if not vpc_id:
+
+            return {
+                "status":
+                    "incomplete",
+
+                "reason":
+                    "VPC ID not available",
+            }
+
+        try:
+
+            topology = (
+                self.network_collector.collect(
+                    vpc_id=vpc_id,
+                    resource_type=self.resource_type,
+                    resource_id=resource_id,
+                )
+            )
+
+        except Exception as exc:
+
+            return {
+                "status":
+                    "error",
+
+                "reason":
+                    str(exc),
+            }
+
+        if topology.get(
+            "status"
+        ) != "ok":
+
+            return topology
+
+        subnet_id = configuration.get(
+            "subnet_id"
+        )
+
+        subnet_profile = None
+        route_table = None
+
+        for profile in topology.get(
+            "subnet_profiles",
+            [],
+        ):
+
+            if (
+                profile.get("subnet_id")
+                == subnet_id
+            ):
+
+                subnet_profile = profile
+
+                route_table_id = (
+                    profile.get(
+                        "route_table_id"
+                    )
+                )
+
+                for table in topology.get(
+                    "route_tables",
+                    [],
+                ):
+
+                    if (
+                        table.get(
+                            "route_table_id"
+                        )
+                        == route_table_id
+                    ):
+
+                        route_table = table
+                        break
+
+                break
+
         return {
-            "status": "ok",
+            "status":
+                "ok",
+
             "resource": {
                 "resource_type":
                     self.resource_type,
+
                 "resource_id":
-                    resource["id"],
+                    resource_id,
             },
-            "relationships": [
-                {
-                    "type": "vpc",
-                    "id": configuration.get(
-                        "vpc_id"
-                    ),
-                },
-                {
-                    "type": "subnet",
-                    "id": configuration.get(
-                        "subnet_id"
-                    ),
-                },
-                {
-                    "type": "network_interface",
-                    "id": configuration.get(
-                        "network_interface_id"
-                    ),
-                },
-                {
-                    "type": "instance",
-                    "id": configuration.get(
-                        "instance_id"
-                    ),
-                },
-            ],
+
+            "vpc":
+                topology.get(
+                    "vpc"
+                ),
+
+            "vpc_id":
+                vpc_id,
+
+            "subnet":
+                self._find_subnet(
+                    topology,
+                    subnet_id,
+                ),
+
+            "subnet_profile":
+                subnet_profile,
+
+            "effective_route_table":
+                route_table,
+
+            "network_summary":
+                topology.get(
+                    "summary",
+                    {},
+                ),
+
+            "route_targets":
+                topology.get(
+                    "route_targets",
+                    {},
+                ),
+
+            "route_tables":
+                topology.get(
+                    "route_tables",
+                    [],
+                ),
+
+            "vpc_endpoints":
+                topology.get(
+                    "vpc_endpoints",
+                    [],
+                ),
         }
+
+    # ==================================================================
+    # HELPERS
+    # ==================================================================
+
     def _get_network_interface(
         self,
         network_interface_id: str,
     ) -> Optional[Dict[str, Any]]:
 
         try:
+
             response = (
                 self.ec2.describe_network_interfaces(
                     NetworkInterfaceIds=[
@@ -461,91 +895,131 @@ class PublicIPv4Collector(BaseCollector):
                 )
             )
 
-            interfaces = response.get(
-                "NetworkInterfaces",
-                [],
-            )
-
-            if interfaces:
-                return interfaces[0]
-
         except Exception:
-            pass
-
-        return None
-
-    @staticmethod
-    def _get(
-        obj: Optional[Dict[str, Any]],
-        key: str,
-    ) -> Any:
-
-        if not obj:
             return None
 
-        return obj.get(key)
+        interfaces = response.get(
+            "NetworkInterfaces",
+            [],
+        )
+
+        return (
+            interfaces[0]
+            if interfaces
+            else None
+        )
+
+    def _get_instance_state(
+        self,
+        instance_id: Optional[str],
+    ) -> Optional[str]:
+
+        if not instance_id:
+            return None
+
+        try:
+
+            response = (
+                self.ec2.describe_instances(
+                    InstanceIds=[
+                        instance_id
+                    ]
+                )
+            )
+
+        except Exception:
+            return None
+
+        for reservation in response.get(
+            "Reservations",
+            [],
+        ):
+
+            for instance in reservation.get(
+                "Instances",
+                [],
+            ):
+
+                if (
+                    instance.get(
+                        "InstanceId"
+                    )
+                    != instance_id
+                ):
+                    continue
+
+                state = (
+                    instance.get(
+                        "State",
+                        {},
+                    )
+                    or {}
+                )
+
+                name = state.get(
+                    "Name"
+                )
+
+                if name:
+                    return str(
+                        name
+                    ).lower()
+
+        return None
 
     @staticmethod
     def _get_instance_id(
         eni: Dict[str, Any],
     ) -> Optional[str]:
 
-        attachment = eni.get(
-            "Attachment",
-            {}
+        attachment = (
+            eni.get(
+                "Attachment",
+                {},
+            )
+            or {}
         )
 
-        instance_id = attachment.get(
+        value = attachment.get(
             "InstanceId"
         )
 
-        if instance_id:
-            return instance_id
-
-        return None
-
-    @staticmethod
-    def _get_primary_private_ip(
-        eni: Dict[str, Any],
-    ) -> Optional[str]:
-
-        private_ip = eni.get(
-            "PrivateIpAddress"
+        return (
+            str(value)
+            if value
+            else None
         )
-
-        if private_ip:
-            return private_ip
-
-        private_ips = eni.get(
-            "PrivateIpAddresses",
-            [],
-        )
-
-        for item in private_ips:
-
-            if item.get(
-                "Primary"
-            ):
-                return item.get(
-                    "PrivateIpAddress"
-                )
-
-        return None
 
     @staticmethod
     def _is_requester_managed(
         eni: Optional[Dict[str, Any]],
     ) -> bool:
 
-        if not eni:
-            return False
-
         return bool(
-            eni.get(
+            eni
+            and eni.get(
                 "RequesterManaged",
                 False,
             )
         )
+
+    @staticmethod
+    def _classify_eip(
+        requester_managed: bool,
+        network_interface_type: Optional[str],
+    ) -> str:
+
+        if requester_managed:
+
+            if network_interface_type:
+                return (
+                    "service_managed:"
+                    f"{network_interface_type}"
+                )
+
+            return "service_managed"
+
+        return "elastic_ip"
 
     @staticmethod
     def _determine_eni_public_ip_type(
@@ -556,31 +1030,75 @@ class PublicIPv4Collector(BaseCollector):
             "InterfaceType"
         )
 
-        requester_managed = eni.get(
-            "RequesterManaged",
-            False,
+        requester_managed = bool(
+            eni.get(
+                "RequesterManaged",
+                False,
+            )
         )
 
         if requester_managed:
+
+            if interface_type:
+                return (
+                    "service_managed:"
+                    f"{interface_type}"
+                )
+
             return "service_managed"
 
         if interface_type == "nat_gateway":
             return "nat_gateway"
 
         if interface_type:
-            return interface_type
+            return str(
+                interface_type
+            )
 
         return "ec2_public_ipv4"
+
+    @staticmethod
+    def _find_subnet(
+        topology: Dict[str, Any],
+        subnet_id: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+
+        if not subnet_id:
+            return None
+
+        for subnet in topology.get(
+            "subnets",
+            [],
+        ):
+
+            if (
+                subnet.get(
+                    "subnet_id"
+                )
+                == subnet_id
+            ):
+                return subnet
+
+        return None
 
     @staticmethod
     def _tags(
         tags: List[Dict[str, str]],
     ) -> Dict[str, str]:
 
+        if not isinstance(
+            tags,
+            list,
+        ):
+            return {}
+
         return {
-            tag["Key"]: tag.get(
-                "Value"
-            )
+            tag["Key"]:
+                tag.get("Value")
             for tag in tags
-            if "Key" in tag
+            if isinstance(
+                tag,
+                dict,
+            )
+            and tag.get("Key")
         }

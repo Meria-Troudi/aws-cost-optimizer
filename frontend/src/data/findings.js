@@ -1,28 +1,16 @@
 import { sevLabel, truncateId } from '../utils/format'
 import { serviceStyle } from '../utils/serviceStyle'
 
-const FINDING_TITLES = {
-  nat_gateway_no_observed_activity: 'NAT Gateway with no observed activity',
-  nat_gateway_no_activity: 'NAT Gateway with no observed activity',
-  nat_gateway_low_utilization: 'NAT Gateway with low utilization',
-  nat_gateway_aws_service_traffic: 'NAT Gateway routing AWS service traffic',
-  nat_gateway_cross_az: 'NAT Gateway with cross-AZ traffic',
-  rds_billing_resource_mismatch: 'RDS billing/resource mismatch',
-  rds_unmatched_billing_usage: 'Unmatched RDS billing usage',
-  collection_no_matching_resources: 'No matching resources found during collection',
-}
-
 function resolveTitle(finding) {
   if (finding.title && !finding.title.includes('_')) return finding.title
   if (finding.summary && !finding.summary.includes('_')) return finding.summary
-  return (
-    FINDING_TITLES[finding.finding_type] ||
-    (finding.finding_type || 'Finding').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  )
+  return (finding.finding_type || 'Finding').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 function countResources(finding) {
-  if (finding.resource_count > 0) return finding.resource_count
+  if (finding.resource_count != null && finding.resource_count >= 0) {
+    return finding.resource_count
+  }
 
   if (finding.condition_groups?.length) return finding.condition_groups.length
 
@@ -67,6 +55,24 @@ function collectResourceIds(finding) {
 }
 
 function resourceLabel(finding, resourceIds, resourceCount) {
+  if (
+    finding.finding_type === 'historical_unmatched'
+    || finding.finding_type === 'historical_spend_no_current_resource'
+    || finding.finding_type === 'historical_resource_not_found'
+    || finding.finding_type === 'collection_no_matching_resources'
+    || finding.finding_type === 'billing_resource_mismatch'
+    || finding.finding_type === 'billing_no_cost'
+    || finding.finding_type === 'billing_reconciliation_unknown'
+  ) {
+    const region =
+      finding.metadata?.region
+      || finding.region
+      || (finding.resource_id || '').match(/^historical-unmatched:([^:]+):/)?.[1]
+      || (finding.resource_id || '').match(/^not-found:([^:]+):/)?.[1]
+    if (region && region !== 'All regions') return region
+    return 'No current match'
+  }
+
   if (resourceCount > 1) return `${resourceCount} resources`
   const id = resourceIds[0] || finding.resource_id
   return id ? truncateId(id, 16) : '—'
@@ -97,9 +103,10 @@ export function mapApiFinding(finding, region = null) {
 
   const icons = serviceStyle(service)
   const severity = (finding.severity || 'low').toLowerCase()
-  const resourceIds = collectResourceIds(finding)
-  const resourceCount = countResources(finding) || resourceIds.length || 1
-  const title = resolveTitle(finding)
+  const resourceIds =
+    finding.resource_ids?.length > 0 ? finding.resource_ids : collectResourceIds(finding)
+  const resourceCount = countResources(finding) || (resourceIds.length > 0 ? resourceIds.length : 1)
+  const title = finding.title || finding.summary || resolveTitle(finding)
   const scanRegion = region || finding.region
   const displayRegion =
     scanRegion && scanRegion !== '—' && scanRegion !== 'account'
@@ -142,6 +149,7 @@ export function mapApiFinding(finding, region = null) {
     reason: finding.reason || title,
     confidence: finding.confidence,
     category: finding.category,
+    recommendationEligible: finding.recommendation_eligible !== false,
     blocksOptimization: finding.blocks_optimization,
     billingDetails: finding.billing_details,
     observationPeriod: finding.observation_period,
@@ -239,10 +247,11 @@ export function mapApiRecommendations(recommendations, findings) {
 }
 
 export function countBySeverity(findings) {
-  const counts = { high: 0, medium: 0, low: 0 }
+  const counts = { high: 0, medium: 0, low: 0, info: 0 }
   for (const f of Object.values(findings)) {
     const s = (f.severity || 'low').toLowerCase()
     if (counts[s] !== undefined) counts[s] += 1
+    else counts.low += 1
   }
   return counts
 }

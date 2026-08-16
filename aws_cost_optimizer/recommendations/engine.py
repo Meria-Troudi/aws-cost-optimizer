@@ -1,1071 +1,1111 @@
 """
-NAT Gateway recommendation generation.
+Recommendation generation.
+
+Flow:
+
+    persisted/reportable finding
+        -> eligibility
+        -> catalog route
+        -> family + variant
+        -> recommendation scope
+        -> grouping
+        -> recommendation
 """
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
+
+from .catalog import (
+    get_definition,
+    get_variant,
+    recommendation_route_for_finding,
+)
 
 
 class RecommendationEngine:
 
-    RULES = {
-        "nat_gateway_no_activity":
-            "_nat_no_activity",
-
-        "nat_gateway_low_traffic":
-            "_nat_low_traffic",
-
-        "nat_gateway_aws_service_traffic":
-            "_nat_aws_service",
-
-        "nat_gateway_cross_az":
-            "_nat_cross_az",
-
-        "nat_gateway_endpoint_opportunity":
-            "_nat_endpoint",
-        "rds_no_activity":
-            "_rds_no_activity",
-
-        "rds_instance_possible_oversized":
-            "_rds_oversized",
-
-        "rds_multi_az_cost_review":
-            "_rds_multi_az",
-
-        "rds_excessive_backup_retention":
-            "_rds_backup_retention",
-
-        "rds_performance_insights_review":
-            "_rds_performance_insights",
-
-        "rds_io_intensive_workload":
-            "_rds_io_intensive",
-
-        "rds_old_instance_generation":
-            "_rds_old_generation",
-
-        "rds_underused_read_replica":
-            "_rds_read_replica",
-
-        "rds_billing_resource_mismatch":
-            "_rds_billing_mismatch",
-
-        "rds_unmatched_billing_usage":
-            "_rds_unmatched_billing",
-
-        "rds_aurora_cluster_context":
-            "_rds_aurora_context",
-
-        "rds_public_accessibility":
-            "_rds_public_accessibility",
-
-        # ============================================================
-        # TRANSIT GATEWAY
-        # ============================================================
-
-        "transit_gateway_no_active_attachments":
-            "_tgw_no_active_attachments",
-
-        "transit_gateway_attachment_no_vpc_route":
-            "_tgw_attachment_no_vpc_route",
-
-        "transit_gateway_zero_observed_traffic":
-            "_tgw_zero_observed_traffic",
-
-        "transit_gateway_blackhole_routes":
-            "_tgw_blackhole_routes",
-
-        "vpc_endpoint_gateway_missing_route":
-            "_endpoint_gateway_missing_route",
-
-        "vpc_endpoint_interface_nat_path":
-            "_endpoint_interface_nat_path",
-
-
-        "elastic_ip_unassociated":
-            "_elastic_ip_unassociated",
+    SEVERITY_RANK = {
+        "critical": 4,
+        "high": 3,
+        "medium": 2,
+        "low": 1,
+        "info": 0,
     }
+
+    CONFIDENCE_RANK = {
+        "high": 3,
+        "medium": 2,
+        "low": 1,
+    }
+
+    VALID_SCOPES = frozenset(
+        {
+            "resource",
+            "region",
+            "account",
+            "service",
+        }
+    )
 
     def generate(
         self,
         findings: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
 
-        recommendations = []
+        normalized = self._normalize_findings(
+            findings
+        )
 
-        for finding in findings:
+        groups: dict[
+            tuple[
+                str,
+                str | None,
+                str,
+                str,
+            ],
+            list[dict[str, Any]],
+        ] = defaultdict(list)
 
-            handler_name = self.RULES.get(
-                finding.get(
-                    "finding_type"
+        for finding in normalized:
+
+            # ------------------------------------------------------
+            # Analyzer owns eligibility.
+            # ------------------------------------------------------
+
+            if finding.get(
+                "recommendation_eligible"
+            ) is not True:
+                continue
+
+            # ------------------------------------------------------
+            # Recommendations must reference persisted findings.
+            # ------------------------------------------------------
+
+            if not self._has_persisted_source_id(
+                finding
+            ):
+                raise RuntimeError(
+                    "Eligible finding has no persisted database ID. "
+                    "The finding must be persisted before "
+                    "recommendation generation."
                 )
-            )
 
-            if not handler_name:
-                continue
-
-            handler = getattr(
-                self,
-                handler_name,
-                None,
-            )
-
-            if not handler:
-                continue
-
-            recommendation = handler(
+            route = recommendation_route_for_finding(
                 finding
             )
 
-            if recommendation:
+            if route is None:
+                continue
+
+            definition = get_definition(
+                route.recommendation_key
+            )
+
+            if definition is None:
+                continue
+
+            resource_type = self._resource_type(
+                finding
+            )
+
+            scope = self._resolve_scope(
+                definition.recommendation_scope,
+                finding,
+            )
+
+            if scope is None:
+                continue
+
+            groups[
+                (
+                    route.recommendation_key,
+                    route.variant_key,
+                    resource_type,
+                    scope,
+                )
+            ].append(
+                finding
+            )
+
+        recommendations: list[
+            dict[str, Any]
+        ] = []
+
+        for (
+            recommendation_key,
+            variant_key,
+            resource_type,
+            scope,
+        ), grouped_findings in groups.items():
+
+            recommendation = (
+                self._build_recommendation(
+                    recommendation_key=recommendation_key,
+                    variant_key=variant_key,
+                    resource_type=resource_type,
+                    scope=scope,
+                    findings=grouped_findings,
+                )
+            )
+
+            if recommendation is not None:
                 recommendations.append(
                     recommendation
                 )
 
-        return recommendations
-
-    def _rds_no_activity(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review RDS instance with "
-                "no observed activity"
-            ),
-
-            action=(
-                "Validate whether the database is still "
-                "required. Check application dependencies, "
-                "scheduled workloads, and recovery requirements "
-                "before stopping or deleting the instance."
-            ),
+        return sorted(
+            recommendations,
+            key=self._sort_key,
         )
 
-    #   
-
-    def _rds_oversized(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        metadata = (
-            finding.get(
-                "metadata",
-                [],
-            )
-        )
-
-        instance_class = None
-
-        if isinstance(
-            metadata,
-            list,
-        ):
-
-            for item in metadata:
-
-                if not isinstance(
-                    item,
-                    dict,
-                ):
-                    continue
-
-                instance_class = item.get(
-                    "instance_class"
-                )
-
-                if instance_class:
-                    break
-
-        if instance_class:
-
-            action = (
-                f"Review whether the {instance_class} "
-                "instance class can be downsized based "
-                "on sustained workload requirements."
-            )
-
-        else:
-
-            action = (
-                "Review whether the current RDS instance "
-                "class can be downsized based on sustained "
-                "workload requirements."
-            )
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review potentially oversized "
-                "RDS instance"
-            ),
-
-            action=action,
-        )
-
-
-    def _rds_multi_az(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review RDS Multi-AZ configuration"
-            ),
-
-            action=(
-                "Validate whether the workload requires "
-                "Multi-AZ availability. If the availability "
-                "requirement allows it, evaluate whether "
-                "Single-AZ would be appropriate."
-            ),
-        )
-
-    #   
-
-    def _rds_backup_retention(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review RDS backup retention"
-            ),
-
-            action=(
-                "Review the database recovery requirements "
-                "and reduce backup retention if the current "
-                "retention period is higher than required."
-            ),
-        )
- 
-
-    def _rds_performance_insights(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review RDS Performance Insights"
-            ),
-
-            action=(
-                "Validate whether Performance Insights "
-                "is still required. Disable it if its "
-                "monitoring capabilities are not needed."
-            ),
-        )
-
-
-    def _rds_io_intensive(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review I/O-intensive RDS workload"
-            ),
-
-            action=(
-                "Review IOPS, latency, and storage "
-                "configuration before changing the "
-                "instance size. Avoid blindly downsizing "
-                "an I/O-dependent workload."
-            ),
-        )
-
-    #   
-
-    def _rds_old_generation(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Evaluate newer RDS instance generation"
-            ),
-
-            action=(
-                "Compare the current instance generation "
-                "with newer compatible generations and "
-                "evaluate price/performance before migration."
-            ),
-        )
-
-    #   
-
-    def _rds_read_replica(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review underused RDS read replica"
-            ),
-
-            action=(
-                "Validate whether the read replica is "
-                "still required. If it is not serving "
-                "a required workload or availability "
-                "purpose, evaluate resizing or removal."
-            ),
-        )
-
-    #   
-
-    def _rds_billing_mismatch(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        metadata = (
-            finding.get(
-                "metadata",
-                [],
-            )
-        )
-
-        billing_class = None
-        actual_class = None
-
-        if isinstance(
-            metadata,
-            list,
-        ):
-
-            for item in metadata:
-
-                if not isinstance(
-                    item,
-                    dict,
-                ):
-                    continue
-
-                billing_class = item.get(
-                    "billing_instance_class"
-                )
-
-                actual_class = item.get(
-                    "actual_instance_class"
-                )
-
-                if (
-                    billing_class
-                    or actual_class
-                ):
-                    break
-
-        if (
-            billing_class
-            and actual_class
-        ):
-
-            reason = (
-                f"Billing identifies {billing_class}, "
-                f"while discovery identifies "
-                f"{actual_class}. Reconcile the "
-                "billing attribution before right-sizing."
-            )
-
-        else:
-
-            reason = finding.get(
-                "reason",
-                "",
-            )
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Reconcile RDS billing and "
-                "resource attribution"
-            ),
-
-            action=(
-                "Validate the billing usage type against "
-                "the actual RDS resource and cluster "
-                "configuration before right-sizing."
-            ),
-
-            reason=reason,
-        )
-
-    def _rds_unmatched_billing(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        metadata = finding.get("metadata") or []
-        billing_class = None
-        billing_cost = None
-        region = finding.get("scope")
-
-        if isinstance(metadata, list):
-            for item in metadata:
-                if isinstance(item, dict):
-                    billing_class = item.get("billing_instance_class")
-                    billing_cost = item.get("billing_cost")
-                    region = item.get("region") or region
-                    if billing_class:
-                        break
-
-        cost_text = (
-            f"${float(billing_cost):,.2f} "
-            if billing_cost is not None
-            else ""
-        )
-
-        reason = finding.get("reason") or (
-            f"{cost_text}of RDS usage is billed as {billing_class}, "
-            f"but no currently discovered {billing_class} RDS instance "
-            f"exists in {region or 'the scanned region'}."
-        )
-
-        return self._build(
-            finding=finding,
-            title="Review unmatched RDS billing usage",
-            action=(
-                "Review historical RDS resources and billing dimensions "
-                "before attributing this cost to a current RDS instance."
-            ),
-            reason=reason,
-        )
-
-    #   
-
-    def _rds_aurora_context(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review Aurora cluster context "
-                "before optimizing"
-            ),
-
-            action=(
-                "Evaluate the Aurora writer, readers, "
-                "cluster workload, and failover "
-                "requirements together before resizing "
-                "or removing an instance."
-            ),
-        )
-
-    #   
-
-    def _rds_public_accessibility(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return {
-            "finding_id":
-                finding.get(
-                    "database_id"
-                ),
-
-            "title":
-                "Review publicly accessible RDS instance",
-
-            "resource_type":
-                finding.get(
-                    "resource_type"
-                ),
-
-            "priority":
-                finding.get(
-                    "severity"
-                ),
-
-            "confidence":
-                finding.get(
-                    "confidence"
-                ),
-
-      
-            "reason":
-                finding.get(
-                    "reason",
-                    "",
-                ),
-
-            "action":
-                (
-                    "Review whether public accessibility "
-                    "is required and restrict network "
-                    "access where possible."
-                ),
-
-            "affected_resources":
-                finding.get(
-                    "resource_ids",
-                    [],
-                ),
-
-            "category":
-                "security",
-        }
-    def _nat_no_activity(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review NAT Gateways with "
-                "no observed activity"
-            ),
-
-            action=(
-                "Validate the workloads and routes "
-                "that reference these NAT Gateways. "
-                "Remove a NAT Gateway only when its "
-                "network dependency is no longer required."
-            ),
-           
-        )
-
- 
-
-    def _nat_low_traffic(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        traffic = (
-            finding
-            .get("aggregate_evidence", {})
-            .get("traffic_gib_total")
-        )
-
-        reason = finding.get(
-            "reason",
-            "",
-        )
-
-        if traffic is not None:
-
-            reason = (
-                f"NAT Gateway traffic was "
-                f"approximately {traffic:.4f} GiB "
-                "during the observation period."
-            )
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review low-traffic "
-                "NAT Gateways"
-            ),
-
-            action=(
-                "Review whether the current NAT "
-                "Gateway architecture is justified "
-                "by the observed traffic."
-            ),
-
-            reason=reason,
-        )
-
- 
-
-    def _nat_aws_service(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        services = (
-            self._metadata_values(
-                finding,
-                "services",
-            )
-        )
-
-        if services:
-
-            action = (
-                "Evaluate whether traffic to "
-                f"{', '.join(services)} can use "
-                "VPC endpoints instead of traversing "
-                "the NAT Gateway."
-            )
-
-        else:
-
-            action = (
-                "Evaluate whether the identified "
-                "AWS service traffic can use "
-                "VPC endpoints."
-            )
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review AWS service traffic "
-                "through NAT Gateway"
-            ),
-
-            action=action,
-        )
-
-
-    def _nat_cross_az(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Review cross-AZ NAT Gateway routing"
-            ),
-
-            action=(
-                "Evaluate NAT Gateway placement and "
-                "route paths so traffic can remain "
-                "within the appropriate Availability "
-                "Zone where practical."
-            ),
-        )
-
-
-    def _nat_endpoint(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        services = (
-            self._metadata_values(
-                finding,
-                "candidate_services",
-            )
-        )
-
-        if services:
-
-            action = (
-                "Evaluate VPC endpoints for "
-                f"{', '.join(services)} and determine "
-                "whether the corresponding traffic "
-                "can bypass the NAT Gateway."
-            )
-
-        else:
-
-            action = (
-                "Evaluate VPC endpoints for the "
-                "identified AWS service traffic."
-            )
-
-        return self._build(
-            finding=finding,
-
-            title=(
-                "Evaluate VPC endpoint "
-                "opportunities for NAT traffic"
-            ),
-
-            action=action,
-        )
-
-    #   
-    # TRANSIT GATEWAY
-    #   
-
-    def _tgw_no_active_attachments(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review Transit Gateway with "
-                "no active attachments"
-            ),
-            action=(
-                "Validate whether the Transit Gateway is "
-                "still required. If no VPC, VPN, peering, or "
-                "other active attachment depends on it, "
-                "evaluate whether it can be removed."
-            ),
-        )
-
-    def _tgw_attachment_no_vpc_route(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        vpc_id = self._metadata_value(finding, "vpc_id")
-        attachment_id = self._metadata_value(
-            finding,
-            "attachment_id",
-        )
-
-        if vpc_id and attachment_id:
-            reason = (
-                f"VPC {vpc_id} is attached through "
-                f"{attachment_id}, but no route targeting "
-                "the Transit Gateway was detected."
-            )
-        else:
-            reason = finding.get("reason", "")
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review Transit Gateway attachment "
-                "with no VPC route"
-            ),
-            action=(
-                "Validate whether the attachment is still "
-                "required. If it is required, review the "
-                "VPC route configuration. If it is not "
-                "required, evaluate whether the attachment "
-                "can be removed."
-            ),
-            reason=reason,
-        )
-
-    def _tgw_zero_observed_traffic(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        attachment_count = self._metadata_value(
-            finding,
-            "active_vpc_attachment_count",
-        )
-        total_bytes = self._metadata_value(
-            finding,
-            "total_bytes",
-        )
-
-        if total_bytes is not None:
-            reason = (
-                f"No Transit Gateway traffic was observed "
-                f"during the analysis period "
-                f"(total bytes: {total_bytes})."
-            )
-        else:
-            reason = finding.get("reason", "")
-
-        if attachment_count is not None and total_bytes is None:
-            reason = finding.get("reason", reason)
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review Transit Gateway with "
-                "zero observed traffic"
-            ),
-            action=(
-                "Validate whether the active attachments "
-                "are still required, including scheduled, "
-                "intermittent, and failover workloads. "
-                "If the attachments are no longer required, "
-                "evaluate removing them and the Transit Gateway."
-            ),
-            reason=reason,
-        )
-
-    def _tgw_blackhole_routes(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        route_count = None
-        metadata = finding.get("metadata")
-
-        blackhole_routes = None
-        if isinstance(metadata, dict):
-            blackhole_routes = metadata.get("blackhole_routes")
-        elif isinstance(metadata, list):
-            for item in metadata:
-                if isinstance(item, dict):
-                    blackhole_routes = item.get("blackhole_routes")
-                    if blackhole_routes is not None:
-                        break
-
-        if isinstance(blackhole_routes, list):
-            route_count = len(blackhole_routes)
-
-        if route_count is not None:
-            reason = (
-                f"{route_count} blackhole route(s) were "
-                "detected in the Transit Gateway route tables."
-            )
-        else:
-            reason = finding.get("reason", "")
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review Transit Gateway "
-                "blackhole routes"
-            ),
-            action=(
-                "Review the affected routes and their "
-                "associated attachments. Remove obsolete "
-                "routes or attachments only after confirming "
-                "they are no longer required."
-            ),
-            reason=reason,
-        )
-    def _endpoint_gateway_missing_route(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        services = self._metadata_values(
-            finding,
-            "service_name",
-        )
-
-        if services:
-            reason = (
-                f"Gateway endpoint for "
-                f"{', '.join(services)} has no detected "
-                "route targeting the endpoint."
-            )
-        else:
-            reason = finding.get("reason", "")
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review Gateway VPC Endpoint routing"
-            ),
-            action=(
-                "Review the route tables associated with "
-                "the Gateway endpoint. If the endpoint is "
-                "intended to provide private access to the "
-                "service, ensure the required endpoint "
-                "routes are configured."
-            ),
-            reason=reason,
-        )
-
-    def _endpoint_interface_nat_path(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        services = self._metadata_values(
-            finding,
-            "service_name",
-        )
-
-        if services:
-            reason = (
-                f"Interface endpoint for "
-                f"{', '.join(services)} exists while "
-                "NAT Gateway routing is also present "
-                "in the detected network path."
-            )
-        else:
-            reason = finding.get("reason", "")
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review Interface VPC Endpoint "
-                "and NAT Gateway routing"
-            ),
-            action=(
-                "Validate whether the workload traffic "
-                "can use the Interface endpoint directly "
-                "instead of NAT Gateway routing. Review "
-                "the endpoint, route tables, and workload "
-                "dependencies before changing either path."
-            ),
-            reason=reason,
-        )
-
-    #   
-    # ELASTIC IP
-    #   
-
-    def _elastic_ip_unassociated(
-        self,
-        finding: dict[str, Any],
-    ) -> dict[str, Any]:
-
-        public_ip = self._metadata_value(finding, "public_ip")
-        allocation_id = self._metadata_value(
-            finding,
-            "allocation_id",
-        )
-
-        if public_ip and allocation_id:
-            reason = (
-                f"Elastic IP {public_ip} "
-                f"({allocation_id}) is not associated "
-                "with a resource."
-            )
-        else:
-            reason = finding.get("reason", "")
-
-        return self._build(
-            finding=finding,
-            title=(
-                "Review unassociated Elastic IP"
-            ),
-            action=(
-                "Release the Elastic IP if it is no longer "
-                "required. Validate future workload, DNS, "
-                "failover, and infrastructure dependencies "
-                "before releasing it."
-            ),
-            reason=reason,
-        )
+    # ==================================================================
+    # NORMALIZATION
+    # ==================================================================
 
     @staticmethod
-    def _build(
-        *,
+    def _normalize_findings(
+        findings: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+
+        if not isinstance(findings, list):
+            return []
+
+        result: list[dict[str, Any]] = []
+
+        for finding in findings:
+
+            if not isinstance(finding, dict):
+                continue
+
+            normalized = dict(finding)
+
+            normalized["resource_type"] = (
+                str(
+                    normalized.get("resource_type")
+                    or "unknown"
+                ).strip()
+                or "unknown"
+            )
+
+            resource_ids = normalized.get(
+                "resource_ids"
+            )
+
+            if not isinstance(
+                resource_ids,
+                list,
+            ):
+
+                resource_id = normalized.get(
+                    "resource_id"
+                )
+
+                resource_ids = (
+                    [resource_id]
+                    if resource_id
+                    else []
+                )
+
+            normalized["resource_ids"] = (
+                RecommendationEngine._unique(
+                    resource_ids
+                )
+            )
+
+            result.append(
+                normalized
+            )
+
+        return result
+
+    # ==================================================================
+    # PERSISTED FINDING CHECK
+    # ==================================================================
+
+    @staticmethod
+    def _has_persisted_source_id(
         finding: dict[str, Any],
-        title: str,
-        action: str,
-        reason: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> bool:
+
+        values = finding.get(
+            "source_finding_ids"
+        )
+
+        if isinstance(values, list):
+            for value in values:
+                try:
+                    if int(value) > 0:
+                        return True
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+        value = finding.get(
+            "database_id"
+        )
+
+        try:
+            return int(value) > 0
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return False
+
+    # ==================================================================
+    # SCOPE
+    # ==================================================================
+
+    def _resolve_scope(
+        self,
+        scope_type: str,
+        finding: dict[str, Any],
+    ) -> str | None:
+
+        scope = str(
+            scope_type or "region"
+        ).strip().lower()
+
+        if scope not in self.VALID_SCOPES:
+            raise ValueError(
+                f"Invalid recommendation scope: {scope!r}"
+            )
+
+        if scope == "resource":
+
+            resource_id = finding.get(
+                "resource_id"
+            )
+
+            resource_ids = finding.get(
+                "resource_ids"
+            )
+
+            if not resource_id and (
+                isinstance(resource_ids, list)
+                and len(resource_ids) == 1
+            ):
+                resource_id = resource_ids[0]
+
+            if not resource_id:
+                return None
+
+            return f"resource:{resource_id}"
+
+        if scope == "account":
+
+            account_id = (
+                finding.get("account_id")
+                or self._first_metadata_value(
+                    finding,
+                    "account_id",
+                )
+            )
+
+            if not account_id:
+                return None
+
+            return f"account:{account_id}"
+
+        if scope == "service":
+
+            service = (
+                finding.get("service")
+                or self._first_metadata_value(
+                    finding,
+                    "service",
+                )
+            )
+
+            if not service:
+                return None
+
+            return f"service:{service}"
+
+        region = (
+            finding.get("region")
+            or self._first_metadata_value(
+                finding,
+                "region",
+            )
+            or self._extract_region(
+                finding
+            )
+        )
+
+        if not region:
+            return None
+
+        return f"region:{region}"
+
+    # ==================================================================
+    # BUILD
+    # ==================================================================
+
+    def _build_recommendation(
+        self,
+        *,
+        recommendation_key: str,
+        variant_key: str | None,
+        resource_type: str,
+        scope: str,
+        findings: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+
+        definition = get_definition(
+            recommendation_key
+        )
+
+        if definition is None or not findings:
+            return None
+
+        variant = get_variant(
+            recommendation_key,
+            variant_key,
+        )
+
+        affected_resources = (
+            self._unique_resource_ids(
+                findings
+            )
+        )
+
+        if not affected_resources:
+            return None
+
+        source_finding_ids = (
+            self._unique_finding_ids(
+                findings
+            )
+        )
+
+        if not source_finding_ids:
+            raise RuntimeError(
+                "Recommendation has no persisted source findings: "
+                f"{recommendation_key}:"
+                f"{variant_key or 'default'}"
+            )
+
+        source_finding_types = self._unique(
+            (
+                finding.get("finding_type")
+                or finding.get("finding_key")
+                for finding in findings
+            )
+        )
+
+        title = (
+            variant.title
+            if variant is not None
+            else definition.title
+        )
+
+        action = (
+            variant.action
+            if variant is not None
+            else definition.default_action
+        )
+
+        reason = self._render_reason(
+            (
+                variant.reason
+                if variant is not None
+                else ""
+            ),
+            count=len(affected_resources),
+        )
+
+        if not reason:
+            reason = (
+                "Recommendation is supported by "
+                "the collected finding evidence."
+            )
 
         return {
-            "finding_id":
-                finding.get(
-                    "database_id"
-                ),
+            "recommendation_key":
+                recommendation_key,
+
+            "recommendation_variant":
+                variant_key,
+
+            "recommendation_scope":
+                definition.recommendation_scope,
+
+            "resource_type":
+                resource_type,
+
+            "scope":
+                scope,
+
+            "category":
+                definition.category,
 
             "title":
                 title,
 
-            "resource_type":
-                finding.get(
-                    "resource_type"
-                ),
-
             "priority":
-                finding.get(
-                    "severity"
+                self._highest(
+                    findings,
+                    "severity",
+                    self.SEVERITY_RANK,
                 ),
 
             "confidence":
-                finding.get(
-                    "confidence"
+                self._highest(
+                    findings,
+                    "confidence",
+                    self.CONFIDENCE_RANK,
                 ),
-
-  
 
             "reason":
-                reason
-                or finding.get(
-                    "reason",
-                    "",
-                ),
+                reason,
 
             "action":
                 action,
 
             "affected_resources":
-                finding.get(
-                    "resource_ids",
-                    [],
+                affected_resources,
+
+            "source_finding_ids":
+                source_finding_ids,
+
+            "source_finding_types":
+                source_finding_types,
+
+            "source_finding_count":
+                len(source_finding_ids),
+
+            "finding_id":
+                source_finding_ids[0],
+
+            "limitations":
+                self._limitations(
+                    findings
                 ),
+
+            "evidence":
+                self._build_evidence(
+                    findings
+                ),
+
+            "financial_impact":
+                self._build_financial_impact(
+                    findings
+                ),
+
+            "status":
+                "requires_validation",
         }
 
- 
+    # ==================================================================
+    # FINANCIAL IMPACT
+    # ==================================================================
 
     @staticmethod
-    def _metadata_values(
-        finding: dict[str, Any],
-        key: str,
+    def _build_financial_impact(
+        findings: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+
+        impacts: list[dict[str, Any]] = []
+
+        for finding in findings:
+
+            impact = (
+                finding.get("impact")
+                or finding.get("financial_impact")
+            )
+
+            if not isinstance(
+                impact,
+                dict,
+            ) or not impact:
+                continue
+
+            impacts.append(
+                {
+                    "finding_id":
+                        finding.get("database_id")
+                        or finding.get("finding_id"),
+
+                    "resource_ids":
+                        finding.get(
+                            "resource_ids",
+                            [],
+                        ),
+
+                    "impact":
+                        dict(impact),
+                }
+            )
+
+        if not impacts:
+            return {}
+
+        if len(impacts) == 1:
+            return dict(
+                impacts[0]["impact"]
+            )
+
+        return {
+            "items": impacts
+        }
+
+    # ==================================================================
+    # EVIDENCE
+    # ==================================================================
+
+    @staticmethod
+    def _build_evidence(
+        findings: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+
+        result = []
+
+        for finding in findings:
+
+            result.append(
+                {
+                    "finding_id":
+                        finding.get(
+                            "database_id"
+                        )
+                        or finding.get(
+                            "finding_id"
+                        ),
+
+                    "finding_type":
+                        finding.get(
+                            "finding_type"
+                        ),
+
+                    "resource_type":
+                        finding.get(
+                            "resource_type"
+                        ),
+
+                    "resource_ids":
+                        finding.get(
+                            "resource_ids",
+                            [],
+                        ),
+
+                    "severity":
+                        finding.get(
+                            "severity"
+                        ),
+
+                    "confidence":
+                        finding.get(
+                            "confidence"
+                        ),
+
+                    "reason":
+                        finding.get(
+                            "reason"
+                        ),
+
+                    "evidence_summary":
+                        finding.get(
+                            "evidence_summary",
+                            [],
+                        ),
+
+                    "limitations":
+                        finding.get(
+                            "limitations",
+                            [],
+                        ),
+                }
+            )
+
+        return result
+
+    # ==================================================================
+    # LIMITATIONS
+    # ==================================================================
+
+    @staticmethod
+    def _limitations(
+        findings: list[dict[str, Any]],
     ) -> list[str]:
 
-        values: list[str] = []
-        metadata = finding.get("metadata")
+        result: list[str] = []
 
-        if isinstance(metadata, dict):
-            raw_value = metadata.get(key)
+        for finding in findings:
 
-            if isinstance(raw_value, list):
-                for element in raw_value:
-                    string_value = str(element)
-                    if string_value not in values:
-                        values.append(string_value)
-            elif raw_value is not None:
-                values.append(str(raw_value))
+            limitations = finding.get(
+                "limitations"
+            )
 
-            return values
+            if not isinstance(
+                limitations,
+                list,
+            ):
+                continue
 
-        if isinstance(metadata, list):
-            for item in metadata:
-                if not isinstance(item, dict):
-                    continue
+            for limitation in limitations:
 
-                raw_value = item.get(key)
+                text = str(
+                    limitation
+                ).strip()
 
-                if isinstance(raw_value, list):
-                    for element in raw_value:
-                        string_value = str(element)
-                        if string_value not in values:
-                            values.append(string_value)
-                elif raw_value is not None:
-                    string_value = str(raw_value)
-                    if string_value not in values:
-                        values.append(string_value)
+                if text and text not in result:
+                    result.append(text)
 
-        return values
+        return result
+
+    # ==================================================================
+    # METADATA
+    # ==================================================================
 
     @staticmethod
-    def _metadata_value(
+    def _metadata_items(
+        finding: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+
+        value = finding.get(
+            "metadata"
+        )
+
+        if isinstance(value, dict):
+            return [value]
+
+        if isinstance(value, list):
+            return [
+                item
+                for item in value
+                if isinstance(item, dict)
+            ]
+
+        return []
+
+    def _first_metadata_value(
+        self,
         finding: dict[str, Any],
         key: str,
     ) -> Any:
-        values = RecommendationEngine._metadata_values(
-            finding,
-            key,
+
+        for item in self._metadata_items(
+            finding
+        ):
+
+            value = item.get(
+                key
+            )
+
+            if value is not None:
+                return value
+
+        return None
+
+    # ==================================================================
+    # REGION
+    # ==================================================================
+
+    def _extract_region(
+        self,
+        finding: dict[str, Any],
+    ) -> str | None:
+
+        evidence = finding.get(
+            "evidence"
         )
-        if not values:
-            metadata = finding.get("metadata")
-            if isinstance(metadata, dict):
-                return metadata.get(key)
-            if isinstance(metadata, list):
-                for item in metadata:
-                    if isinstance(item, dict) and key in item:
-                        return item.get(key)
-            return None
-        if len(values) == 1:
-            return values[0]
-        return values
+
+        if isinstance(
+            evidence,
+            dict,
+        ):
+
+            region = self._region_from_evidence(
+                evidence
+            )
+
+            if region:
+                return region
+
+        if isinstance(
+            evidence,
+            list,
+        ):
+
+            for item in evidence:
+
+                if not isinstance(
+                    item,
+                    dict,
+                ):
+                    continue
+
+                nested = item.get(
+                    "evidence",
+                    item,
+                )
+
+                if not isinstance(
+                    nested,
+                    dict,
+                ):
+                    continue
+
+                region = self._region_from_evidence(
+                    nested
+                )
+
+                if region:
+                    return region
+
+        return None
+
+    @staticmethod
+    def _region_from_evidence(
+        evidence: dict[str, Any],
+    ) -> str | None:
+
+        resource = evidence.get(
+            "resource"
+        )
+
+        if isinstance(
+            resource,
+            dict,
+        ):
+
+            region = resource.get(
+                "region"
+            )
+
+            if region:
+                return str(region)
+
+        items = evidence.get(
+            "items"
+        )
+
+        if isinstance(
+            items,
+            list,
+        ):
+
+            for item in items:
+
+                if not isinstance(
+                    item,
+                    dict,
+                ):
+                    continue
+
+                resource = item.get(
+                    "resource"
+                )
+
+                if isinstance(
+                    resource,
+                    dict,
+                ):
+
+                    region = resource.get(
+                        "region"
+                    )
+
+                    if region:
+                        return str(region)
+
+        return None
+
+    # ==================================================================
+    # RESOURCES
+    # ==================================================================
+
+    @staticmethod
+    def _resource_type(
+        finding: dict[str, Any],
+    ) -> str:
+
+        return (
+            str(
+                finding.get(
+                    "resource_type"
+                )
+                or "unknown"
+            ).strip()
+            or "unknown"
+        )
+
+    @staticmethod
+    def _unique_resource_ids(
+        findings: list[dict[str, Any]],
+    ) -> list[str]:
+
+        result: list[str] = []
+        seen: set[str] = set()
+
+        for finding in findings:
+
+            values = finding.get(
+                "resource_ids"
+            )
+
+            if not isinstance(
+                values,
+                list,
+            ) or not values:
+
+                value = finding.get(
+                    "resource_id"
+                )
+
+                values = (
+                    [value]
+                    if value
+                    else []
+                )
+
+            for value in values:
+
+                if value is None:
+                    continue
+
+                text = str(
+                    value
+                ).strip()
+
+                if not text or text in seen:
+                    continue
+
+                seen.add(text)
+                result.append(text)
+
+        return result
+
+    # ==================================================================
+    # SOURCE FINDING IDS
+    # ==================================================================
+    @staticmethod
+    def _unique_finding_ids(
+        findings: list[dict[str, Any]],
+    ) -> list[int]:
+
+        result: list[int] = []
+        seen: set[int] = set()
+
+        for finding in findings:
+
+            # ------------------------------------------------------
+            # Preferred source:
+            #
+            # Aggregated findings contain the actual persisted
+            # raw Finding database IDs here.
+            # ------------------------------------------------------
+
+            source_ids = finding.get(
+                "source_finding_ids"
+            )
+
+            if isinstance(
+                source_ids,
+                list,
+            ):
+
+                for candidate in source_ids:
+
+                    if candidate is None:
+                        continue
+
+                    try:
+                        number = int(
+                            candidate
+                        )
+                    except (
+                        TypeError,
+                        ValueError,
+                    ):
+                        continue
+
+                    if number in seen:
+                        continue
+
+                    seen.add(
+                        number
+                    )
+
+                    result.append(
+                        number
+                    )
+
+            # ------------------------------------------------------
+            # Backward compatibility for single-finding dictionaries.
+            # ------------------------------------------------------
+
+            candidates = (
+                finding.get(
+                    "database_id"
+                ),
+                finding.get(
+                    "finding_id"
+                ),
+            )
+
+            for candidate in candidates:
+
+                if candidate is None:
+                    continue
+
+                try:
+                    number = int(
+                        candidate
+                    )
+                except (
+                    TypeError,
+                    ValueError,
+                ):
+                    continue
+
+                if number in seen:
+                    continue
+
+                seen.add(
+                    number
+                )
+
+                result.append(
+                    number
+                )
+
+                # Only use fallback identity when explicit
+                # source_finding_ids were not available.
+                break
+
+        return result
+
+    # ==================================================================
+    # FORMAT
+    # ==================================================================
+
+    @staticmethod
+    def _render_reason(
+        template: str,
+        *,
+        count: int,
+    ) -> str:
+
+        if not template:
+            return ""
+
+        plural = "" if count == 1 else "s"
+
+        try:
+            return template.format(
+                count=count,
+                plural=plural,
+                is_are="is" if count == 1 else "are",
+                has_have="has" if count == 1 else "have",
+            )
+        except (
+            KeyError,
+            ValueError,
+        ):
+            return template
+
+    @staticmethod
+    def _unique(values) -> list[str]:
+
+        result: list[str] = []
+        seen: set[str] = set()
+
+        for value in values:
+
+            if value is None:
+                continue
+
+            text = str(
+                value
+            ).strip()
+
+            if not text or text in seen:
+                continue
+
+            seen.add(text)
+            result.append(text)
+
+        return result
+
+    # ==================================================================
+    # RANKING
+    # ==================================================================
+
+    @classmethod
+    def _highest(
+        cls,
+        findings: list[dict[str, Any]],
+        field: str,
+        ranking: dict[str, int],
+    ) -> str:
+
+        best = "low"
+        best_rank = -1
+
+        for finding in findings:
+
+            value = str(
+                finding.get(
+                    field,
+                    "low",
+                )
+            ).strip().lower()
+
+            rank = ranking.get(
+                value,
+                0,
+            )
+
+            if rank > best_rank:
+                best = value
+                best_rank = rank
+
+        return best
+
+    # ==================================================================
+    # SORT
+    # ==================================================================
+
+    @classmethod
+    def _sort_key(
+        cls,
+        recommendation: dict[str, Any],
+    ) -> tuple[int, str, str, str]:
+
+        priority = str(
+            recommendation.get(
+                "priority",
+                "low",
+            )
+        ).lower()
+
+        return (
+            -cls.SEVERITY_RANK.get(
+                priority,
+                0,
+            ),
+            str(
+                recommendation.get(
+                    "title",
+                    "",
+                )
+            ),
+            str(
+                recommendation.get(
+                    "resource_type",
+                    "",
+                )
+            ),
+            str(
+                recommendation.get(
+                    "scope",
+                    "",
+                )
+            ),
+        )

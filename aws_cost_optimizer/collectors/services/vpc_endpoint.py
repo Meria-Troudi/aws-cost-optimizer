@@ -1,33 +1,29 @@
+
 """
 AWS VPC Endpoint Collector.
 
-Collects:
-
-- Endpoint identity
-- Endpoint configuration
-- Gateway endpoint route relationships
-- Interface endpoint subnet relationships
-- Network interfaces
-- Security groups
-- Availability zones
-- VPC route tables
-- NAT Gateway dependencies
-- Transit Gateway dependencies
-- Internet Gateway dependencies
-- VPC peering dependencies
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from aws_cost_optimizer.config.client import get_client
 
 from collectors.base import BaseCollector
 from collectors.registry import register
 
-from collectors.network.topology import NetworkTopologyCollector
-from collectors.network.relationships import NetworkRelationshipResolver
+from collectors.network.interfaces import (
+    NetworkInterfaceCollector,
+)
+
+from collectors.network.topology import (
+    NetworkTopologyCollector,
+)
+
+from collectors.network.relationships import (
+    NetworkRelationshipResolver,
+)
 
 
 @register
@@ -36,13 +32,15 @@ class VpcEndpointCollector(BaseCollector):
     key = "vpc_endpoint"
     resource_type = "vpc_endpoint"
 
+     # INITIALIZATION
  
     def __init__(
         self,
         scan: Any,
         region: str,
         profile: Any = None,
-    ):
+    ) -> None:
+
         super().__init__(
             scan,
             region=region,
@@ -50,11 +48,28 @@ class VpcEndpointCollector(BaseCollector):
         )
 
         self.region = region
-        self.profile = profile or {}
+
+        self.profile = (
+            profile
+            if isinstance(profile, dict)
+            else {}
+        )
 
         self.ec2 = get_client(
             "ec2",
             region,
+        )
+
+        self.topology_collector = (
+            NetworkTopologyCollector(
+                region
+            )
+        )
+
+        self.interface_collector = (
+            NetworkInterfaceCollector(
+                region
+            )
         )
 
      # DISCOVERY
@@ -67,37 +82,191 @@ class VpcEndpointCollector(BaseCollector):
             self._collect_all_endpoints()
         )
 
-        resources: List[Dict[str, Any]] = []
+        resources: List[
+            Dict[str, Any]
+        ] = []
 
         for endpoint in endpoints:
 
-            resource = self._build_resource(
-                endpoint
-            )
-
-            vpc_id = endpoint.get(
-                "vpc_id"
+            resource = (
+                self._build_resource(
+                    endpoint
+                )
             )
 
             endpoint_id = endpoint.get(
                 "vpc_endpoint_id"
             )
 
+            vpc_id = endpoint.get(
+                "vpc_id"
+            )
+
             if vpc_id:
 
-                topology = self._collect_topology(
-                    vpc_id=vpc_id,
-                    endpoint_id=endpoint_id,
-                )
-
-                resource["topology"] = topology
-
-                resource["relationships"] = (
-                    self._build_relationships(
-                        endpoint=endpoint,
-                        topology=topology,
+                topology = (
+                    self._collect_topology(
+                        vpc_id=vpc_id,
+                        endpoint_id=endpoint_id,
                     )
                 )
+
+                resource[
+                    "topology"
+                ] = topology
+
+                if topology.get(
+                    "status"
+                ) == "ok":
+
+                    resource[
+                        "relationships"
+                    ] = (
+                        self._build_relationships(
+                            endpoint=endpoint,
+                            topology=topology,
+                        )
+                    )
+
+                else:
+
+                    resource[
+                        "relationships"
+                    ] = {
+                        "status":
+                            "incomplete",
+
+                        "reason":
+                            topology.get(
+                                "reason",
+                                topology.get(
+                                    "error",
+                                    "VPC topology unavailable",
+                                ),
+                            ),
+                    }
+
+            else:
+
+                resource[
+                    "topology"
+                ] = {
+                    "status":
+                        "incomplete",
+
+                    "reason":
+                        "VPC ID unavailable",
+                }
+
+                resource[
+                    "relationships"
+                ] = {
+                    "status":
+                        "incomplete",
+
+                    "reason":
+                        "VPC ID unavailable",
+                }
+
+            # --------------------------------------------------------
+            # INTERFACE ENI EVIDENCE
+            # --------------------------------------------------------
+
+            interface_ids = list(
+                endpoint.get(
+                    "network_interface_ids",
+                    [],
+                )
+                or []
+            )
+
+            if interface_ids:
+
+                try:
+
+                    eni_result = (
+                        self.interface_collector.collect(
+                            interface_ids
+                        )
+                    )
+
+                    resource[
+                        "network_interfaces"
+                    ] = {
+                        "status":
+                            "ok",
+
+                        "resources":
+                            (
+                                eni_result
+                                if isinstance(
+                                    eni_result,
+                                    list,
+                                )
+                                else []
+                            ),
+
+                        "requested_count":
+                            len(interface_ids),
+
+                        "observed_count":
+                            (
+                                len(eni_result)
+                                if isinstance(
+                                    eni_result,
+                                    list,
+                                )
+                                else 0
+                            ),
+                    }
+
+                except Exception as exc:
+
+                    resource[
+                        "network_interfaces"
+                    ] = {
+                        "status":
+                            "error",
+
+                        "resources":
+                            [],
+
+                        "requested_count":
+                            len(interface_ids),
+
+                        "observed_count":
+                            0,
+
+                        "error":
+                            str(exc),
+                    }
+
+            else:
+
+                resource[
+                    "network_interfaces"
+                ] = {
+                    "status":
+                        "ok",
+
+                    "resources":
+                        [],
+
+                    "requested_count":
+                        0,
+
+                    "observed_count":
+                        0,
+                }
+
+            resource[
+                "collection_status"
+            ] = (
+                self._build_collection_status(
+                    endpoint=endpoint,
+                    resource=resource,
+                )
+            )
 
             resources.append(
                 resource
@@ -111,11 +280,15 @@ class VpcEndpointCollector(BaseCollector):
         self,
     ) -> List[Dict[str, Any]]:
 
-        paginator = self.ec2.get_paginator(
-            "describe_vpc_endpoints"
+        paginator = (
+            self.ec2.get_paginator(
+                "describe_vpc_endpoints"
+            )
         )
 
-        result: List[Dict[str, Any]] = []
+        result: List[
+            Dict[str, Any]
+        ] = []
 
         try:
 
@@ -132,11 +305,14 @@ class VpcEndpointCollector(BaseCollector):
                         )
                     )
 
-                    endpoint_id = normalized.get(
-                        "vpc_endpoint_id"
+                    endpoint_id = (
+                        normalized.get(
+                            "vpc_endpoint_id"
+                        )
                     )
 
                     if endpoint_id:
+
                         result.append(
                             normalized
                         )
@@ -157,8 +333,10 @@ class VpcEndpointCollector(BaseCollector):
         endpoint: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        endpoint_type = endpoint.get(
-            "VpcEndpointType"
+        endpoint_type = (
+            endpoint.get(
+                "VpcEndpointType"
+            )
         )
 
         subnet_ids = list(
@@ -186,135 +364,150 @@ class VpcEndpointCollector(BaseCollector):
         )
 
         security_group_ids = [
-            group.get("GroupId")
-            for group in endpoint.get(
-                "Groups",
-                [],
+            group.get(
+                "GroupId"
             )
-            if group.get("GroupId")
+            for group in (
+                endpoint.get(
+                    "Groups",
+                    [],
+                )
+                or []
+            )
+            if (
+                isinstance(
+                    group,
+                    dict,
+                )
+                and group.get(
+                    "GroupId"
+                )
+            )
         ]
 
         return {
-              # Identity
-  
-            "vpc_endpoint_id": endpoint.get(
-                "VpcEndpointId"
-            ),
+            "vpc_endpoint_id":
+                endpoint.get(
+                    "VpcEndpointId"
+                ),
 
-            "vpc_id": endpoint.get(
-                "VpcId"
-            ),
+            "vpc_id":
+                endpoint.get(
+                    "VpcId"
+                ),
 
-            "service_name": endpoint.get(
-                "ServiceName"
-            ),
+            "service_name":
+                endpoint.get(
+                    "ServiceName"
+                ),
 
-            "service_region": endpoint.get(
-                "ServiceRegion"
-            ),
+            "service_region":
+                endpoint.get(
+                    "ServiceRegion"
+                ),
 
-            "endpoint_type": endpoint_type,
+            "endpoint_type":
+                endpoint_type,
 
-              # State
-  
-            "state": endpoint.get(
-                "State"
-            ),
+            "state":
+                endpoint.get(
+                    "State"
+                ),
 
-            "creation_timestamp": (
+            "creation_timestamp":
                 self._serialize_datetime(
                     endpoint.get(
                         "CreationTimestamp"
                     )
-                )
-            ),
+                ),
 
-            "last_error": endpoint.get(
-                "LastError"
-            ),
-
-            "failure_reason": endpoint.get(
-                "FailureReason"
-            ),
-
-              # DNS
-  
-            "private_dns_enabled": endpoint.get(
-                "PrivateDnsEnabled"
-            ),
-
-            "dns_options": endpoint.get(
-                "DnsOptions"
-            ),
-
-            "dns_entries": endpoint.get(
-                "DnsEntries",
-                [],
-            ),
-
-              # Routing
-  
-            "route_table_ids": route_table_ids,
-
-            "subnet_ids": subnet_ids,
-
-              # Network
-  
-            "network_interface_ids": (
-                network_interface_ids
-            ),
-
-            "security_group_ids": (
-                security_group_ids
-            ),
-
-            "ip_address_type": endpoint.get(
-                "IpAddressType"
-            ),
-
-              # Ownership
-  
-            "owner_id": endpoint.get(
-                "OwnerId"
-            ),
-
-            "requester_managed": endpoint.get(
-                "RequesterManaged"
-            ),
-
-              # Policy
-  
-            "policy_document": endpoint.get(
-                "PolicyDocument"
-            ),
-
-              # Tags
-  
-            "tags": self._tags(
+            "last_error":
                 endpoint.get(
-                    "Tags",
+                    "LastError"
+                ),
+
+            "failure_reason":
+                endpoint.get(
+                    "FailureReason"
+                ),
+
+            "private_dns_enabled":
+                endpoint.get(
+                    "PrivateDnsEnabled"
+                ),
+
+            "dns_options":
+                endpoint.get(
+                    "DnsOptions"
+                ),
+
+            "dns_entries":
+                endpoint.get(
+                    "DnsEntries",
                     [],
-                )
-            ),
+                ),
 
-              # Classification
-  
-            "category": self._endpoint_category(
+            "route_table_ids":
+                route_table_ids,
+
+            "subnet_ids":
+                subnet_ids,
+
+            "network_interface_ids":
+                network_interface_ids,
+
+            "security_group_ids":
+                security_group_ids,
+
+            "ip_address_type":
+                endpoint.get(
+                    "IpAddressType"
+                ),
+
+            "owner_id":
+                endpoint.get(
+                    "OwnerId"
+                ),
+
+            "requester_managed":
+                endpoint.get(
+                    "RequesterManaged"
+                ),
+
+            "policy_document":
+                endpoint.get(
+                    "PolicyDocument"
+                ),
+
+            "tags":
+                self._tags(
+                    endpoint.get(
+                        "Tags",
+                        [],
+                    )
+                ),
+
+            "category":
+                self._endpoint_category(
+                    endpoint_type
+                ),
+
+            "is_gateway":
+                endpoint_type == "Gateway",
+
+            "is_interface":
+                endpoint_type == "Interface",
+
+            "is_gateway_load_balancer":
                 endpoint_type
-            ),
+                == "GatewayLoadBalancer",
 
-            "is_gateway": (
-                endpoint_type == "Gateway"
-            ),
+            "is_resource":
+                endpoint_type == "Resource",
 
-            "is_interface": (
-                endpoint_type == "Interface"
-            ),
-
-            "is_gateway_load_balancer": (
+            "is_service_network":
                 endpoint_type
-                == "GatewayLoadBalancer"
-            ),
+                == "ServiceNetwork",
         }
 
      # TOPOLOGY
@@ -325,26 +518,52 @@ class VpcEndpointCollector(BaseCollector):
         endpoint_id: Optional[str],
     ) -> Dict[str, Any]:
 
-        topology_collector = (
-            NetworkTopologyCollector(
-                region=self.region
-            )
-        )
-
         try:
 
-            return topology_collector.collect(
-                vpc_id=vpc_id,
-                resource_type=self.resource_type,
-                resource_id=endpoint_id,
+            topology = (
+                self.topology_collector.collect(
+                    vpc_id=vpc_id,
+                    resource_type=self.resource_type,
+                    resource_id=endpoint_id,
+                )
             )
 
         except Exception as exc:
 
             return {
-                "status": "error",
-                "error": str(exc),
+                "status":
+                    "error",
+
+                "error":
+                    str(exc),
             }
+
+        if not isinstance(
+            topology,
+            dict,
+        ):
+
+            return {
+                "status":
+                    "error",
+
+                "error":
+                    "Network topology collector returned "
+                    "an invalid result.",
+            }
+
+        if topology.get(
+            "status"
+        ) != "ok":
+
+            return {
+                **topology,
+
+                "status":
+                    "incomplete",
+            }
+
+        return topology
 
      # RELATIONSHIPS
  
@@ -359,11 +578,17 @@ class VpcEndpointCollector(BaseCollector):
         ) != "ok":
 
             return {
-                "status": "incomplete",
-                "reason": topology.get(
-                    "reason",
-                    "VPC topology unavailable",
-                ),
+                "status":
+                    "incomplete",
+
+                "reason":
+                    topology.get(
+                        "reason",
+                        topology.get(
+                            "error",
+                            "VPC topology unavailable",
+                        ),
+                    ),
             }
 
         resolver = (
@@ -372,15 +597,19 @@ class VpcEndpointCollector(BaseCollector):
             )
         )
 
-        endpoint_id = endpoint.get(
-            "vpc_endpoint_id"
+        endpoint_id = (
+            endpoint.get(
+                "vpc_endpoint_id"
+            )
         )
 
-        endpoint_type = endpoint.get(
-            "endpoint_type"
+        endpoint_type = (
+            endpoint.get(
+                "endpoint_type"
+            )
         )
 
-        subnet_ids = list(
+        configured_subnet_ids = list(
             endpoint.get(
                 "subnet_ids",
                 [],
@@ -388,62 +617,83 @@ class VpcEndpointCollector(BaseCollector):
             or []
         )
 
-        route_table_ids = list(
+        configured_route_table_ids = list(
             endpoint.get(
                 "route_table_ids",
                 [],
             )
             or []
         )
+
         endpoint_subnets: List[
             Dict[str, Any]
         ] = []
 
         if endpoint_type == "Gateway":
 
-            seen_subnets = set()
+            for route_table_id in (
+                configured_route_table_ids
+            ):
 
-            for route_table_id in route_table_ids:
+                if not route_table_id:
+                    continue
 
-                for subnet in (
-                    resolver.subnets_for_route_table(
-                        route_table_id
+                try:
+
+                    endpoint_subnets.extend(
+                        resolver.subnets_for_route_table(
+                            route_table_id
+                        )
                     )
-                ):
 
-                    subnet_id = subnet.get(
-                        "subnet_id"
-                    )
+                except Exception:
+                    continue
 
-                    if (
-                        subnet_id
-                        and subnet_id
-                        not in seen_subnets
-                    ):
+        elif endpoint_type == "Interface":
 
-                        seen_subnets.add(
+            for subnet_id in (
+                configured_subnet_ids
+            ):
+
+                if not subnet_id:
+                    continue
+
+                try:
+
+                    subnet = (
+                        resolver.subnet(
                             subnet_id
                         )
+                    )
 
-                        endpoint_subnets.append(
-                            subnet
-                        )
-
-        else:
-
-            for subnet_id in subnet_ids:
-
-                subnet = resolver.subnet(
-                    subnet_id
-                )
+                except Exception:
+                    subnet = None
 
                 if subnet:
+
                     endpoint_subnets.append(
                         subnet
                     )
 
-           # Availability zones
-   
+        endpoint_subnets = (
+            self._deduplicate_dicts(
+                endpoint_subnets,
+                key="subnet_id",
+            )
+        )
+
+        endpoint_subnet_ids = sorted(
+            {
+                subnet.get(
+                    "subnet_id"
+                )
+                for subnet in endpoint_subnets
+                if subnet.get(
+                    "subnet_id"
+                )
+            }
+        )
+
         availability_zones = sorted(
             {
                 subnet.get(
@@ -456,334 +706,437 @@ class VpcEndpointCollector(BaseCollector):
             }
         )
 
-           # Route tables
-   
+        route_tables = topology.get(
+            "route_tables",
+            [],
+        )
+
+        if not isinstance(
+            route_tables,
+            list,
+        ):
+            route_tables = []
+
         endpoint_route_tables = [
             table
-            for table in topology.get(
-                "route_tables",
-                [],
-            )
-            if table.get(
-                "route_table_id"
-            ) in route_table_ids
-        ]
-        gateway_endpoint_routes: List[
-            Dict[str, Any]
-        ] = []
-
-        if endpoint_type == "Gateway":
-
-            gateway_endpoint_routes = (
-                resolver.routes_targeting_vpc_endpoint(
-                    endpoint_id
+            for table in route_tables
+            if (
+                isinstance(
+                    table,
+                    dict,
                 )
+                and table.get(
+                    "route_table_id"
+                )
+                in configured_route_table_ids
             )
+        ]
 
+        gateway_endpoint_routes = []
 
-        interface_subnet_routes: List[
-            Dict[str, Any]
-        ] = []
+        if (
+            endpoint_type == "Gateway"
+            and endpoint_id
+        ):
+
+            try:
+
+                gateway_endpoint_routes = (
+                    resolver.routes_targeting(
+                        target_type="gateway_endpoint",
+                        target_id=endpoint_id,
+                    )
+                )
+
+            except Exception:
+
+                gateway_endpoint_routes = []
+
+        gateway_route_table_ids = sorted(
+            {
+                route.get(
+                    "route_table_id"
+                )
+                for route in gateway_endpoint_routes
+                if route.get(
+                    "route_table_id"
+                )
+            }
+        )
+
+        gateway_coverage = sorted(
+            set(
+                configured_route_table_ids
+            )
+            &
+            set(
+                gateway_route_table_ids
+            )
+        )
+
+        interface_subnet_routes = []
 
         if endpoint_type == "Interface":
 
-            for subnet_id in subnet_ids:
+            for subnet_id in (
+                configured_subnet_ids
+            ):
 
-                interface_subnet_routes.extend(
+                try:
+
+                    interface_subnet_routes.extend(
+                        resolver.routes_for_subnet(
+                            subnet_id
+                        )
+                    )
+
+                except Exception:
+
+                    continue
+
+        interface_subnet_routes = (
+            self._deduplicate_dicts(
+                interface_subnet_routes,
+                key="_route_key",
+            )
+        )
+
+        surrounding_routes = []
+
+        for subnet_id in (
+            endpoint_subnet_ids
+        ):
+
+            try:
+
+                surrounding_routes.extend(
                     resolver.routes_for_subnet(
                         subnet_id
                     )
                 )
-        relevant_routes = []
 
-        if endpoint_type == "Gateway":
+            except Exception:
 
-            relevant_routes = (
-                gateway_endpoint_routes
+                continue
+
+        surrounding_routes = (
+            self._deduplicate_dicts(
+                surrounding_routes,
+                key="_route_key",
             )
+        )
 
-        elif endpoint_type == "Interface":
-
-            relevant_routes = (
-                interface_subnet_routes
+        dependencies = (
+            self._dependency_ids_for_routes(
+                surrounding_routes
             )
-
-        nat_gateway_ids = set()
-        transit_gateway_ids = set()
-        internet_gateway_ids = set()
-        vpc_peering_connection_ids = set()
-
-        for route in relevant_routes:
-
-            nat_gateway_id = route.get(
-                "nat_gateway_id"
-            )
-
-            if nat_gateway_id:
-                nat_gateway_ids.add(
-                    nat_gateway_id
-                )
-
-            transit_gateway_id = route.get(
-                "transit_gateway_id"
-            )
-
-            if transit_gateway_id:
-                transit_gateway_ids.add(
-                    transit_gateway_id
-                )
-
-            gateway_id = route.get(
-                "gateway_id"
-            )
-
-            if (
-                gateway_id
-                and str(gateway_id).startswith(
-                    "igw-"
-                )
-            ):
-                internet_gateway_ids.add(
-                    gateway_id
-                )
-
-            peering_id = route.get(
-                "vpc_peering_connection_id"
-            )
-
-            if peering_id:
-                vpc_peering_connection_ids.add(
-                    peering_id
-                )
-   
-        nat_routes = [
-            route
-            for route in relevant_routes
-            if route.get(
-                "nat_gateway_id"
-            )
-        ]
-
-        transit_gateway_routes = [
-            route
-            for route in relevant_routes
-            if route.get(
-                "transit_gateway_id"
-            )
-        ]
-
-        internet_gateway_routes = [
-            route
-            for route in relevant_routes
-            if (
-                route.get(
-                    "gateway_id"
-                )
-                and str(
-                    route.get(
-                        "gateway_id"
-                    )
-                ).startswith("igw-")
-            )
-        ]
+        )
 
         return {
-            "status": "ok",
+            "status":
+                "ok",
 
-              # VPC
-  
+            "collection_status": {
+    "topology":
+        "ok",
+
+    "gateway_route_context":
+        "ok",
+},
+
             "vpc": {
-                "vpc_id": endpoint.get(
-                    "vpc_id"
-                ),
+                "vpc_id":
+                    endpoint.get(
+                        "vpc_id"
+                    ),
             },
 
-              # Subnets
-  
+            "endpoint": {
+                "vpc_endpoint_id":
+                    endpoint_id,
+
+                "service_name":
+                    endpoint.get(
+                        "service_name"
+                    ),
+
+                "endpoint_type":
+                    endpoint_type,
+
+                "state":
+                    endpoint.get(
+                        "state"
+                    ),
+            },
+
             "subnets": {
-                "subnet_ids": [
-                    subnet.get(
-                        "subnet_id"
-                    )
-                    for subnet in endpoint_subnets
-                    if subnet.get(
-                        "subnet_id"
-                    )
-                ],
+                "configured_subnet_ids":
+                    configured_subnet_ids,
 
-                "count": len(
-                    endpoint_subnets
-                ),
+                "effective_subnet_ids":
+                    endpoint_subnet_ids,
 
-                "resources": endpoint_subnets,
+                "count":
+                    len(
+                        endpoint_subnet_ids
+                    ),
+
+                "resources":
+                    endpoint_subnets,
             },
 
-              # AZs
-  
             "availability_zones": {
-                "names": availability_zones,
+                "names":
+                    availability_zones,
 
-                "count": len(
-                    availability_zones
-                ),
-            },
-
-              # Route tables
-  
-            "route_tables": {
-                "route_table_ids": route_table_ids,
-
-                "count": len(
-                    route_table_ids
-                ),
-
-                "resources": endpoint_route_tables,
-            },
-
-              # Network interfaces
-  
-            "network_interfaces": {
-                "network_interface_ids": (
-                    endpoint.get(
-                        "network_interface_ids",
-                        [],
-                    )
-                ),
-
-                "count": len(
-                    endpoint.get(
-                        "network_interface_ids",
-                        [],
-                    )
-                ),
-            },
-
-              # Security groups
-  
-            "security_groups": {
-                "security_group_ids": (
-                    endpoint.get(
-                        "security_group_ids",
-                        [],
-                    )
-                ),
-
-                "count": len(
-                    endpoint.get(
-                        "security_group_ids",
-                        [],
-                    )
-                ),
-            },
-
-              # Gateway endpoint routing
-  
-            "gateway_endpoint": {
-                "route_count": len(
-                    gateway_endpoint_routes
-                ),
-
-                "routes": (
-                    gateway_endpoint_routes
-                ),
-            },
-
-              # Interface endpoint routing context
-  
-            "interface_endpoint": {
-                "subnet_route_count": len(
-                    interface_subnet_routes
-                ),
-
-                "subnet_routes": (
-                    interface_subnet_routes
-                ),
-            },
-
-              # Network dependencies
-  
-            "network_dependencies": {
-                "nat_gateway_ids": sorted(
-                    nat_gateway_ids
-                ),
-
-                "transit_gateway_ids": sorted(
-                    transit_gateway_ids
-                ),
-
-                "internet_gateway_ids": sorted(
-                    internet_gateway_ids
-                ),
-
-                "vpc_peering_connection_ids": (
-                    sorted(
-                        vpc_peering_connection_ids
-                    )
-                ),
-            },
-
-              # Optimization evidence
-  
-            "optimization_evidence": {
-                "gateway_endpoint_route_count": (
-                    len(
-                        gateway_endpoint_routes
-                    )
-                ),
-
-                "interface_endpoint_subnet_count": (
-                    len(
-                        subnet_ids
-                    )
-                ),
-
-                "availability_zone_count": (
+                "count":
                     len(
                         availability_zones
-                    )
-                ),
+                    ),
+            },
 
-                "network_interface_count": (
+            "route_tables": {
+                "configured_route_table_ids":
+                    configured_route_table_ids,
+
+                "gateway_endpoint_route_table_ids":
+                    gateway_route_table_ids,
+
+                "gateway_endpoint_route_table_coverage":
+                    gateway_coverage,
+
+                "count":
+                    len(
+                        configured_route_table_ids
+                    ),
+
+                "resources":
+                    endpoint_route_tables,
+
+                "configuration_complete":
+                    (
+                        endpoint_type != "Gateway"
+                        or not configured_route_table_ids
+                        or bool(
+                            endpoint_route_tables
+                        )
+                    ),
+            },
+
+            "network_interfaces": {
+                "network_interface_ids":
+                    list(
+                        endpoint.get(
+                            "network_interface_ids",
+                            [],
+                        )
+                        or []
+                    ),
+
+                "count":
                     len(
                         endpoint.get(
                             "network_interface_ids",
                             [],
                         )
+                        or []
+                    ),
+            },
+
+            "security_groups": {
+                "security_group_ids":
+                    list(
+                        endpoint.get(
+                            "security_group_ids",
+                            [],
+                        )
+                        or []
+                    ),
+
+                "count":
+                    len(
+                        endpoint.get(
+                            "security_group_ids",
+                            [],
+                        )
+                        or []
+                    ),
+            },
+
+            "gateway_endpoint": {
+                "route_count":
+                    len(
+                        gateway_endpoint_routes
+                    ),
+
+                "routes":
+                    gateway_endpoint_routes,
+
+                "route_table_ids":
+                    gateway_route_table_ids,
+
+                "configured_route_table_count":
+                    len(
+                        configured_route_table_ids
+                    ),
+
+                "covered_route_table_count":
+                    len(
+                        gateway_coverage
+                    ),
+
+                "coverage_complete":
+                    (
+                        (
+                            not configured_route_table_ids
+                        )
+                        or
+                        (
+                            set(
+                                configured_route_table_ids
+                            )
+                            <=
+                            set(
+                                gateway_route_table_ids
+                            )
+                        )
+                    ),
+
+                "has_expected_routes":
+                    bool(
+                        gateway_endpoint_routes
+                    ),
+            },
+
+            "interface_endpoint": {
+                "configured_subnet_count":
+                    len(
+                        configured_subnet_ids
+                    ),
+
+                "effective_subnet_count":
+                    len(
+                        endpoint_subnet_ids
+                    ),
+
+                "subnet_route_count":
+                    len(
+                        interface_subnet_routes
+                    ),
+
+                "subnet_routes":
+                    interface_subnet_routes,
+            },
+
+            "surrounding_network": {
+                "route_count":
+                    len(
+                        surrounding_routes
+                    ),
+
+                "routes":
+                    surrounding_routes,
+            },
+
+            "network_dependencies": {
+                key:
+                    sorted(
+                        dependencies.get(
+                            key,
+                            [],
+                        )
                     )
-                ),
+                for key in (
+                    "nat_gateway_ids",
+                    "transit_gateway_ids",
+                    "internet_gateway_ids",
+                    "vpc_peering_connection_ids",
+                    "network_interface_ids",
+                    "instance_ids",
+                    "carrier_gateway_ids",
+                    "local_gateway_ids",
+                    "egress_only_internet_gateway_ids",
+                    "core_network_arns",
+                )
+            },
 
-                "uses_nat_gateway": bool(
-                    nat_gateway_ids
-                ),
+            "optimization_evidence": {
+                "endpoint_type":
+                    endpoint_type,
 
-                "uses_transit_gateway": bool(
-                    transit_gateway_ids
-                ),
+                "service_name":
+                    endpoint.get(
+                        "service_name"
+                    ),
 
-                "uses_internet_gateway": bool(
-                    internet_gateway_ids
-                ),
+                "state":
+                    endpoint.get(
+                        "state"
+                    ),
 
-                "has_gateway_endpoint_routes": bool(
-                    gateway_endpoint_routes
-                ),
+                "gateway_endpoint_route_count":
+                    len(
+                        gateway_endpoint_routes
+                    ),
 
-                "private_dns_enabled": (
+                "configured_route_table_count":
+                    len(
+                        configured_route_table_ids
+                    ),
+
+                "gateway_route_table_coverage_count":
+                    len(
+                        gateway_coverage
+                    ),
+
+                "effective_subnet_count":
+                    len(
+                        endpoint_subnet_ids
+                    ),
+
+                "availability_zone_count":
+                    len(
+                        availability_zones
+                    ),
+
+                "network_interface_count":
+                    len(
+                        endpoint.get(
+                            "network_interface_ids",
+                            [],
+                        )
+                        or []
+                    ),
+
+                "security_group_count":
+                    len(
+                        endpoint.get(
+                            "security_group_ids",
+                            [],
+                        )
+                        or []
+                    ),
+
+                "private_dns_enabled":
                     endpoint.get(
                         "private_dns_enabled"
-                    )
-                ),
+                    ),
+
+                "requester_managed":
+                    endpoint.get(
+                        "requester_managed"
+                    ),
             },
         }
 
-     # IDENTITY
+     # BASE INTERFACE
  
     def get_resource_id(
         self,
         resource: Dict[str, Any],
     ) -> str:
 
-        return (
+        value = (
             resource.get(
                 "resource_id"
             )
@@ -792,77 +1145,83 @@ class VpcEndpointCollector(BaseCollector):
             )
         )
 
+        return str(
+            value
+            if value
+            else "unknown"
+        )
+
     def collect_identity(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        identity = resource.get(
+        value = resource.get(
             "identity"
         )
 
-        if identity:
-            return identity
+        return (
+            value
+            if isinstance(
+                value,
+                dict,
+            )
+            else {}
+        )
 
-        return {
-            "vpc_endpoint_id": (
-                self.get_resource_id(
-                    resource
-                )
-            ),
-
-            "vpc_id": resource.get(
-                "vpc_id"
-            ),
-
-            "service_name": resource.get(
-                "service_name"
-            ),
-
-            "endpoint_type": resource.get(
-                "endpoint_type"
-            ),
-        }
-
-     # CONFIGURATION
- 
     def collect_configuration(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        configuration = resource.get(
+        value = resource.get(
             "configuration"
         )
 
-        if configuration:
-            return configuration
+        return (
+            value
+            if isinstance(
+                value,
+                dict,
+            )
+            else {}
+        )
 
-        return {}
-
-     # TOPOLOGY
- 
     def collect_topology(
         self,
         resource: Dict[str, Any],
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        return resource.get(
-            "topology",
-            {},
+        value = resource.get(
+            "topology"
         )
 
-     # RELATIONSHIPS
- 
+        return (
+            value
+            if isinstance(
+                value,
+                dict,
+            )
+            else {}
+        )
+
     def collect_relationships(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        return resource.get(
-            "relationships",
-            {},
+        value = resource.get(
+            "relationships"
+        )
+
+        return (
+            value
+            if isinstance(
+                value,
+                dict,
+            )
+            else {}
         )
 
      # RESOURCE
@@ -872,150 +1231,1056 @@ class VpcEndpointCollector(BaseCollector):
         endpoint: Dict[str, Any],
     ) -> Dict[str, Any]:
 
+        endpoint_type = (
+            endpoint.get(
+                "endpoint_type"
+            )
+        )
+
         return {
-            "resource_type": self.resource_type,
+            "resource_type":
+                self.resource_type,
 
-            "resource_id": endpoint.get(
-                "vpc_endpoint_id"
-            ),
-
-            "region": self.region,
-
-            "identity": {
-                "vpc_endpoint_id": endpoint.get(
+            "resource_id":
+                endpoint.get(
                     "vpc_endpoint_id"
                 ),
 
-                "vpc_id": endpoint.get(
-                    "vpc_id"
-                ),
+            "region":
+                self.region,
 
-                "service_name": endpoint.get(
-                    "service_name"
-                ),
+            "identity": {
+                "vpc_endpoint_id":
+                    endpoint.get(
+                        "vpc_endpoint_id"
+                    ),
 
-                "endpoint_type": endpoint.get(
-                    "endpoint_type"
-                ),
+                "vpc_id":
+                    endpoint.get(
+                        "vpc_id"
+                    ),
 
-                "category": endpoint.get(
-                    "category"
-                ),
+                "service_name":
+                    endpoint.get(
+                        "service_name"
+                    ),
+
+                "endpoint_type":
+                    endpoint_type,
+
+                "category":
+                    endpoint.get(
+                        "category"
+                    ),
             },
 
             "configuration": {
-                "service_region": endpoint.get(
-                    "service_region"
-                ),
-
-                "state": endpoint.get(
-                    "state"
-                ),
-
-                "creation_timestamp": endpoint.get(
-                    "creation_timestamp"
-                ),
-
-                "policy_document": endpoint.get(
-                    "policy_document"
-                ),
-
-                "private_dns_enabled": endpoint.get(
-                    "private_dns_enabled"
-                ),
-
-                "dns_options": endpoint.get(
-                    "dns_options"
-                ),
-
-                "dns_entries": endpoint.get(
-                    "dns_entries",
-                    [],
-                ),
-
-                "route_table_ids": endpoint.get(
-                    "route_table_ids",
-                    [],
-                ),
-
-                "subnet_ids": endpoint.get(
-                    "subnet_ids",
-                    [],
-                ),
-
-                "network_interface_ids": endpoint.get(
-                    "network_interface_ids",
-                    [],
-                ),
-
-                "security_group_ids": endpoint.get(
-                    "security_group_ids",
-                    [],
-                ),
-
-                "owner_id": endpoint.get(
-                    "owner_id"
-                ),
-
-                "requester_managed": endpoint.get(
-                    "requester_managed"
-                ),
-
-                "ip_address_type": endpoint.get(
-                    "ip_address_type"
-                ),
-
-                "last_error": endpoint.get(
-                    "last_error"
-                ),
-
-                "failure_reason": endpoint.get(
-                    "failure_reason"
-                ),
-
-                "tags": endpoint.get(
-                    "tags",
-                    {},
-                ),
-
-                "category": endpoint.get(
-                    "category"
-                ),
-
-                "is_gateway": endpoint.get(
-                    "is_gateway"
-                ),
-
-                "is_interface": endpoint.get(
-                    "is_interface"
-                ),
-
-                "is_gateway_load_balancer": (
+                "service_name":
                     endpoint.get(
-                        "is_gateway_load_balancer"
-                    )
-                ),
+                        "service_name"
+                    ),
+
+                "service_region":
+                    endpoint.get(
+                        "service_region"
+                    ),
+
+                "endpoint_type":
+                    endpoint_type,
+
+                "state":
+                    endpoint.get(
+                        "state"
+                    ),
+
+                "creation_timestamp":
+                    endpoint.get(
+                        "creation_timestamp"
+                    ),
+
+                "policy_document":
+                    endpoint.get(
+                        "policy_document"
+                    ),
+
+                "private_dns_enabled":
+                    endpoint.get(
+                        "private_dns_enabled"
+                    ),
+
+                "dns_options":
+                    endpoint.get(
+                        "dns_options"
+                    ),
+
+                "dns_entries":
+                    endpoint.get(
+                        "dns_entries",
+                        [],
+                    ),
+
+                "route_table_ids":
+                    endpoint.get(
+                        "route_table_ids",
+                        [],
+                    ),
+
+                "subnet_ids":
+                    endpoint.get(
+                        "subnet_ids",
+                        [],
+                    ),
+
+                "network_interface_ids":
+                    endpoint.get(
+                        "network_interface_ids",
+                        [],
+                    ),
+
+                "security_group_ids":
+                    endpoint.get(
+                        "security_group_ids",
+                        [],
+                    ),
+
+                "owner_id":
+                    endpoint.get(
+                        "owner_id"
+                    ),
+
+                "requester_managed":
+                    endpoint.get(
+                        "requester_managed"
+                    ),
+
+                "ip_address_type":
+                    endpoint.get(
+                        "ip_address_type"
+                    ),
+
+                "last_error":
+                    endpoint.get(
+                        "last_error"
+                    ),
+
+                "failure_reason":
+                    endpoint.get(
+                        "failure_reason"
+                    ),
+
+                "tags":
+                    endpoint.get(
+                        "tags",
+                        {},
+                    ),
             },
+        }
+    def build_optimization_evidence(
+        self,
+        resource: Dict[str, Any],
+        collected_resource: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        identity = self._as_dict(
+            collected_resource.get(
+                "identity"
+            )
+        )
+
+        configuration = self._as_dict(
+            collected_resource.get(
+                "configuration"
+            )
+        )
+
+        topology = self._as_dict(
+            collected_resource.get(
+                "topology"
+            )
+        )
+
+        relationships = self._as_dict(
+            collected_resource.get(
+                "relationships"
+            )
+        )
+
+        network_interfaces_raw = (
+            collected_resource.get(
+                "network_interfaces"
+            )
+        )
+
+        if isinstance(
+            network_interfaces_raw,
+            dict,
+        ):
+
+            network_interfaces = (
+                network_interfaces_raw
+            )
+
+        elif isinstance(
+            network_interfaces_raw,
+            list,
+        ):
+
+            network_interfaces = {
+                "status":
+                    "ok",
+
+                "resources":
+                    network_interfaces_raw,
+
+                "requested_count":
+                    len(
+                        configuration.get(
+                            "network_interface_ids",
+                            [],
+                        )
+                        or []
+                    ),
+
+                "observed_count":
+                    len(
+                        network_interfaces_raw
+                    ),
+
+                "count":
+                    len(
+                        network_interfaces_raw
+                    ),
+            }
+
+        else:
+
+            network_interfaces = {
+                "status":
+                    "missing",
+
+                "resources":
+                    [],
+
+                "requested_count":
+                    0,
+
+                "observed_count":
+                    0,
+
+                "count":
+                    0,
+            }
+
+        endpoint_subnets = self._as_dict(
+            topology.get(
+                "subnets"
+            )
+        )
+
+        availability_zones = self._as_dict(
+            topology.get(
+                "availability_zones"
+            )
+        )
+
+        gateway_endpoint = self._as_dict(
+            topology.get(
+                "gateway_endpoint"
+            )
+        )
+
+        interface_endpoint = self._as_dict(
+            topology.get(
+                "interface_endpoint"
+            )
+        )
+
+        network_dependencies = self._as_dict(
+            topology.get(
+                "network_dependencies"
+            )
+        )
+
+        collection_status = self._as_dict(
+            topology.get(
+                "collection_status"
+            )
+        )
+        endpoint_type = (
+            identity.get(
+                "endpoint_type"
+            )
+            or configuration.get(
+                "endpoint_type"
+            )
+        )
+
+        service_name = (
+            identity.get(
+                "service_name"
+            )
+            or configuration.get(
+                "service_name"
+            )
+        )
+
+        state = configuration.get(
+            "state"
+        )
+
+        configured_route_tables = self._as_list(
+            topology
+            .get(
+                "route_tables",
+                {},
+            )
+            if isinstance(
+                topology.get(
+                    "route_tables"
+                ),
+                dict,
+            )
+            else []
+        )
+
+        # ------------------------------------------------------------
+        # Collection quality
+        # ------------------------------------------------------------
+
+        topology_available = (
+            topology.get(
+                "status"
+            )
+            == "ok"
+        )
+
+        relationship_available = (
+            relationships.get(
+                "status"
+            )
+            == "ok"
+        )
+
+        network_interfaces_available = (
+            network_interfaces.get(
+                "status"
+            )
+            in {
+                "ok",
+                "partial",
+            }
+        )
+
+        return {
+            "resource": {
+                "resource_id":
+                    resource.get(
+                        "resource_id"
+                    ),
+
+                "resource_type":
+                    self.resource_type,
+
+                "service_name":
+                    service_name,
+
+                "endpoint_type":
+                    endpoint_type,
+
+                "state":
+                    state,
+            },
+
+            "network": {
+                "effective_subnet_count":
+                    self._safe_int(
+                        endpoint_subnets.get(
+                            "count"
+                        )
+                    ),
+
+                "availability_zone_count":
+                    self._safe_int(
+                        availability_zones.get(
+                            "count"
+                        )
+                    ),
+
+                "network_interface_count":
+                    self._safe_int(
+                        network_interfaces.get(
+                            "observed_count",
+                            network_interfaces.get(
+                                "count"
+                            )
+                        )
+                    ),
+
+                "configured_route_table_count":
+                    self._safe_int(
+                        gateway_endpoint.get(
+                            "configured_route_table_count"
+                        )
+                    ),
+
+                "covered_route_table_count":
+                    self._safe_int(
+                        gateway_endpoint.get(
+                            "covered_route_table_count"
+                        )
+                    ),
+
+                "gateway_endpoint_route_count":
+                    self._safe_int(
+                        gateway_endpoint.get(
+                            "route_count"
+                        )
+                    ),
+
+                "interface_configured_subnet_count":
+                    self._safe_int(
+                        interface_endpoint.get(
+                            "configured_subnet_count"
+                        )
+                    ),
+
+                "interface_effective_subnet_count":
+                    self._safe_int(
+                        interface_endpoint.get(
+                            "effective_subnet_count"
+                        )
+                    ),
+            },
+
+            "configuration": {
+                "private_dns_enabled":
+                    configuration.get(
+                        "private_dns_enabled"
+                    ),
+
+                "requester_managed":
+                    configuration.get(
+                        "requester_managed"
+                    ),
+
+                "state":
+                    state,
+
+                "endpoint_type":
+                    endpoint_type,
+            },
+
+            "dependencies":
+                network_dependencies,
+
+            "network_interfaces":
+                network_interfaces,
+
+            "route_context": {
+                "configured_route_table_count":
+                    self._safe_int(
+                        gateway_endpoint.get(
+                            "configured_route_table_count"
+                        )
+                    ),
+
+                "covered_route_table_count":
+                    self._safe_int(
+                        gateway_endpoint.get(
+                            "covered_route_table_count"
+                        )
+                    ),
+
+                "gateway_endpoint_route_count":
+                    self._safe_int(
+                        gateway_endpoint.get(
+                            "route_count"
+                        )
+                    ),
+
+                "interface_subnet_route_count":
+                    self._safe_int(
+                        interface_endpoint.get(
+                            "subnet_route_count"
+                        )
+                    ),
+            },
+
+            "data_quality": {
+                "topology_available":
+                    topology_available,
+
+                "relationship_data_available":
+                    relationship_available,
+
+                "network_interfaces_available":
+                    network_interfaces_available,
+
+                "network_context_available":
+                    bool(
+                        relationships
+                    ),
+
+                "configuration_available":
+                    bool(
+                        configuration
+                    ),
+
+                "identity_available":
+                    bool(
+                        identity
+                    ),
+
+                "collection_status":
+                    collection_status,
+            },
+        }
+
+    @staticmethod
+    def _safe_int(
+        value: Any,
+    ) -> int:
+
+        if isinstance(
+            value,
+            bool,
+        ):
+            return int(value)
+
+        try:
+            return int(
+                value
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return 0
+
+     # COLLECTION STATUS
+ 
+    @staticmethod
+    def _build_collection_status(
+        endpoint: Dict[str, Any],
+        resource: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        topology = resource.get(
+            "topology",
+            {},
+        )
+
+        relationships = resource.get(
+            "relationships",
+            {},
+        )
+
+        network_interfaces = resource.get(
+            "network_interfaces",
+            {},
+        )
+
+        endpoint_type = endpoint.get(
+            "endpoint_type"
+        )
+
+        topology_ok = (
+            isinstance(
+                topology,
+                dict,
+            )
+            and
+            topology.get(
+                "status"
+            ) == "ok"
+        )
+
+        relationships_ok = (
+            isinstance(
+                relationships,
+                dict,
+            )
+            and
+            relationships.get(
+                "status"
+            ) == "ok"
+        )
+
+        eni_ok = (
+            isinstance(
+                network_interfaces,
+                dict,
+            )
+            and
+            network_interfaces.get(
+                "status"
+            ) == "ok"
+        )
+
+        requested_eni_count = len(
+            endpoint.get(
+                "network_interface_ids",
+                [],
+            )
+            or []
+        )
+
+        observed_eni_count = (
+            network_interfaces.get(
+                "observed_count",
+                0,
+            )
+            if isinstance(
+                network_interfaces,
+                dict,
+            )
+            else 0
+        )
+
+        eni_complete = (
+            requested_eni_count == 0
+            or (
+                eni_ok
+                and
+                observed_eni_count
+                == requested_eni_count
+            )
+        )
+
+        gateway_route_context_complete = (
+            endpoint_type != "Gateway"
+            or (
+                topology_ok
+                and relationships_ok
+                and isinstance(
+                    topology.get(
+                        "gateway_endpoint"
+                    ),
+                    dict,
+                )
+            )
+        )
+
+        return {
+            "endpoint":
+                "ok",
+
+            "topology":
+                "ok"
+                if topology_ok
+                else "incomplete",
+
+            "relationships":
+                "ok"
+                if relationships_ok
+                else "incomplete",
+
+            "network_interfaces":
+                "ok"
+                if eni_complete
+                else (
+                    "error"
+                    if (
+                        isinstance(
+                            network_interfaces,
+                            dict,
+                        )
+                        and
+                        network_interfaces.get(
+                            "status"
+                        ) == "error"
+                    )
+                    else "incomplete"
+                ),
+
+            "gateway_route_context":
+                "ok"
+                if gateway_route_context_complete
+                else "incomplete",
+
+            "complete_for_analysis":
+                (
+                    topology_ok
+                    and relationships_ok
+                    and eni_complete
+                    and gateway_route_context_complete
+                ),
         }
 
      # HELPERS
  
     @staticmethod
+    def _dependency_ids_for_routes(
+        routes: List[Dict[str, Any]],
+    ) -> Dict[str, List[str]]:
+
+        fields = {
+            "nat_gateway_ids":
+                "nat_gateway_id",
+
+            "transit_gateway_ids":
+                "transit_gateway_id",
+
+            "internet_gateway_ids":
+                "gateway_id",
+
+            "vpc_peering_connection_ids":
+                "vpc_peering_connection_id",
+
+            "network_interface_ids":
+                "network_interface_id",
+
+            "instance_ids":
+                "instance_id",
+
+            "carrier_gateway_ids":
+                "carrier_gateway_id",
+
+            "local_gateway_ids":
+                "local_gateway_id",
+
+            "egress_only_internet_gateway_ids":
+                "egress_only_internet_gateway_id",
+
+            "core_network_arns":
+                "core_network_arn",
+        }
+
+        collected = {
+            key: set()
+            for key in fields
+        }
+
+        for route in routes:
+
+            if not isinstance(
+                route,
+                dict,
+            ):
+                continue
+
+            for result_key, field in (
+                fields.items()
+            ):
+
+                value = route.get(
+                    field
+                )
+
+                if not value:
+                    continue
+
+                if (
+                    result_key
+                    == "internet_gateway_ids"
+                    and not str(
+                        value
+                    ).startswith(
+                        "igw-"
+                    )
+                ):
+                    continue
+
+                collected[
+                    result_key
+                ].add(
+                    str(value)
+                )
+
+        return {
+            key:
+                sorted(
+                    values
+                )
+            for key, values in collected.items()
+            if values
+        }
+
+    @staticmethod
+    def _deduplicate_dicts(
+        values: List[Dict[str, Any]],
+        key: str,
+    ) -> List[Dict[str, Any]]:
+
+        result = []
+        seen = set()
+
+        for value in values:
+
+            if not isinstance(
+                value,
+                dict,
+            ):
+                continue
+
+            if key == "_route_key":
+
+                identity = repr(
+                    sorted(
+                        value.items(),
+                        key=lambda item:
+                        str(item[0]),
+                    )
+                )
+
+            else:
+
+                raw_key = value.get(
+                    key
+                )
+
+                identity = (
+                    str(raw_key)
+                    if raw_key is not None
+                    else repr(value)
+                )
+
+            if identity in seen:
+                continue
+
+            seen.add(
+                identity
+            )
+
+            result.append(
+                value
+            )
+
+        return result
+
+    @staticmethod
     def _endpoint_category(
         endpoint_type: Optional[str],
     ) -> str:
 
-        mapping = {
-            "Gateway": "gateway",
+        return {
+            "Gateway":
+                "gateway",
 
-            "Interface": "interface",
+            "Interface":
+                "interface",
 
-            "GatewayLoadBalancer": (
-                "gateway_load_balancer"
-            ),
+            "GatewayLoadBalancer":
+                "gateway_load_balancer",
+
+            "Resource":
+                "resource",
+
+            "ServiceNetwork":
+                "service_network",
+        }.get(
+            endpoint_type,
+            "unknown",
+        )
+    # ================================================================
+    # HELPERS
+    # ================================================================
+
+    @staticmethod
+    def _as_dict(
+        value: Any,
+    ) -> Dict[str, Any]:
+
+        return (
+            value
+            if isinstance(
+                value,
+                dict,
+            )
+            else {}
+        )
+
+    @staticmethod
+    def _as_list(
+        value: Any,
+    ) -> List[Any]:
+
+        return (
+            value
+            if isinstance(
+                value,
+                list,
+            )
+            else []
+        )
+
+    @staticmethod
+    def _safe_int(
+        value: Any,
+    ) -> int:
+
+        if isinstance(
+            value,
+            bool,
+        ):
+            return int(value)
+
+        try:
+            return int(
+                value
+            )
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return 0
+
+    @staticmethod
+    def _dependency_ids_for_routes(
+        routes: List[Dict[str, Any]],
+    ) -> Dict[str, List[str]]:
+
+        fields = {
+            "nat_gateway_ids":
+                "nat_gateway_id",
+
+            "transit_gateway_ids":
+                "transit_gateway_id",
+
+            "internet_gateway_ids":
+                "gateway_id",
+
+            "vpc_peering_connection_ids":
+                "vpc_peering_connection_id",
+
+            "network_interface_ids":
+                "network_interface_id",
+
+            "instance_ids":
+                "instance_id",
+
+            "carrier_gateway_ids":
+                "carrier_gateway_id",
+
+            "local_gateway_ids":
+                "local_gateway_id",
+
+            "egress_only_internet_gateway_ids":
+                "egress_only_internet_gateway_id",
+
+            "core_network_arns":
+                "core_network_arn",
         }
 
-        return mapping.get(
+        collected = {
+            key: set()
+            for key in fields
+        }
+
+        for route in routes:
+
+            if not isinstance(
+                route,
+                dict,
+            ):
+                continue
+
+            for result_key, field in fields.items():
+
+                value = route.get(
+                    field
+                )
+
+                if not value:
+                    continue
+
+                if (
+                    result_key
+                    == "internet_gateway_ids"
+                    and not str(value).startswith(
+                        "igw-"
+                    )
+                ):
+                    continue
+
+                collected[
+                    result_key
+                ].add(
+                    str(value)
+                )
+
+        return {
+            key:
+                sorted(values)
+            for key, values in collected.items()
+            if values
+        }
+
+    @staticmethod
+    def _deduplicate_dicts(
+        values: List[Dict[str, Any]],
+        key: str,
+    ) -> List[Dict[str, Any]]:
+
+        result: List[Dict[str, Any]] = []
+
+        seen: set[str] = set()
+
+        for value in values:
+
+            if not isinstance(
+                value,
+                dict,
+            ):
+                continue
+
+            if key == "_route_key":
+
+                identity = repr(
+                    sorted(
+                        value.items(),
+                        key=lambda item:
+                            str(item[0]),
+                    )
+                )
+
+            else:
+
+                raw_key = value.get(
+                    key
+                )
+
+                identity = (
+                    str(raw_key)
+                    if raw_key is not None
+                    else repr(value)
+                )
+
+            if identity in seen:
+                continue
+
+            seen.add(
+                identity
+            )
+
+            result.append(
+                value
+            )
+
+        return result
+
+    @staticmethod
+    def _endpoint_category(
+        endpoint_type: Optional[str],
+    ) -> str:
+
+        return {
+            "Gateway":
+                "gateway",
+
+            "Interface":
+                "interface",
+
+            "GatewayLoadBalancer":
+                "gateway_load_balancer",
+
+            "Resource":
+                "resource",
+
+            "ServiceNetwork":
+                "service_network",
+        }.get(
             endpoint_type,
             "unknown",
         )
@@ -1025,10 +2290,23 @@ class VpcEndpointCollector(BaseCollector):
         tags: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
 
+        if not isinstance(
+            tags,
+            list,
+        ):
+            return {}
+
         return {
-            tag["Key"]: tag.get("Value")
+            tag["Key"]:
+                tag.get("Value")
             for tag in tags
-            if tag.get("Key")
+            if (
+                isinstance(
+                    tag,
+                    dict,
+                )
+                and tag.get("Key")
+            )
         }
 
     @staticmethod

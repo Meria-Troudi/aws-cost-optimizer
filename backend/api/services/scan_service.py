@@ -37,7 +37,7 @@ from aws_cost_optimizer.collectors.manager import CollectorManager
 
 from aws_cost_optimizer.planner.planner import CollectionPlanner
 
-from aws_cost_optimizer.recommendations.pipeline.optimization import (
+from aws_cost_optimizer.recommendations.optimization import (
     OptimizationPipeline,
 )
 
@@ -180,7 +180,6 @@ class ScanService:
                 results,
             )
             results = collection_validation["results"]
-            not_found_findings = collection_validation["not_found_findings"]
 
             all_resources = resources_for_analysis(results)
 
@@ -190,8 +189,8 @@ class ScanService:
                 db=db,
                 scan=scan,
                 resources=all_resources,
+                enriched_results=results,
                 collection_plans=plans,
-                pre_findings=not_found_findings,
             )
 
             all_findings = optimization_result.get(
