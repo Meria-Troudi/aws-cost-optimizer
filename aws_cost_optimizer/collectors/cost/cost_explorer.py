@@ -1,4 +1,16 @@
-#/aws_cost_optimizer/collectors/cost/cost_explorer.py
+"""
+AWS Cost Explorer helpers.
+
+This module is responsible only for querying AWS Cost Explorer.
+
+It does NOT:
+    - create database records
+    - run analyzers
+    - generate recommendations
+    - manage ScanRun
+
+Those responsibilities belong to higher layers.
+"""
 
 from __future__ import annotations
 
@@ -8,13 +20,30 @@ from aws_cost_optimizer.config.client import get_client
 from aws_cost_optimizer.config.settings import CE_REGION
 
 
+# ==============================================================
+# INTERNAL PAGINATION
+# ==============================================================
+
+
 def _paginate_cost_and_usage(
     client: Any,
     params: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    results_by_period: dict[str, dict[str, Any]] = {}
+    """
+    Retrieve all Cost Explorer pages and merge them by month.
 
-    response = client.get_cost_and_usage(**params)
+    Cost Explorer pagination can return the same month across
+    multiple pages. We therefore merge Groups for each month.
+    """
+
+    results_by_period: dict[
+        str,
+        dict[str, Any],
+    ] = {}
+
+    response = client.get_cost_and_usage(
+        **params
+    )
 
     _merge_groups_by_period(
         results_by_period,
@@ -22,12 +51,12 @@ def _paginate_cost_and_usage(
     )
 
     while (
-        "NextPageToken" in response
-        and response["NextPageToken"]
+        response.get("NextPageToken")
     ):
-        params["NextPageToken"] = response[
-            "NextPageToken"
-        ]
+
+        params["NextPageToken"] = (
+            response["NextPageToken"]
+        )
 
         response = client.get_cost_and_usage(
             **params
@@ -38,23 +67,39 @@ def _paginate_cost_and_usage(
             response,
         )
 
-    return list(results_by_period.values())
+    return list(
+        results_by_period.values()
+    )
 
 
 def _merge_groups_by_period(
-    results_by_period: dict[str, dict[str, Any]],
+    results_by_period: dict[
+        str,
+        dict[str, Any],
+    ],
     response: dict[str, Any],
 ) -> None:
+    """
+    Merge Cost Explorer ResultsByTime blocks by month.
+    """
 
     for block in response.get(
         "ResultsByTime",
         [],
     ):
-        start = block["TimePeriod"]["Start"]
+
+        time_period = block[
+            "TimePeriod"
+        ]
+
+        start = time_period[
+            "Start"
+        ]
 
         if start not in results_by_period:
+
             results_by_period[start] = {
-                "TimePeriod": block["TimePeriod"],
+                "TimePeriod": time_period,
                 "Estimated": block.get(
                     "Estimated",
                     False,
@@ -66,9 +111,19 @@ def _merge_groups_by_period(
                 ),
             }
 
-        results_by_period[start]["Groups"].extend(
-            block.get("Groups", [])
+        results_by_period[
+            start
+        ]["Groups"].extend(
+            block.get(
+                "Groups",
+                [],
+            )
         )
+
+
+# ==============================================================
+# COST BY SERVICE / USAGE TYPE
+# ==============================================================
 
 
 def get_cost_usage(
@@ -76,14 +131,35 @@ def get_cost_usage(
     end: str,
     region: str | None = None,
 ) -> list[dict[str, Any]]:
-    client = get_client("ce", CE_REGION)
+    """
+    Get monthly cost grouped by:
+
+        SERVICE
+        USAGE_TYPE
+
+    Optionally filter by AWS region.
+
+    Returns the raw normalized Cost Explorer response.
+    """
+
+    client = get_client(
+        "ce",
+        CE_REGION,
+    )
+
     params: dict[str, Any] = {
         "TimePeriod": {
             "Start": start,
             "End": end,
         },
+
         "Granularity": "MONTHLY",
-        "Metrics": ["UnblendedCost"],
+
+        "Metrics": [
+            "UnblendedCost",
+            "UsageQuantity",
+        ],
+
         "GroupBy": [
             {
                 "Type": "DIMENSION",
@@ -97,6 +173,7 @@ def get_cost_usage(
     }
 
     if region:
+
         params["Filter"] = {
             "Dimensions": {
                 "Key": "REGION",
@@ -110,19 +187,37 @@ def get_cost_usage(
     )
 
 
+# ==============================================================
+# REGIONS WITH COST
+# ==============================================================
+
+
 def get_regions_with_costs(
     start: str,
     end: str,
 ) -> list[str]:
-    client = get_client("ce", CE_REGION)
+    """
+    Return AWS regions that have non-zero cost
+    during the requested period.
+    """
+
+    client = get_client(
+        "ce",
+        CE_REGION,
+    )
 
     params: dict[str, Any] = {
         "TimePeriod": {
             "Start": start,
             "End": end,
         },
+
         "Granularity": "MONTHLY",
-        "Metrics": ["UnblendedCost"],
+
+        "Metrics": [
+            "UnblendedCost",
+        ],
+
         "GroupBy": [
             {
                 "Type": "DIMENSION",
@@ -139,10 +234,12 @@ def get_regions_with_costs(
     regions: set[str] = set()
 
     for result in results:
+
         for group in result.get(
             "Groups",
             [],
         ):
+
             keys = group.get(
                 "Keys",
                 [],
@@ -153,25 +250,39 @@ def get_regions_with_costs(
 
             region = keys[0]
 
-            amount = float(
-                group.get(
-                    "Metrics",
-                    {},
+            try:
+
+                amount = float(
+                    group.get(
+                        "Metrics",
+                        {},
+                    )
+                    .get(
+                        "UnblendedCost",
+                        {},
+                    )
+                    .get(
+                        "Amount",
+                        0.0,
+                    )
                 )
-                .get(
-                    "UnblendedCost",
-                    {},
-                )
-                .get(
-                    "Amount",
-                    0.0,
-                )
-            )
+
+            except (
+                TypeError,
+                ValueError,
+            ):
+
+                amount = 0.0
 
             if amount > 0:
                 regions.add(region)
 
-    return list(regions)
+    return sorted(regions)
+
+
+# ==============================================================
+# MONTHLY TOTALS
+# ==============================================================
 
 
 def get_monthly_totals(
@@ -179,20 +290,34 @@ def get_monthly_totals(
     end: str,
     region: str | None = None,
 ) -> list[dict[str, Any]]:
+    """
+    Return monthly total cost.
 
+    Unlike get_cost_usage(), this query is NOT grouped.
+    Therefore Cost Explorer returns the monthly total
+    inside ResultsByTime[*]["Total"].
+    """
 
-    client = get_client("ce", CE_REGION)
+    client = get_client(
+        "ce",
+        CE_REGION,
+    )
 
     params: dict[str, Any] = {
         "TimePeriod": {
             "Start": start,
             "End": end,
         },
+
         "Granularity": "MONTHLY",
-        "Metrics": ["UnblendedCost"],
+
+        "Metrics": [
+            "UnblendedCost",
+        ],
     }
 
     if region:
+
         params["Filter"] = {
             "Dimensions": {
                 "Key": "REGION",

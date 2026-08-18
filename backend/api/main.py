@@ -1,81 +1,55 @@
-"""
-FastAPI application entry point.
-"""
+from __future__ import annotations
+
+from backend.bootstrap import ensure_project_paths
+ensure_project_paths()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from backend.database import models_loader
+from backend.database.models_loader import init_db
 
-from backend.api.routes.account_cost import router as account_cost_router
+init_db()
+
+from backend.api.routes.account import router as account_router
 from backend.api.routes.dashboard import router as dashboard_router
-from backend.api.routes.scans import router as scan_router
-from backend.database.connection import SessionLocal
-from backend.database.scan_recovery import recover_stuck_scans
-
-from backend.database.models import (  # noqa: F401
-    scan_run,
-    cost_record,
-    resource,
-    snapshot,
-    metric,
-    finding,
-    recommendation,
-    collection_plan,
+from backend.api.routes.scans import router as scans_router
+from backend.api.routes.scan_results import (
+    router as scan_results_router,
 )
+from backend.api.routes.cost import router as cost_router
 
 
 app = FastAPI(
     title="AWS Cost Optimizer API",
     version="1.0.0",
+    description=(
+        "AWS FinOps cost optimization platform API."
+    ),
 )
 
 
-# Local dev: allow any localhost port (Vite proxy avoids CORS; this covers direct API calls too)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "http://localhost:3000",
         "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:5175",
-        "http://127.0.0.1:5175",
-        "http://localhost:5176",
-        "http://127.0.0.1:5176",
     ],
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
 
 
-@app.get("/")
-def root():
-    return {
-        "name": "AWS Cost Optimizer API",
-        "status": "running",
-    }
+app.include_router(account_router)
+app.include_router(dashboard_router)
+app.include_router(scans_router)
+app.include_router(scan_results_router)
+app.include_router(cost_router)
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health():
     return {
         "status": "ok",
+        "service": "aws-cost-optimizer-api",
     }
-
-
-app.include_router(scan_router)
-app.include_router(dashboard_router)
-app.include_router(account_cost_router)
-
-
-@app.on_event("startup")
-def on_startup():
-    db = SessionLocal()
-    try:
-        recovered = recover_stuck_scans(db)
-        if recovered:
-            print(f"Recovered {recovered} stuck scan(s)")
-    finally:
-        db.close()

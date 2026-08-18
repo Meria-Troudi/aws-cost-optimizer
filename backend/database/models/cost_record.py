@@ -1,6 +1,13 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
@@ -15,7 +22,10 @@ class CostRecord(Base):
     )
 
     scan_run_id: Mapped[int] = mapped_column(
-        ForeignKey("scan_runs.id"),
+        ForeignKey(
+            "scan_runs.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -71,6 +81,7 @@ class CostRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+        nullable=False,
     )
 
     scan_run = relationship(

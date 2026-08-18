@@ -27,7 +27,7 @@ from sqlalchemy.orm import (
 from ..base import Base
 
 
-recommendation_finding = Table(
+recommendation_findings = Table(
     "recommendation_findings",
     Base.metadata,
 
@@ -202,7 +202,7 @@ class Recommendation(Base):
 
     findings = relationship(
         "Finding",
-        secondary=recommendation_finding,
+        secondary=recommendation_findings,
         back_populates="recommendations",
         lazy="selectin",
     )

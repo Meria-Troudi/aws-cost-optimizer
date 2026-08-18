@@ -1,27 +1,72 @@
-import { useCallback, useState } from 'react'
+import { useEffect, useState } from 'react'
+
 import Nav from './components/Nav'
 import DashboardTab from './components/DashboardTab'
-import ScanTab from './components/ScanTab'
-import ScanResults from './components/ScanResults'
-import FindingsModal from './components/FindingsModal'
-import RecommendationModal from './components/RecommendationModal'
-import { useScan } from './hooks/useScan'
+import ScanPage from './components/ScanPage'
+import ResultsPage from './components/ResultsPage'
+
 import { useDashboard } from './hooks/useDashboard'
+import { useScan } from './hooks/useScan'
 import { useScanResults } from './hooks/useScanResults'
-import { mapApiFinding, mapApiRecommendations } from './data/findings'
+import { useDashboardScan } from './hooks/useDashboardScan'
+import { getScans } from './api/client'
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard-tab')
-  const [selectedFinding, setSelectedFinding] = useState(null)
-  const [selectedRecommendation, setSelectedRecommendation] = useState(null)
 
-  const { scanData, loading, status, error, lastScanTime, runScan } = useScan()
+  const routeToTab = (pathname) => (
+    { '/analysis': 'analysis', '/results': 'results', '/overview': 'overview' }[pathname] || 'overview'
+  )
+  const [activeTab, setActiveTab] = useState(() => routeToTab(window.location.pathname))
+  const [selectedScanId, setSelectedScanId] = useState(null)
 
-  const { dashboardData, loading: dashboardLoading, error: dashboardError, loadDashboard, refreshCosts, refreshing } =
-    useDashboard()
+  /*
+   * Dashboard
+   */
+  const {
+    dashboardData,
+    loading: dashboardLoading,
+    refreshing,
+    error: dashboardError,
+    loadDashboard,
+    refreshCosts,
+  } = useDashboard()
 
-  const lastScanId = dashboardData?.optimization?.last_scan_id
+  /*
+   * Dashboard current-month scan (quick action)
+   */
+  const {
+    scanning: dashboardScanning,
+    scanData: dashboardScanData,
+    error: dashboardScanError,
+    scanCurrentMonth,
+  } = useDashboardScan({
+    onCompleted: (scan) => {
+      const scanId = scan?.id ?? scan?.scan_id
+      if (scanId) {
+        setSelectedScanId(scanId)
+      }
+      /*
+       * Do not auto-navigate; the dashboard shows the persisted
+       * completed scan panel and the user can click View Results.
+       */
+    },
+  })
 
+  /*
+   * Scan (Analysis page)
+   */
+  const {
+    scanData,
+    loading: scanLoading,
+    status: scanStatus,
+    error: scanError,
+    lastScanTime,
+    runScan,
+  } = useScan()
+
+  /*
+   * Results
+   */
   const {
     resultsScan,
     findings,
@@ -29,119 +74,187 @@ export default function App() {
     loading: resultsLoading,
     error: resultsError,
     loadResults,
-    hasResults,
-  } = useScanResults(lastScanId)
+  } = useScanResults(selectedScanId)
 
-  const presentedRecs = mapApiRecommendations(recommendations || [], findings)
-
-  const showTab = useCallback((tabId) => {
-    setActiveTab(tabId)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+  useEffect(() => {
+    let active = true
+    getScans()
+      .then((scans) => {
+        const latest = (Array.isArray(scans) ? scans : []).find((scan) =>
+          ['completed', 'completed_with_errors'].includes(String(scan.status).toLowerCase()),
+        )
+        if (active && latest?.id) setSelectedScanId(latest.id)
+      })
+      .catch(() => {})
+    return () => { active = false }
   }, [])
 
-  const handleViewOptimization = useCallback(() => {
-    loadResults(lastScanId)
-    showTab('results-tab')
-  }, [lastScanId, loadResults, showTab])
+  /*
+   * When scan completes, open results.
+   */
+  useEffect(() => {
+    if (!scanData) return
 
-  async function handleAnalysis(form) {
+    const status = String(
+      scanData.status || ''
+    ).toLowerCase()
+
+    const scanId =
+      scanData.scan_id ??
+      scanData.id
+
+    if (
+      [
+        'completed',
+        'completed_with_errors',
+      ].includes(status)
+    ) {
+      if (scanId) {
+        setSelectedScanId(scanId)
+      }
+
+      handleTabChange('results')
+    }
+  }, [scanData])
+
+  useEffect(() => {
+    const onPopState = () => setActiveTab(routeToTab(window.location.pathname))
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  /*
+   * Navigation
+   */
+  function handleTabChange(tab) {
+    setActiveTab(tab)
+    window.history.pushState({}, '', `/${tab}`)
+
+    if (tab === 'results' && selectedScanId) {
+      loadResults(selectedScanId)
+    }
+  }
+
+  /*
+   * Run analysis
+   */
+  async function handleRunAnalysis(config) {
     try {
-      const scanId = await runScan(form)
-      await loadDashboard()
-      await loadResults(scanId)
-      showTab('results-tab')
-    } catch {
-      await loadDashboard()
+      const scanId = await runScan(config)
+
+      if (scanId) {
+        setSelectedScanId(scanId)
+      }
+
+      /*
+       * useScan handles polling.
+       * When the scan becomes completed,
+       * the useEffect above opens Results.
+       */
+    } catch (error) {
+      console.error(
+        'Failed to run cost analysis:',
+        error
+      )
     }
   }
 
-  function openRecommendation(rec) {
-    setSelectedRecommendation(rec)
+  /*
+   * Dashboard -> Analysis
+   */
+  function handleOpenAnalysis() {
+    handleTabChange('analysis')
   }
 
-  function relatedFindingForRec(rec) {
-    if (rec?.linkedFindingId && findings[rec.linkedFindingId]) {
-      return findings[rec.linkedFindingId]
+  /*
+   * Dashboard -> Results
+   */
+  function handleViewOptimization(scanId) {
+    const resolvedId =
+      scanId ??
+      dashboardData?.optimization?.last_scan_id ??
+      dashboardData?.latest_scan?.id ??
+      dashboardData?.last_scan_id ??
+      selectedScanId
+
+    if (resolvedId) {
+      setSelectedScanId(resolvedId)
     }
-    if (rec?.finding_id && findings[String(rec.finding_id)]) {
-      return findings[String(rec.finding_id)]
+
+    handleTabChange('results')
+  }
+
+  /*
+   * Scan -> Results
+   */
+  function handleViewResults(scanId) {
+    if (scanId) {
+      setSelectedScanId(scanId)
     }
-    return null
+
+    handleTabChange('results')
   }
 
   return (
-    <div className="shell">
-      <Nav activeTab={activeTab} onTabChange={showTab} />
-
-      <section
-        id="dashboard-tab"
-        className={`app-panel ${activeTab === 'dashboard-tab' ? 'active' : ''}`}
-      >
-        <DashboardTab
-          dashboardData={dashboardData}
-          loading={dashboardLoading}
-          refreshing={refreshing}
-          error={dashboardError}
-          onRunAnalysis={() => showTab('analysis-tab')}
-          onViewOptimization={handleViewOptimization}
-          onRefreshCosts={refreshCosts}
-        />
-      </section>
-
-      <section
-        id="analysis-tab"
-        className={`app-panel ${activeTab === 'analysis-tab' ? 'active' : ''}`}
-      >
-        <ScanTab
-          onScan={handleAnalysis}
-          loading={loading}
-          status={status}
-          error={error}
-          lastScanTime={lastScanTime}
-          scanData={scanData}
-          account={dashboardData?.account}
-          collectionStatus={dashboardData?.collection_coverage || dashboardData?.collection_status}
-          onBackToDashboard={() => showTab('dashboard-tab')}
-        />
-      </section>
-
-      <section
-        id="results-tab"
-        className={`app-panel ${activeTab === 'results-tab' ? 'active' : ''}`}
-      >
-        <ScanResults
-          scanData={resultsScan}
-          findings={findings}
-          recommendations={presentedRecs}
-          loading={resultsLoading}
-          error={resultsError}
-          hasResults={hasResults}
-          latestAttempt={scanData}
-          onFindingClick={setSelectedFinding}
-          onRecommendationClick={openRecommendation}
-          onBackToDashboard={() => showTab('dashboard-tab')}
-        />
-      </section>
-
-      <footer>
-        <span>COSTLENS · AWS COST OPTIMIZATION</span>
-        <span>DATA: SQLITE · FASTAPI · COST EXPLORER</span>
-      </footer>
-
-      <FindingsModal finding={selectedFinding} onClose={() => setSelectedFinding(null)} />
-
-      <RecommendationModal
-        recommendation={selectedRecommendation}
-        relatedFinding={relatedFindingForRec(selectedRecommendation)}
-        onClose={() => setSelectedRecommendation(null)}
-        onViewFinding={() => {
-          const related = relatedFindingForRec(selectedRecommendation)
-          if (related) {
-            setSelectedRecommendation(null)
-            setSelectedFinding(related)
-          }
-        }}
+    <div className="app">
+      <Nav
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
       />
+
+      <main className="app-content">
+
+        {activeTab === 'overview' && (
+          <DashboardTab
+            dashboardData={dashboardData}
+            loading={dashboardLoading}
+            refreshing={refreshing}
+            error={dashboardError}
+            onRunAnalysis={handleOpenAnalysis}
+            onViewOptimization={handleViewOptimization}
+            onRefreshCosts={refreshCosts}
+            onFilterChange={loadDashboard}
+            onScanCurrentMonth={scanCurrentMonth}
+            scanning={dashboardScanning}
+            scanData={dashboardScanData}
+            scanError={dashboardScanError}
+            lastScanId={selectedScanId}
+          />
+        )}
+
+        {activeTab === 'analysis' && (
+          <ScanPage
+            scanData={scanData}
+            loading={scanLoading}
+            status={scanStatus}
+            error={scanError}
+            lastScanTime={lastScanTime}
+            onRunAnalysis={handleRunAnalysis}
+            onBack={() =>
+              handleTabChange('overview')
+            }
+            onViewResults={handleViewResults}
+          />
+        )}
+
+        {activeTab === 'results' && (
+          <ResultsPage
+            scanId={selectedScanId}
+            scan={resultsScan}
+            findings={findings}
+            recommendations={recommendations}
+            loading={resultsLoading}
+            error={resultsError}
+            onBack={() =>
+              handleTabChange('overview')
+            }
+            onRunAnalysis={() =>
+              handleTabChange('analysis')
+            }
+          />
+        )}
+
+      </main>
     </div>
   )
 }

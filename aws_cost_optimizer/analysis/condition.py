@@ -10,17 +10,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class EvidenceStatement:
-    """
-    Human-readable condition backed by structured evidence.
 
-    evidence_keys contains dotted paths into Evidence.
-
-    Example:
-
-        evidence_keys=[
-            "metrics.BytesOutToDestination.value"
-        ]
-    """
 
     name: str
     value: Any = None

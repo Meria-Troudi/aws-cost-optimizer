@@ -22,12 +22,12 @@ from aws_cost_optimizer.analysis.metrics import (
     metric_has_observed_data,
 )
 
-from backend.database.repository.resource_repository import (
+from backend.database.repositories.resource_repository import (
     get_or_create_resource,
     save_resource_snapshot,
 )
 
-from backend.database.repository.metric_repository import (
+from backend.database.repositories.metric_repository import (
     save_metric,
 )
 

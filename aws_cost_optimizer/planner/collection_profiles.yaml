@@ -729,3 +729,377 @@ load_balancer:
 
   topology:
     enabled: true
+# ============================================================
+# QUICKSIGHT
+# ============================================================
+
+quicksight:
+
+  # ----------------------------------------------------------
+  # ACCOUNT
+  # ----------------------------------------------------------
+
+  account:
+    enabled: true
+
+    identity:
+      enabled: true
+
+    configuration:
+      enabled: true
+
+    relationships:
+      enabled: true
+
+    observations:
+      enabled: true
+
+      cloudwatch:
+        enabled: true
+
+        namespace: AWS/QuickSight/Aggregate Metrics
+
+        period: 3600
+
+        metrics:
+
+          - name: SPICECapacityLimitInMB
+            statistic: Maximum
+            unit: Megabytes
+
+          - name: SPICECapacityConsumedInMB
+            statistic: Maximum
+            unit: Megabytes
+
+      cloudtrail:
+        enabled: true
+
+    topology:
+      enabled: true
+
+
+  # ----------------------------------------------------------
+  # DASHBOARDS
+  # ----------------------------------------------------------
+
+  dashboard:
+
+    identity:
+      enabled: true
+
+      fields:
+        - source: DashboardId
+          output: dashboard_id
+
+        - source: Arn
+          output: dashboard_arn
+
+        - source: Name
+          output: name
+
+
+    configuration:
+      enabled: true
+
+      fields:
+        - source: DashboardId
+          output: dashboard_id
+
+        - source: Arn
+          output: dashboard_arn
+
+        - source: Name
+          output: name
+
+        - source: CreatedTime
+          output: created_time
+
+        - source: LastUpdatedTime
+          output: last_updated_time
+
+        - source: LastPublishedTime
+          output: last_published_time
+
+        - source: PublishedVersionNumber
+          output: published_version_number
+
+
+    relationships:
+      enabled: true
+
+
+    observations:
+      enabled: true
+
+      cloudwatch:
+        enabled: true
+
+        namespace: AWS/QuickSight/Aggregate Metrics
+
+        period: 3600
+
+        metrics:
+
+          - name: DashboardViewCount
+            statistic: Sum
+            unit: Count
+
+      cloudtrail:
+        enabled: true
+
+
+    topology:
+      enabled: true
+
+
+  # ----------------------------------------------------------
+  # ANALYSES
+  # ----------------------------------------------------------
+
+  analysis:
+
+    identity:
+      enabled: true
+
+      fields:
+        - source: AnalysisId
+          output: analysis_id
+
+        - source: Arn
+          output: analysis_arn
+
+        - source: Name
+          output: name
+
+
+    configuration:
+      enabled: true
+
+      fields:
+        - source: AnalysisId
+          output: analysis_id
+
+        - source: Arn
+          output: analysis_arn
+
+        - source: Name
+          output: name
+
+        - source: Status
+          output: status
+
+        - source: CreatedTime
+          output: created_time
+
+        - source: LastUpdatedTime
+          output: last_updated_time
+
+
+    relationships:
+      enabled: true
+
+
+    observations:
+      enabled: true
+
+      cloudtrail:
+        enabled: true
+
+
+    topology:
+      enabled: true
+
+
+  # ----------------------------------------------------------
+  # DATASETS
+  # ----------------------------------------------------------
+
+  dataset:
+
+    identity:
+      enabled: true
+
+      fields:
+        - source: DataSetId
+          output: dataset_id
+
+        - source: Arn
+          output: dataset_arn
+
+        - source: Name
+          output: name
+
+
+    configuration:
+      enabled: true
+
+      fields:
+        - source: DataSetId
+          output: dataset_id
+
+        - source: Arn
+          output: dataset_arn
+
+        - source: Name
+          output: name
+
+        - source: ImportMode
+          output: import_mode
+
+        - source: ConsumedSpiceCapacityInBytes
+          output: consumed_spice_capacity_bytes
+
+        - source: CreatedTime
+          output: created_time
+
+        - source: LastUpdatedTime
+          output: last_updated_time
+
+
+    relationships:
+      enabled: true
+
+
+    observations:
+      enabled: true
+
+      cloudwatch:
+        enabled: true
+
+        namespace: AWS/QuickSight/Aggregate Metrics
+
+        period: 3600
+
+        metrics:
+
+          - name: SPICECapacityConsumedInMB
+            statistic: Maximum
+            unit: Megabytes
+
+      cloudtrail:
+        enabled: true
+
+
+    topology:
+      enabled: true
+
+
+  # ----------------------------------------------------------
+  # DATA SOURCES
+  # ----------------------------------------------------------
+
+  data_source:
+
+    identity:
+      enabled: true
+
+      fields:
+        - source: DataSourceId
+          output: data_source_id
+
+        - source: Arn
+          output: data_source_arn
+
+        - source: Name
+          output: name
+
+        - source: Type
+          output: type
+
+
+    configuration:
+      enabled: true
+
+      fields:
+        - source: DataSourceId
+          output: data_source_id
+
+        - source: Arn
+          output: data_source_arn
+
+        - source: Name
+          output: name
+
+        - source: Type
+          output: type
+
+        - source: Status
+          output: status
+
+        - source: CreatedTime
+          output: created_time
+
+        - source: LastUpdatedTime
+          output: last_updated_time
+
+
+    relationships:
+      enabled: true
+
+
+    observations:
+      enabled: true
+
+      cloudtrail:
+        enabled: true
+
+
+    topology:
+      enabled: true
+
+
+  # ----------------------------------------------------------
+  # USERS
+  # ----------------------------------------------------------
+
+  users:
+
+    enabled: true
+
+    namespace: default
+
+
+  # ----------------------------------------------------------
+  # CLOUDTRAIL
+  # ----------------------------------------------------------
+
+  cloudtrail:
+
+    enabled: true
+
+
+  # ----------------------------------------------------------
+  # ANALYZER
+  # ----------------------------------------------------------
+
+  analyzer_config:
+
+    enabled: true
+
+    stale_days: 180
+
+    unused_days: 90
+
+    spice_high_utilization_ratio: 0.90
+
+    spice_unused_ratio: 0.20
+
+    minimum_activity_events: 1
+
+
+  # ----------------------------------------------------------
+  # METRIC GROUPS
+  # ----------------------------------------------------------
+
+  metric_groups:
+
+    spice:
+      - SPICECapacityLimitInMB
+      - SPICECapacityConsumedInMB
+
+    dashboard:
+      - DashboardViewCount
+
+    account:
+      - SPICECapacityLimitInMB
+      - SPICECapacityConsumedInMB

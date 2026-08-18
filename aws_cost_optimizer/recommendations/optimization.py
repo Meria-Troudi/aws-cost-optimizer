@@ -137,7 +137,7 @@ class OptimizationPipeline:
 
         try:
 
-            from backend.database.repository.recommendation_repository import (
+            from backend.database.repositories.recommendation_repository import (
                 save_recommendations,
             )
 

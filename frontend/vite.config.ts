@@ -31,6 +31,11 @@ const API_PORT = process.env.VITE_API_PORT ?? '8000'
 
 export default defineConfig({
   plugins: [react(), cspFriendlyDev()],
+  build: {
+    // Use esbuild for CSS minification instead of lightningcss,
+    // which fails with "Unknown at rule: @keyframes" in Vite 8.
+    cssMinify: 'esbuild',
+  },
   server: {
     port: 5173,
     strictPort: false,

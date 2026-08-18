@@ -1,21 +1,7 @@
 """
 Reusable CloudWatch metric collector.
 
-Semantics
----------
-queried   = CloudWatch request executed successfully
-observed  = usable numeric datapoints returned
-no_data   = request succeeded but returned no datapoints
-error     = CloudWatch request failed
-invalid   = datapoints returned but no usable numeric values existed
 
-Important
----------
-Unit is optional.
-
-When unit is None, the Unit parameter is NOT sent to CloudWatch.
-This is important for AWS metrics whose published datapoints may report
-Unit="None" or otherwise differ from a requested unit.
 """
 
 from __future__ import annotations

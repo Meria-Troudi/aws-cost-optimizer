@@ -1,14 +1,14 @@
 """
 Resource persistence.
 
-Resource is a stable AWS identity (account + region + aws_resource_id).
-
-ResourceSnapshot holds the state of that resource during one scan.
+Resource = stable AWS identity.
+ResourceSnapshot = state during one scan.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -26,14 +26,9 @@ def get_or_create_resource(
     resource_type: str,
     region: str | None,
     name: str | None = None,
-    tags: Dict[str, str] | None = None,
+    tags: dict[str, str] | None = None,
 ) -> Resource:
-    """
-    Find an existing resource by its stable identity.
-    If not found, create it.
 
-    On existing resources, `last_seen` is updated to now.
-    """
     now = datetime.utcnow()
 
     resource = (
@@ -43,35 +38,44 @@ def get_or_create_resource(
             Resource.aws_resource_id == aws_resource_id,
             Resource.region == region,
         )
-        .first()
+        .one_or_none()
     )
 
-    if resource is not None:
-        resource.last_seen = now
+    if resource is None:
 
-        if name:
-            resource.name = name
+        resource = Resource(
+            account_id=account_id,
+            aws_resource_id=aws_resource_id,
+            service=service,
+            resource_type=resource_type,
+            region=region,
+            name=name,
+            tags=json_dumps(tags or {}),
+            first_seen=now,
+            last_seen=now,
+        )
 
-        if tags:
-            resource.tags = json_dumps(tags or {})
-
+        db.add(resource)
         db.flush()
+
         return resource
 
-    resource = Resource(
-        account_id=account_id,
-        aws_resource_id=aws_resource_id,
-        service=service,
-        resource_type=resource_type,
-        region=region,
-        name=name,
-        tags=json_dumps(tags or {}),
-        first_seen=now,
-        last_seen=now,
-    )
+    resource.last_seen = now
 
-    db.add(resource)
+    if service:
+        resource.service = service
+
+    if resource_type:
+        resource.resource_type = resource_type
+
+    if name:
+        resource.name = name
+
+    if tags is not None:
+        resource.tags = json_dumps(tags)
+
     db.flush()
+
     return resource
 
 
@@ -81,14 +85,15 @@ def save_resource_snapshot(
     resource_id: int,
     scan_run_id: int,
     source_api: str,
-    configuration: Dict[str, Any] | None = None,
-    topology: Dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
+    topology: dict[str, Any] | None = None,
     relationships: Any = None,
     raw_response: Any = None,
     optimization_evidence: Any = None,
     state: str | None = None,
     availability_zone: str | None = None,
 ) -> ResourceSnapshot:
+
     snapshot = ResourceSnapshot(
         resource_id=resource_id,
         scan_run_id=scan_run_id,
@@ -97,44 +102,59 @@ def save_resource_snapshot(
         availability_zone=availability_zone,
         configuration=json_dumps(configuration or {}),
         topology=json_dumps(topology or {}),
-        relationships=json_dumps(relationships or {}),
-        raw_response=json_dumps(raw_response or {}),
-        optimization_evidence=json_dumps(optimization_evidence or {}),
+        relationships=json_dumps(
+            relationships if relationships is not None else {}
+        ),
+        raw_response=json_dumps(
+            raw_response if raw_response is not None else {}
+        ),
+        optimization_evidence=json_dumps(
+            optimization_evidence
+            if optimization_evidence is not None
+            else {}
+        ),
     )
+
     db.add(snapshot)
     db.flush()
+
     return snapshot
 
 
 def get_resource(
     db: Session,
     resource_id: int,
-):
+) -> Resource | None:
+
     return db.get(Resource, resource_id)
 
 
 def get_resources_for_scan(
     db: Session,
     scan_id: int,
-):
-    from ..models.snapshot import ResourceSnapshot
+) -> list[Resource]:
 
-    snapshot_resources = (
+    resource_ids = (
         db.query(ResourceSnapshot.resource_id)
-        .filter(ResourceSnapshot.scan_run_id == scan_id)
+        .filter(
+            ResourceSnapshot.scan_run_id == scan_id
+        )
         .distinct()
         .all()
     )
 
-    resource_ids = [
-        row[0] for row in snapshot_resources if row[0] is not None
+    ids = [
+        row[0]
+        for row in resource_ids
+        if row[0] is not None
     ]
 
-    if not resource_ids:
+    if not ids:
         return []
 
     return (
         db.query(Resource)
-        .filter(Resource.id.in_(resource_ids))
+        .filter(Resource.id.in_(ids))
+        .order_by(Resource.resource_type, Resource.id)
         .all()
     )

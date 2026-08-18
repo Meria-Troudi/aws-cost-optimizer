@@ -20,7 +20,6 @@ def init_db():
 
 
 if __name__ == "__main__":
-    # Allow running as a script by adding project root to path
     _project_root = os.path.dirname(
         os.path.dirname(
             os.path.dirname(

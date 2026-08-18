@@ -1,7 +1,18 @@
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Float, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    Date,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from ..base import Base
 
@@ -38,15 +49,22 @@ class ScanRun(Base):
     cost_threshold: Mapped[float] = mapped_column(
         Float,
         default=0.0,
+        nullable=False,
+    )
+
+    progress_percent: Mapped[float] = mapped_column(
+        Float,
+        default=0.0,
+        nullable=False,
     )
 
     status: Mapped[str] = mapped_column(
         String(20),
-        default="running",
+        default="pending",
+        nullable=False,
         index=True,
     )
 
-    # Optional failure/partial outcome details for the frontend.
     outcome: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -60,6 +78,7 @@ class ScanRun(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+        nullable=False,
     )
 
     finished_at: Mapped[datetime | None] = mapped_column(
@@ -96,3 +115,4 @@ class ScanRun(Base):
         back_populates="scan_run",
         cascade="all, delete-orphan",
     )
+    

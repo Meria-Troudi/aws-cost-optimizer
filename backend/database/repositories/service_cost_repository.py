@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from backend.api.services.cost_analytics import build_service_costs_with_changes
 from backend.database.models.cost_record import CostRecord
-from backend.database.repository.cost_analytics_repository import get_service_costs_by_month
+from backend.database.repositories.cost_analytics_repository import get_service_costs_by_month
 
 
 def get_period_cost_total(db: Session, scan_run_id: int) -> float:

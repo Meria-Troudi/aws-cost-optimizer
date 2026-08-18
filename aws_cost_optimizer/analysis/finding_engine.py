@@ -314,7 +314,7 @@ class FindingEngine:
         if not findings:
             return []
 
-        from backend.database.repository.finding_repository import (
+        from backend.database.repositories.finding_repository import (
             save_findings,
         )
 

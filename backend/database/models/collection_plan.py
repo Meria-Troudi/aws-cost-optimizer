@@ -1,6 +1,12 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
@@ -15,7 +21,10 @@ class CollectionPlan(Base):
     )
 
     scan_run_id: Mapped[int] = mapped_column(
-        ForeignKey("scan_runs.id"),
+        ForeignKey(
+            "scan_runs.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -57,12 +66,15 @@ class CollectionPlan(Base):
 
     status: Mapped[str] = mapped_column(
         String(20),
+        nullable=False,
         default="planned",
+        index=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+        nullable=False,
     )
 
     scan_run = relationship(

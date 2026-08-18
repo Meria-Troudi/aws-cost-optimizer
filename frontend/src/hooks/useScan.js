@@ -1,112 +1,283 @@
-import { useCallback, useRef, useState } from 'react'
-import { getScan, startScan } from '../api/client'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
+
+import {
+  getScan,
+  startScan,
+} from '../api/client'
 
 const POLL_INTERVAL_MS = 3000
 const MAX_POLLS = 600
 
-function isTerminalStatus(data) {
-  return (
-    data.status === 'completed' ||
-    data.status === 'completed_with_errors' ||
-    data.status === 'failed'
+function isTerminalStatus(status) {
+  return [
+    'completed',
+    'completed_with_errors',
+    'failed',
+    'cancelled',
+  ].includes(
+    String(status || '').toLowerCase(),
   )
 }
 
 export function useScan() {
-  const [scanData, setScanData] = useState(null)
-  const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState('idle')
-  const [error, setError] = useState(null)
-  const [lastScanTime, setLastScanTime] = useState('—')
-  const pollRef = useRef(null)
+  const [scanData, setScanData] =
+    useState(null)
 
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
+  const [loading, setLoading] =
+    useState(false)
+
+  const [status, setStatus] =
+    useState('idle')
+
+  const [error, setError] =
+    useState(null)
+
+  const [lastScanTime, setLastScanTime] =
+    useState('—')
+
+  const pollRef =
+    useRef(null)
+
+  const mountedRef =
+    useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+
+    return () => {
+      mountedRef.current = false
+
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
     }
   }, [])
 
-  const pollScan = useCallback(
-    (scanId) =>
-      new Promise((resolve, reject) => {
-        let attempts = 0
+  const stopPolling =
+    useCallback(() => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }, [])
 
-        const poll = async () => {
-          attempts += 1
-          try {
-            const data = await getScan(scanId)
-            setScanData(data)
+  const pollScan =
+    useCallback(
+      (scanId) =>
+        new Promise((resolve, reject) => {
+          let attempts = 0
+          let finished = false
 
-            if (isTerminalStatus(data)) {
-              stopPolling()
-              setLoading(false)
-              setLastScanTime(new Date().toLocaleString('en-GB'))
+          const finish = (callback, value) => {
+            if (finished) return
 
-              if (data.status === 'failed') {
-                setStatus('idle')
-                const msg = 'Analysis failed — check backend logs.'
-                setError(msg)
-                reject(new Error(msg))
+            finished = true
+
+            stopPolling()
+
+            callback(value)
+          }
+
+          const poll = async () => {
+            attempts += 1
+
+            try {
+              const data =
+                await getScan(scanId)
+
+              if (!mountedRef.current) {
+                finish(resolve, scanId)
                 return
               }
 
-              setStatus('done')
-              setError(null)
-              resolve(scanId)
-              return
-            }
+              setScanData(data)
 
-            if (attempts >= MAX_POLLS) {
-              stopPolling()
+              const currentStatus =
+                String(
+                  data?.status || '',
+                ).toLowerCase()
+
+              if (
+                isTerminalStatus(
+                  currentStatus,
+                )
+              ) {
+                setLoading(false)
+
+                setLastScanTime(
+                  new Date().toLocaleString(
+                    'en-GB',
+                  ),
+                )
+
+                if (
+                  currentStatus ===
+                    'failed' ||
+                  currentStatus ===
+                    'cancelled'
+                ) {
+                  setStatus('idle')
+
+                  const message =
+                    data?.error ||
+                    data?.error_message ||
+                    'Analysis failed. Check backend logs.'
+
+                  setError(message)
+
+                  finish(
+                    reject,
+                    new Error(message),
+                  )
+
+                  return
+                }
+
+                setStatus('done')
+
+                setError(null)
+
+                finish(
+                  resolve,
+                  scanId,
+                )
+
+                return
+              }
+
+              if (
+                attempts >= MAX_POLLS
+              ) {
+                setLoading(false)
+
+                setStatus('idle')
+
+                const message =
+                  'Analysis is taking longer than expected. Check the scan status or backend logs.'
+
+                setError(message)
+
+                finish(
+                  reject,
+                  new Error(message),
+                )
+              }
+            } catch (err) {
               setLoading(false)
+
               setStatus('idle')
-              const msg =
-                'Analysis is taking longer than expected. Check backend logs, or restart the API without --reload.'
-              setError(msg)
-              reject(new Error(msg))
+
+              const message =
+                err instanceof Error
+                  ? err.message
+                  : String(err)
+
+              setError(message)
+
+              finish(
+                reject,
+                err,
+              )
             }
-          } catch (err) {
-            stopPolling()
-            setLoading(false)
-            setStatus('idle')
-            setError(err.message)
-            reject(err)
           }
+
+          poll()
+
+          pollRef.current =
+            setInterval(
+              poll,
+              POLL_INTERVAL_MS,
+            )
+        }),
+      [stopPolling],
+    )
+
+  const runScan =
+    useCallback(
+      async (form) => {
+        stopPolling()
+
+        setError(null)
+
+        setScanData(null)
+
+        setLoading(true)
+
+        setStatus('running')
+
+        try {
+          const payload = {
+            start_date:
+              form.start_date,
+
+            end_date:
+              form.end_date,
+
+            region:
+              form.region || null,
+
+            cost_threshold:
+              Number(
+                form.cost_threshold,
+              ),
+          }
+
+          const response =
+            await startScan(payload)
+
+          const scanId =
+            response?.scan_id ??
+            response?.id ??
+            response?.scan?.id
+
+          if (!scanId) {
+            throw new Error(
+              'Backend started no identifiable scan. Expected scan_id in the response.',
+            )
+          }
+
+          return await pollScan(
+            scanId,
+          )
+        } catch (err) {
+          stopPolling()
+
+          setLoading(false)
+
+          setStatus('idle')
+
+          const message =
+            err instanceof Error
+              ? err.message
+              : String(err)
+
+          setError(message)
+
+          throw err
         }
-
-        poll()
-        pollRef.current = setInterval(poll, POLL_INTERVAL_MS)
-      }),
-    [stopPolling],
-  )
-
-  const runScan = useCallback(
-    async (form) => {
-      setError(null)
-      setLoading(true)
-      setStatus('running')
-      stopPolling()
-
-      const { scan_id } = await startScan({
-        start_date: form.start_date,
-        end_date: form.end_date,
-        region: form.region,
-        cost_threshold: Number(form.cost_threshold),
-      })
-
-      return pollScan(scan_id)
-    },
-    [pollScan, stopPolling],
-  )
+      },
+      [pollScan, stopPolling],
+    )
 
   return {
     scanData,
+
     loading,
+
     status,
+
     error,
+
     lastScanTime,
+
     runScan,
+
     stopPolling,
   }
 }

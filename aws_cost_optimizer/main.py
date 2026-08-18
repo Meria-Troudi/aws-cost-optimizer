@@ -51,7 +51,7 @@ from backend.database.models.cost_record import (
     CostRecord,
 )
 
-from backend.database.repository.scan_run_repository import (
+from backend.database.repositories.scan_run_repository import (
     create_scan_run,
     complete_scan_run,
 )

@@ -1,12 +1,14 @@
 """
 Metric persistence with deterministic upsert.
 
-Metric identity: resource_id + scan_run_id + namespace + metric_name + statistic
+Identity:
+resource_id + scan_run_id + namespace + metric_name + statistic
 """
+
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -14,16 +16,25 @@ from ..models.metric import Metric
 from ..utils import json_dumps
 
 
-def _parse_datetime(value: Any) -> datetime | None:
+def _parse_datetime(
+    value: Any,
+) -> datetime | None:
+
     if value is None:
         return None
+
     if isinstance(value, datetime):
         return value
+
     if isinstance(value, str):
+
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return datetime.fromisoformat(
+                value.replace("Z", "+00:00")
+            )
         except ValueError:
             return None
+
     return None
 
 
@@ -36,6 +47,7 @@ def _find_existing(
     metric_name: str,
     statistic: str,
 ) -> Metric | None:
+
     return (
         db.query(Metric)
         .filter(
@@ -54,15 +66,23 @@ def save_metric(
     *,
     resource_id: int,
     scan_run_id: int,
-    metric: Dict[str, Any],
+    metric: dict[str, Any],
 ) -> Metric | None:
-    """Save a single metric using deterministic upsert."""
-    metric_name = metric.get("metric_name")
+
+    metric_name = str(
+        metric.get("metric_name") or ""
+    ).strip()
+
     if not metric_name:
         return None
 
-    namespace = metric.get("namespace", "")
-    statistic = metric.get("statistic", "")
+    namespace = str(
+        metric.get("namespace") or ""
+    ).strip()
+
+    statistic = str(
+        metric.get("statistic") or ""
+    ).strip()
 
     record = _find_existing(
         db,
@@ -73,40 +93,64 @@ def save_metric(
         statistic=statistic,
     )
 
+    metric_start = _parse_datetime(
+        metric.get("metric_start")
+    )
+
+    metric_end = _parse_datetime(
+        metric.get("metric_end")
+    )
+
+    dimensions = metric.get("dimensions")
+
     if record is None:
+
         record = Metric(
             resource_id=resource_id,
             scan_run_id=scan_run_id,
             namespace=namespace,
             metric_name=metric_name,
             statistic=statistic,
-            period=metric.get("period", 0),
+            period=int(
+                metric.get("period") or 0
+            ),
             value=metric.get("value"),
             unit=metric.get("unit"),
-            metric_start=_parse_datetime(
-                metric.get("metric_start")
-            ),
-            metric_end=_parse_datetime(
-                metric.get("metric_end")
-            ),
-            dimensions=json_dumps(
-                metric.get("dimensions", None)
+            metric_start=metric_start,
+            metric_end=metric_end,
+            dimensions=(
+                json_dumps(dimensions)
+                if dimensions is not None
+                else None
             ),
         )
+
         db.add(record)
+
     else:
-        record.period = metric.get("period", record.period)
-        record.value = metric.get("value", record.value)
-        record.unit = metric.get("unit", record.unit)
-        record.metric_start = _parse_datetime(
-            metric.get("metric_start")
-        ) or record.metric_start
-        record.metric_end = _parse_datetime(
-            metric.get("metric_end")
-        ) or record.metric_end
-        record.dimensions = json_dumps(
-            metric.get("dimensions", None)
-        ) or record.dimensions
+
+        if "period" in metric:
+            record.period = int(
+                metric.get("period") or 0
+            )
+
+        if "value" in metric:
+            record.value = metric.get("value")
+
+        if "unit" in metric:
+            record.unit = metric.get("unit")
+
+        if metric_start is not None:
+            record.metric_start = metric_start
+
+        if metric_end is not None:
+            record.metric_end = metric_end
+
+        if dimensions is not None:
+            record.dimensions = json_dumps(
+                dimensions
+            )
 
     db.flush()
+
     return record

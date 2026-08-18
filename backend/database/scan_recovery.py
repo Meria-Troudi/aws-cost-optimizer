@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from backend.database.models.cost_record import CostRecord
 from backend.database.models.finding import Finding
 from backend.database.models.scan_run import ScanRun
-from backend.database.repository.scan_run_repository import complete_scan_run
+from backend.database.repositories.scan_run_repository import complete_scan_run
 
 
 def recover_stuck_scans(db: Session) -> int:

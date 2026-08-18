@@ -1,12 +1,22 @@
+"""
+Stable AWS resource model.
+
+Resource represents the long-lived identity of an AWS resource.
+It is NOT tied to a scan.
+
+Scan-specific state belongs to ResourceSnapshot.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
 
 from sqlalchemy import (
     DateTime,
-    ForeignKey,
     Integer,
     String,
-    UniqueConstraint,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,15 +40,14 @@ class Resource(Base):
         primary_key=True,
     )
 
-    # Stable identity - NOT tied to a specific scan run.
     account_id: Mapped[str] = mapped_column(
-        String(32),
+        String(64),
         nullable=False,
         index=True,
     )
 
     aws_resource_id: Mapped[str] = mapped_column(
-        String(200),
+        String(255),
         nullable=False,
         index=True,
     )
@@ -46,6 +55,7 @@ class Resource(Base):
     service: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
+        index=True,
     )
 
     resource_type: Mapped[str] = mapped_column(
@@ -86,10 +96,12 @@ class Resource(Base):
         "ResourceSnapshot",
         back_populates="resource",
         cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
     metrics = relationship(
         "Metric",
         back_populates="resource",
         cascade="all, delete-orphan",
+        passive_deletes=True,
     )

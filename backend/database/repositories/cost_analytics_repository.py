@@ -9,7 +9,7 @@ from backend.database.models.cost_record import CostRecord
 from backend.database.models.metric import Metric
 from backend.database.models.resource import Resource
 from backend.database.scan_recovery import month_expression
-
+from backend.database.models.snapshot import ResourceSnapshot
 
 def get_monthly_totals(db: Session, scan_run_id: int) -> list[dict]:
     rows = (
@@ -270,18 +270,34 @@ def get_service_region_costs(db: Session, scan_run_id: int) -> list[dict]:
         for row in rows
     ]
 
+def get_resource_type_counts(
+    db: Session,
+    scan_run_id: int | None,
+) -> dict[str, int]:
 
-def get_resource_type_counts(db: Session, analysis_scan_id: int | None) -> dict[str, int]:
-    if not analysis_scan_id:
+    if not scan_run_id:
         return {}
+
     rows = (
-        db.query(Resource.resource_type, func.count(Resource.id))
-        .filter(Resource.scan_run_id == analysis_scan_id)
+        db.query(
+            Resource.resource_type,
+            func.count(func.distinct(Resource.id)),
+        )
+        .join(
+            ResourceSnapshot,
+            ResourceSnapshot.resource_id == Resource.id,
+        )
+        .filter(
+            ResourceSnapshot.scan_run_id == scan_run_id
+        )
         .group_by(Resource.resource_type)
         .all()
     )
-    return {row.resource_type: row[1] for row in rows}
 
+    return {
+        resource_type: count
+        for resource_type, count in rows
+    }
 
 def get_collection_counts(
     db: Session,
@@ -325,8 +341,14 @@ def get_collection_counts(
     metrics = 0
     if analysis_scan_id:
         resources = (
-            db.query(func.count(Resource.id))
-            .filter(Resource.scan_run_id == analysis_scan_id)
+            db.query(func.count(func.distinct(Resource.id)))
+            .join(
+                ResourceSnapshot,
+                ResourceSnapshot.resource_id == Resource.id,
+            )
+            .filter(
+                ResourceSnapshot.scan_run_id == analysis_scan_id
+            )
             .scalar()
             or 0
         )

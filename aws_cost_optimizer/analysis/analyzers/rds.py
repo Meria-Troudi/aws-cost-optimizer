@@ -1,56 +1,6 @@
 """
 RDS cost and performance optimization analyzer.
 
-Design
-------
-Resource-oriented, account-independent, evidence-first.
-
-The analyzer separates:
-
-    stopped resource
-        -> retention review
-
-    idle running resource
-        -> unused/retention review
-
-    low-utilization running resource
-        -> rightsizing review
-
-    capacity/performance pressure
-        -> operational finding
-
-    storage pressure
-        -> capacity review
-
-    provisioned IOPS underuse
-        -> IOPS configuration review
-
-    backup retention
-        -> retention review
-
-    instance-class history
-        -> sizing-history review
-
-The analyzer does NOT decide:
-
-- finding aggregation
-- report scope
-- recommendation grouping
-- billing attribution
-- savings amount
-- replacement instance class
-- deletion
-
-Important evidence rules
--------------------------
-- Missing metrics never become zero.
-- A metric must be observed before it can participate in a rule.
-- The expected CloudWatch statistic is checked.
-- Workload analysis is suppressed for stopped resources.
-- Partial ReadIOPS/WriteIOPS data does not produce an IOPS-underuse finding.
-- RDS latency is interpreted in seconds internally and reported in milliseconds.
-- Storage pressure uses FreeStorageSpace in bytes against configured storage in GiB.
-- No aggregation scope is set by the analyzer.
 """
 
 from __future__ import annotations
@@ -1779,11 +1729,6 @@ class RDSAnalyzer(Analyzer):
             },
             recommendation_eligible=False,
         )
-
-    # ==================================================================
-    # RULE 8 — PROVISIONED IOPS UNDERUSE
-    # ==================================================================
-
     def _check_iops_underuse(
         self,
         context: AnalysisContext,
@@ -1917,10 +1862,6 @@ class RDSAnalyzer(Analyzer):
             },
             recommendation_eligible=True,
         )
-
-    # ==================================================================
-    # RULE 9 — READ REPLICA
-    # ==================================================================
 
     def _check_underused_read_replica(
         self,
@@ -2258,13 +2199,7 @@ class RDSAnalyzer(Analyzer):
         recommendation_eligible: bool,
     ) -> Finding:
 
-        # --------------------------------------------------------------
-        # IMPORTANT:
-        #
-        # Do not set aggregation_scope here.
-        # FindingAggregator owns report scope.
-        # --------------------------------------------------------------
-
+    
         return Finding(
             finding_type=finding_type,
 

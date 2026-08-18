@@ -1,35 +1,72 @@
+"""
+Scan API routes.
+
+Endpoints
+---------
+POST   /api/scans
+GET    /api/scans
+GET    /api/scans/latest
+GET    /api/scans/{scan_id}
+DELETE /api/scans/{scan_id}
+
+GET    /api/scans/{scan_id}/findings
+GET    /api/scans/{scan_id}/recommendations
+GET    /api/scans/{scan_id}/cost-trend
+"""
+
 from __future__ import annotations
 
-import os
-import sys
+import logging
+import threading
+from collections import defaultdict
 from typing import Any
 
-# Ensure aws_cost_optimizer is importable when this module is loaded
-# (including inside FastAPI background tasks / reloaded workers).
-_BACKEND_ROOT = os.path.dirname(
-    os.path.dirname(
-        os.path.dirname(
-            os.path.abspath(__file__)
-        )
-    )
-)
-sys.path.insert(0, _BACKEND_ROOT)
-sys.path.insert(0, os.path.join(_BACKEND_ROOT, "aws_cost_optimizer"))
-
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.database.connection import SessionLocal
-from backend.database.models.scan_run import ScanRun
+from aws_cost_optimizer.config.client import get_client
+from aws_cost_optimizer.config.settings import CE_REGION
 
+from backend.api.presenters.finding_presenter import (
+    present_findings,
+)
+from backend.api.presenters.recommendation_presenter import (
+    present_recommendations,
+)
+from backend.api.routes.dependencies import get_db
 from backend.api.schemas.scan import (
-    FindingResponse,
-    RecommendationResponse,
-    ScanCreate,
-    ScanStartResponse,
-    ScanStatusResponse,
+    ScanRequest,
+    ScanResponse,
+)
+from backend.api.services.scan_service import (
+    ScanService,
 )
 
+from backend.database.connection import SessionLocal
+from backend.database.models.cost_record import CostRecord
+from backend.database.models.scan_run import ScanRun
+
+from backend.database.repositories.cost_analytics_repository import (
+    get_monthly_totals,
+    get_region_period_totals,
+    get_service_period_totals,
+    get_service_region_costs,
+)
+from backend.database.repositories.finding_repository import (
+    get_findings_by_scan,
+)
+from backend.database.repositories.recommendation_repository import (
+    get_recommendations_by_scan,
+)
+from backend.database.repositories.scan_run_repository import (
+    create_scan_run,
+    delete_scan_run,
+    get_scan_run,
+    get_scan_runs,
+    get_scan_summary,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/scans",
@@ -37,470 +74,716 @@ router = APIRouter(
 )
 
 
-def get_db():
-    db = SessionLocal()
+def _run_scan_in_background(
+    scan_id: int,
+) -> None:
+    """
+    Run a scan using an independent DB session.
 
-    try:
-        yield db
-    finally:
-        db.close()
+    The request session must never be reused by the
+    background worker.
+    """
 
+    def worker() -> None:
+        db: Session = SessionLocal()
 
-def execute_scan(scan_id: int) -> None:
-
-    db = SessionLocal()
-
-    try:
-
-        scan = (
-            db.query(ScanRun)
-            .filter(
-                ScanRun.id == scan_id
+        try:
+            scan = get_scan_run(
+                db,
+                scan_id,
             )
-            .first()
-        )
 
-        if not scan:
-            return
+            if scan is None:
+                logger.error(
+                    "Scan %s disappeared before execution.",
+                    scan_id,
+                )
+                return
 
-        from backend.api.services.scan_service import ScanService
+            ScanService(db).run(scan)
 
-        service = ScanService()
-
-        service.run_scan(
-            db,
-            scan,
-        )
-    except Exception as exc:
-
-        print(
-            f"Scan {scan_id} failed: {exc}"
-        )
-
-        db.rollback()
-
-        scan = (
-            db.query(ScanRun)
-            .filter(ScanRun.id == scan_id)
-            .first()
-        )
-
-        if scan and scan.status == "running":
-            scan.status = "failed"
             db.commit()
 
-    finally:
+        except Exception as exc:
+            logger.exception(
+                "Scan %s failed.",
+                scan_id,
+            )
 
-        db.close()
+            try:
+                db.rollback()
+
+                scan = get_scan_run(
+                    db,
+                    scan_id,
+                )
+
+                if scan is not None:
+                    scan.status = "failed"
+
+                    # Only set finished_at if the model supports it.
+                    if hasattr(scan, "finished_at"):
+                        from datetime import datetime, timezone
+
+                        scan.finished_at = datetime.now(
+                            timezone.utc
+                        )
+
+                    db.commit()
+
+            except Exception:
+                logger.exception(
+                    "Unable to mark scan %s as failed.",
+                    scan_id,
+                )
+
+        finally:
+            db.close()
+
+    thread = threading.Thread(
+        target=worker,
+        daemon=True,
+        name=f"scan-{scan_id}",
+    )
+
+    thread.start()
+
+
+def _aggregate_findings(
+    findings: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Aggregate resource-level findings.
+
+    One analyzer may create one Finding row per resource.
+    The frontend should normally see one reportable finding
+    containing all affected resources.
+    """
+
+    groups: dict[
+        tuple[str, str, str],
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+
+    for finding in findings:
+        key = (
+            str(
+                finding.get("finding_key")
+                or finding.get("finding_type")
+                or "unknown"
+            ),
+            str(
+                finding.get("resource_type")
+                or "unknown"
+            ),
+            str(
+                finding.get("region")
+                or "unknown"
+            ),
+        )
+
+        groups[key].append(finding)
+
+    result: list[dict[str, Any]] = []
+
+    for group in groups.values():
+        first = group[0]
+
+        resource_ids: list[str] = []
+        reasons: list[str] = []
+        evidence_summaries: list[str] = []
+        limitations: list[str] = []
+
+        total_cost = 0.0
+        has_cost = False
+
+        for finding in group:
+            resource_id = finding.get(
+                "resource_id"
+            )
+
+            if (
+                resource_id
+                and resource_id not in resource_ids
+            ):
+                resource_ids.append(
+                    str(resource_id)
+                )
+
+            cost = finding.get("cost")
+
+            if isinstance(cost, (int, float)):
+                total_cost += float(cost)
+                has_cost = True
+
+            reason = finding.get("reason")
+
+            if (
+                reason
+                and reason not in reasons
+            ):
+                reasons.append(
+                    str(reason)
+                )
+
+            for item in (
+                finding.get(
+                    "evidence_summary"
+                )
+                or []
+            ):
+                if (
+                    item
+                    and str(item)
+                    not in evidence_summaries
+                ):
+                    evidence_summaries.append(
+                        str(item)
+                    )
+
+            for item in (
+                finding.get(
+                    "limitations"
+                )
+                or []
+            ):
+                if (
+                    item
+                    and str(item)
+                    not in limitations
+                ):
+                    limitations.append(
+                        str(item)
+                    )
+
+        aggregated = dict(first)
+
+        aggregated["resource_ids"] = (
+            resource_ids
+        )
+
+        aggregated["resource_count"] = (
+            len(resource_ids)
+        )
+
+        aggregated["cost"] = (
+            round(total_cost, 2)
+            if has_cost
+            else None
+        )
+
+        if len(resource_ids) == 1:
+            resource_text = (
+                "1 affected resource."
+            )
+        else:
+            resource_text = (
+                f"{len(resource_ids)} affected resources."
+            )
+
+        aggregated["reason"] = (
+            resource_text
+            + (
+                f" {reasons[0]}"
+                if reasons
+                else ""
+            )
+        )
+
+        aggregated["evidence_summary"] = (
+            evidence_summaries
+        )
+
+        aggregated["limitations"] = (
+            limitations
+        )
+
+        aggregated["aggregation_scope"] = (
+            "region"
+        )
+
+        result.append(
+            aggregated
+        )
+
+    severity_order = {
+        "critical": 4,
+        "high": 3,
+        "medium": 2,
+        "low": 1,
+        "info": 0,
+    }
+
+    result.sort(
+        key=lambda finding: (
+            -severity_order.get(
+                str(
+                    finding.get(
+                        "severity",
+                        "info",
+                    )
+                ).lower(),
+                0,
+            ),
+            str(
+                finding.get(
+                    "finding_type",
+                    "",
+                )
+            ),
+        )
+    )
+
+    return result
 
 
 @router.post(
     "",
-    response_model=ScanStartResponse,
+    response_model=ScanResponse,
 )
-def start_scan(
-    request: ScanCreate,
-    background_tasks: BackgroundTasks,
+def create_scan(
+    request: ScanRequest,
     db: Session = Depends(get_db),
 ):
-    from backend.database.repository.scan_run_repository import (
-        create_scan_run,
-    )
+    if request.start_date >= request.end_date:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "start_date must be earlier "
+                "than end_date."
+            ),
+        )
 
-    from aws_cost_optimizer.config.client import get_client
-    from aws_cost_optimizer.config.settings import CE_REGION
+    try:
+        sts = get_client(
+            "sts",
+            CE_REGION,
+        )
 
-    sts = get_client(
-        "sts",
-        CE_REGION,
-    )
+        identity = (
+            sts.get_caller_identity()
+        )
 
-    account_id = (
-        sts.get_caller_identity()
-        .get("Account")
-    )
+        account_id = identity.get(
+            "Account"
+        )
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Unable to identify AWS account: "
+                f"{exc}"
+            ),
+        ) from exc
 
     if not account_id:
         raise HTTPException(
-            status_code=500,
-            detail="Unable to determine AWS account",
+            status_code=502,
+            detail=(
+                "AWS account ID could not be determined."
+            ),
         )
 
-    scan = create_scan_run(
-        db,
-        account_id=account_id,
-        start_date=request.start_date,
-        end_date=request.end_date,
-        region=request.region,
-        cost_threshold=request.cost_threshold,
+    try:
+        scan = create_scan_run(
+            db,
+            account_id=account_id,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            region=request.region,
+            cost_threshold=request.cost_threshold,
+        )
+
+        db.commit()
+        db.refresh(scan)
+
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to create scan: "
+                f"{exc}"
+            ),
+        ) from exc
+
+    _run_scan_in_background(
+        scan.id
     )
 
-    db.commit()
-
-    background_tasks.add_task(
-        execute_scan,
-        scan.id,
-    )
-
-    return ScanStartResponse(
+    return ScanResponse(
         scan_id=scan.id,
         status="running",
-        message="Scan started",
+        result=get_scan_summary(
+            scan
+        ),
     )
 
 
-@router.get(
-    "/{scan_id}",
-    response_model=ScanStatusResponse,
-)
-def get_scan(
-    scan_id: int,
+@router.get("")
+def list_scans(
     db: Session = Depends(get_db),
 ):
+    scans = get_scan_runs(db)
 
+    return [
+        get_scan_summary(scan)
+        for scan in scans
+    ]
+
+
+@router.get("/latest")
+def get_latest_scan(
+    db: Session = Depends(get_db),
+):
     scan = (
         db.query(ScanRun)
-        .filter(
-            ScanRun.id == scan_id
+        .order_by(
+            ScanRun.created_at.desc()
         )
         .first()
     )
 
-    if not scan:
+    if scan is None:
+        return None
 
+    return get_scan_summary(
+        scan
+    )
+
+
+@router.get("/{scan_id}")
+def get_scan(
+    scan_id: int,
+    db: Session = Depends(get_db),
+):
+    scan = get_scan_run(
+        db,
+        scan_id,
+    )
+
+    if scan is None:
         raise HTTPException(
             status_code=404,
-            detail="Scan not found",
+            detail=(
+                f"Scan {scan_id} not found."
+            ),
         )
 
-    from sqlalchemy import func
-
-    from backend.database.models.collection_plan import CollectionPlan
-    from backend.database.models.cost_record import CostRecord
-    from backend.database.models.finding import Finding
-    from backend.database.models.recommendation import Recommendation
-    from backend.database.repository.service_cost_repository import (
-        get_service_costs_with_rank,
-    )
-    from backend.database.scan_recovery import month_expression
-
-    total_spend = (
-        db.query(func.sum(CostRecord.amount))
-        .filter(CostRecord.scan_run_id == scan_id)
-        .scalar()
+    return get_scan_summary(
+        scan
     )
 
-    findings_count = (
-        db.query(func.count(Finding.id))
-        .filter(Finding.scan_run_id == scan_id)
-        .scalar()
-        or 0
+
+@router.delete("/{scan_id}")
+def delete_scan(
+    scan_id: int,
+    db: Session = Depends(get_db),
+):
+    scan = get_scan_run(
+        db,
+        scan_id,
     )
 
-    recommendations_count = (
-        db.query(func.count(Recommendation.id))
-        .filter(Recommendation.scan_run_id == scan_id)
-        .scalar()
-        or 0
-    )
-
-    service_costs = []
-    if total_spend:
-        service_costs = get_service_costs_with_rank(db, scan_id)
-
-    collection_plans = []
-    if scan.status in ("running", "completed", "completed_with_errors"):
-        plans = (
-            db.query(CollectionPlan)
-            .filter(CollectionPlan.scan_run_id == scan_id)
-            .all()
+    if scan is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Scan {scan_id} not found."
+            ),
         )
-        collection_plans = [
-            {
-                "id": p.id,
-                "service": p.service,
-                "region": p.region,
-                "usage_type": p.usage_type,
-                "resource_type": p.resource_type,
-                "collector": p.collector_name,
-                "priority": p.priority,
-                "cost_context": float(p.cost_context),
-                "status": p.status,
-            }
-            for p in plans
-        ]
 
-    monthly_costs = []
-    if total_spend:
-        monthly_rows = (
-            db.query(
-                month_expression(CostRecord.start_date).label("month"),
-                func.sum(CostRecord.amount).label("cost"),
+    try:
+        deleted = delete_scan_run(
+            db,
+            scan_id,
+        )
+
+        if not deleted:
+            db.rollback()
+
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Scan {scan_id} not found."
+                ),
             )
-            .filter(CostRecord.scan_run_id == scan_id)
-            .group_by("month")
-            .order_by("month")
-            .all()
-        )
-        monthly_costs = [
-            {"month": row.month, "cost": float(row.cost)}
-            for row in monthly_rows
-        ]
 
-    return ScanStatusResponse(
-        scan_id=scan.id,
-        status=scan.status,
-        account_id=scan.account_id,
-        start_date=scan.start_date,
-        end_date=scan.end_date,
-        region=scan.region,
-        cost_threshold=scan.cost_threshold,
-        metrics={
-            "findings": findings_count,
-            "recommendations": recommendations_count,
-        },
-        total_spend=float(total_spend) if total_spend else None,
-        service_costs=service_costs,
-        findings_count=findings_count,
-        recommendations_count=recommendations_count,
-        collection_plans=collection_plans,
-        monthly_costs=monthly_costs,
-    )
+        db.commit()
+
+        return {
+            "status": "deleted",
+            "scan_id": scan_id,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to delete scan: "
+                f"{exc}"
+            ),
+        ) from exc
 
 
 @router.get(
-    "/{scan_id}/findings",
-    response_model=list[FindingResponse],
+    "/{scan_id}/findings"
 )
 def get_scan_findings(
     scan_id: int,
     db: Session = Depends(get_db),
 ):
-    import json
-
-    from backend.database.repository.finding_repository import (
-        get_findings_by_scan,
+    scan = get_scan_run(
+        db,
+        scan_id,
     )
 
-    scan = (
-        db.query(ScanRun)
-        .filter(ScanRun.id == scan_id)
-        .first()
-    )
-
-    if not scan:
+    if scan is None:
         raise HTTPException(
             status_code=404,
-            detail="Scan not found",
+            detail=(
+                f"Scan {scan_id} not found."
+            ),
         )
 
-    findings = get_findings_by_scan(db, scan_id)
+    findings = get_findings_by_scan(
+        db,
+        scan_id,
+    )
 
-    from backend.api.services.finding_presentation import present_finding
+    presented = present_findings(
+        findings
+    )
 
-    def parse_json(value: str | None, fallback):
-        if not value:
-            return fallback
-        try:
-            parsed = json.loads(value)
-            if isinstance(fallback, dict) and isinstance(parsed, list):
-                return {}
-            return parsed
-        except json.JSONDecodeError:
-            return fallback
-
-    responses = []
-    for f in findings:
-        raw = {
-            "id": f.id,
-            "resource_type": f.resource_type,
-            "resource_id": f.resource_id,
-            "finding_type": f.finding_type,
-            "analyzer": f.analyzer,
-            "severity": f.severity,
-            "confidence": f.confidence,
-            "reason": f.reason,
-            "recommendation_eligible": f.recommendation_eligible,
-            "conditions": parse_json(f.conditions, []),
-            "evidence": parse_json(f.evidence, {}),
-            "limitations": parse_json(f.limitations, []),
-        }
-        presented = present_finding(raw, region=scan.region)
-
-        responses.append(
-            FindingResponse(
-                id=f.id,
-                resource_type=f.resource_type,
-                resource_id=f.resource_id,
-                finding_type=f.finding_type,
-                analyzer=f.analyzer,
-                severity=f.severity,
-                confidence=f.confidence,
-                reason=presented["reason"],
-                recommendation_eligible=f.recommendation_eligible,
-                conditions=parse_json(f.conditions, []),
-                evidence=parse_json(f.evidence, {}),
-                limitations=parse_json(f.limitations, []),
-                title=presented["title"],
-                summary=presented["summary"],
-                service=presented["service"],
-                resource_count=presented["resource_count"],
-                resource_ids=presented["resource_ids"],
-                region=presented["region"],
-                evidence_items=presented["evidence_items"],
-                metrics=presented["metrics"],
-                cost_label=presented["cost_label"],
-                condition_groups=presented["condition_groups"],
-                billing_details=presented["billing_details"],
-                metadata=presented["metadata"],
-                observation_period=presented["observation_period"],
-                category=presented["category"],
-                blocks_optimization=presented["blocks_optimization"],
-            )
-        )
-
-    return responses
+    return _aggregate_findings(
+        presented
+    )
 
 
 @router.get(
-    "/{scan_id}/recommendations",
-    response_model=list[RecommendationResponse],
+    "/{scan_id}/recommendations"
 )
 def get_scan_recommendations(
     scan_id: int,
     db: Session = Depends(get_db),
 ):
-    import json
-
-    from backend.database.repository.recommendation_repository import (
-        get_recommendations_by_scan,
-    )
-
-    scan = (
-        db.query(ScanRun)
-        .filter(ScanRun.id == scan_id)
-        .first()
-    )
-
-    if not scan:
-        raise HTTPException(
-            status_code=404,
-            detail="Scan not found",
-        )
-
-    from backend.api.services.finding_presentation import present_finding
-    from backend.api.services.recommendation_presentation import (
-        present_recommendation,
-    )
-    from backend.database.repository.finding_repository import (
-        get_findings_by_scan,
-    )
-
-    recommendations = get_recommendations_by_scan(
+    scan = get_scan_run(
         db,
         scan_id,
     )
 
-    findings = get_findings_by_scan(db, scan_id)
-
-    finding_by_id: dict[int, dict[str, Any]] = {}
-    for f in findings:
-        presented = present_finding(
-            {
-                "id": f.id,
-                "resource_type": f.resource_type,
-                "resource_id": f.resource_id,
-                "finding_type": f.finding_type,
-                "reason": f.reason,
-                "conditions": json.loads(f.conditions) if f.conditions else [],
-                "evidence": json.loads(f.evidence) if f.evidence else {},
-                "limitations": json.loads(f.limitations) if f.limitations else [],
-                "recommendation_eligible": f.recommendation_eligible,
-            },
-            region=scan.region,
-        )
-        finding_by_id[f.id] = presented
-
-    responses = []
-    for r in recommendations:
-        linked = finding_by_id.get(r.finding_id) if r.finding_id else None
-        presented = present_recommendation(
-            {
-                "id": r.id,
-                "finding_id": r.finding_id,
-                "resource_type": r.resource_type,
-                "title": r.title,
-                "action": r.action,
-                "explanation": r.explanation,
-                "priority": r.priority,
-                "confidence": r.confidence,
-                "status": r.status,
-                "affected_resources": linked.get("resource_ids") if linked else [],
-            },
-            resource_count=linked.get("resource_count") if linked else None,
-            affected_resources=linked.get("resource_ids") if linked else None,
-        )
-        responses.append(
-            RecommendationResponse(
-                id=r.id,
-                finding_id=r.finding_id,
-                resource_type=r.resource_type,
-                title=r.title,
-                action=r.action,
-                explanation=presented["explanation"],
-                reason=presented["reason"],
-                priority=r.priority,
-                confidence=r.confidence,
-                status=r.status,
-                meta=presented["meta"],
-                affected_resources=presented["affected_resources"],
-                affected_resource_count=presented["affected_resource_count"],
-            )
+    if scan is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Scan {scan_id} not found."
+            ),
         )
 
-    return responses
+    recommendations = (
+        get_recommendations_by_scan(
+            db,
+            scan_id,
+        )
+    )
+
+    return present_recommendations(
+        recommendations
+    )
 
 
 @router.get(
-    "/{scan_id}/cost-trend",
+    "/{scan_id}/cost-summary"
+)
+def get_scan_cost_summary(
+    scan_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return the cost summary used by the results page."""
+    scan = get_scan_run(db, scan_id)
+    if scan is None:
+        raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found.")
+
+    records = (
+        db.query(CostRecord)
+        .filter(CostRecord.scan_run_id == scan_id)
+        .all()
+    )
+    total_cost = sum(float(record.amount or 0) for record in records)
+
+    return {
+        "scan_id": scan_id,
+        "period": {
+            "start_date": scan.start_date.isoformat() if scan.start_date else None,
+            "end_date": scan.end_date.isoformat() if scan.end_date else None,
+        },
+        "currency": "USD",
+        "total_cost": round(total_cost, 2),
+        "cost_records": len(records),
+        "monthly": get_monthly_totals(db, scan_id),
+        "services": get_service_period_totals(db, scan_id),
+        "regions": get_region_period_totals(db, scan_id),
+        "service_regions": get_service_region_costs(db, scan_id),
+    }
+
+
+@router.get(
+    "/{scan_id}/cost-trend"
 )
 def get_scan_cost_trend(
     scan_id: int,
     db: Session = Depends(get_db),
 ):
-
-    from sqlalchemy import func
-
-    from backend.database.models.cost_record import CostRecord
-    from backend.database.scan_recovery import month_expression
-
-    scan = (
-        db.query(ScanRun)
-        .filter(ScanRun.id == scan_id)
-        .first()
+    scan = get_scan_run(
+        db,
+        scan_id,
     )
 
-    if not scan:
+    if scan is None:
         raise HTTPException(
             status_code=404,
-            detail="Scan not found",
+            detail=(
+                f"Scan {scan_id} not found."
+            ),
         )
 
-    monthly_rows = (
-        db.query(
-            month_expression(CostRecord.start_date).label("month"),
-            func.sum(CostRecord.amount).label("cost"),
+    return get_monthly_totals(
+        db,
+        scan_id,
+    )
+
+
+@router.get(
+    "/{scan_id}/result"
+)
+def get_scan_result(
+    scan_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Complete frontend result endpoint.
+
+    Keeps scan metadata, cost summary, findings,
+    recommendations and cost trend in one response.
+    """
+
+    scan = get_scan_run(
+        db,
+        scan_id,
+    )
+
+    if scan is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Scan {scan_id} not found."
+            ),
         )
-        .filter(CostRecord.scan_run_id == scan_id)
-        .group_by("month")
-        .order_by("month")
+
+    cost_records = (
+        db.query(CostRecord)
+        .filter(
+            CostRecord.scan_run_id
+            == scan_id
+        )
         .all()
     )
 
-    return [
-        {
-            "month": row.month,
-            "cost": float(row.cost),
-        }
-        for row in monthly_rows
-    ]
+    costs = []
+
+    for record in cost_records:
+        costs.append(
+            {
+                "id": record.id,
+                "service": record.service,
+                "usage_type": record.usage_type,
+                "operation": record.operation,
+                "region": record.region,
+                "amount": round(
+                    float(
+                        record.amount or 0
+                    ),
+                    2,
+                ),
+                "usage_quantity": (
+                    float(
+                        record.usage_quantity
+                    )
+                    if record.usage_quantity
+                    is not None
+                    else None
+                ),
+                "unit": record.unit,
+                "start_date": (
+                    record.start_date.isoformat()
+                    if record.start_date
+                    else None
+                ),
+                "end_date": (
+                    record.end_date.isoformat()
+                    if record.end_date
+                    else None
+                ),
+            }
+        )
+
+    total_cost = sum(
+        item["amount"]
+        for item in costs
+    )
+
+    findings = _aggregate_findings(
+        present_findings(
+            get_findings_by_scan(
+                db,
+                scan_id,
+            )
+        )
+    )
+
+    recommendations = present_recommendations(
+        get_recommendations_by_scan(
+            db,
+            scan_id,
+        )
+    )
+
+    return {
+        "scan": get_scan_summary(
+            scan
+        ),
+
+        "summary": {
+            "total_cost": round(
+                total_cost,
+                2,
+            ),
+            "cost_records": len(
+                costs
+            ),
+            "findings": len(
+                findings
+            ),
+            "recommendations": len(
+                recommendations
+            ),
+        },
+
+        "cost_records": costs,
+
+        "findings": findings,
+
+        "recommendations": recommendations,
+
+        "cost_trend": get_monthly_totals(
+            db,
+            scan_id,
+        ),
+    }

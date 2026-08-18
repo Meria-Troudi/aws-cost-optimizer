@@ -1,3 +1,13 @@
+"""
+Metric model.
+
+One metric observation is uniquely identified by:
+
+resource + scan + namespace + metric + statistic
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -6,6 +16,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -33,13 +44,19 @@ class Metric(Base):
     )
 
     resource_id: Mapped[int] = mapped_column(
-        ForeignKey("resources.id", ondelete="CASCADE"),
+        ForeignKey(
+            "resources.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     scan_run_id: Mapped[int] = mapped_column(
-        ForeignKey("scan_runs.id", ondelete="CASCADE"),
+        ForeignKey(
+            "scan_runs.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -62,6 +79,7 @@ class Metric(Base):
     period: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
+        default=0,
     )
 
     value: Mapped[float | None] = mapped_column(
@@ -85,13 +103,14 @@ class Metric(Base):
     )
 
     dimensions: Mapped[str | None] = mapped_column(
-        String,
+        Text,
         nullable=True,
     )
 
     collected_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+        nullable=False,
     )
 
     resource = relationship(

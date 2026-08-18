@@ -1,33 +1,49 @@
 export default function Nav({ activeTab, onTabChange }) {
-  // Three tabs instead of the previous five (mockup) vs three (app) mismatch.
-  // "Analysis" and "Results" are folded into Overview (which already runs
-  // the scan inline via "Run Cost Analysis") and Findings (which already
-  // shows the scan output). Recommendations stays separate because it has
-  // its own status lifecycle independent of cost monitoring.
   const tabs = [
     { id: 'overview', label: 'Overview' },
-    { id: 'findings', label: 'Findings' },
-    { id: 'recommendations', label: 'Recommendations' },
+    { id: 'analysis', label: 'Cost Analysis' },
+    { id: 'results', label: 'Optimization Results' },
   ]
 
   return (
-    <div className="nav">
-      <div className="nav-brand">
-        <span className="dot" />
-        costlens
-      </div>
-      <div className="nav-tabs">
-        {tabs.map((tab) => (
+    <div className="nav-shell">
+      <nav className="nav">
+        <button
+          type="button"
+          className="nav-brand"
+          onClick={() => onTabChange('overview')}
+          aria-label="Open CostLens overview"
+        >
+          <span className="slash">/</span>costlens
+          <span className="brand-badge">AWS</span>
+        </button>
+
+        <div className="nav-tabs" role="tablist" aria-label="Primary navigation">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={`nav-tab ${activeTab === tab.id ? 'active' : ''}`}
+              onClick={() => onTabChange(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="nav-right">
           <button
-            key={tab.id}
             type="button"
-            className={`nav-tab ${activeTab === tab.id ? 'active' : ''}`}
-            onClick={() => onTabChange(tab.id)}
+            className="btn-pill on-light"
+            onClick={() => onTabChange('analysis')}
           >
-            {tab.label}
+            <span className="dash" />
+            COST OPTIMIZER
           </button>
-        ))}
-      </div>
+        </div>
+      </nav>
     </div>
   )
 }

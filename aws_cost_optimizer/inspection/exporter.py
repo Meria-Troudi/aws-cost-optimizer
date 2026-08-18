@@ -306,11 +306,11 @@ class ScanExporter:
     def _section_cost_drivers(self) -> list[str]:
 
         from backend.database.connection import SessionLocal
-        from backend.database.repository.service_cost_repository import (
+        from backend.database.repositories.service_cost_repository import (
             get_period_cost_total,
             get_service_costs_with_rank,
         )
-        from backend.database.repository.usage_type_cost_repository import (
+        from backend.database.repositories.usage_type_cost_repository import (
             get_usage_types_by_service,
         )
 

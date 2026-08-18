@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from backend.database.models.cost_record import CostRecord
-from backend.database.repository.collection_plan_repository import save_collection_plan
+from backend.database.repositories.collection_plan_repository import save_collection_plan
 from aws_cost_optimizer.planner.resource_catalog import ResourceCatalog
 from aws_cost_optimizer.planner.resolver import CatalogResolver
 from aws_cost_optimizer.planner.collection_profile import CollectionProfile

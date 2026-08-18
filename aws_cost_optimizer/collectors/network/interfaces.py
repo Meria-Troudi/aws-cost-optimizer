@@ -1,20 +1,6 @@
 """
 Reusable EC2 Network Interface evidence collector.
 
-Purpose
--------
-Collects normalized ENI information for other resource collectors.
-
-This is not an optimization analyzer and does not make recommendations.
-
-Supported consumers may include:
-- VPC endpoints
-- NAT gateways
-- load balancers
-- EC2
-- RDS
-- EKS
-- other AWS services exposing ENI IDs
 """
 
 from __future__ import annotations

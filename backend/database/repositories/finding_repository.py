@@ -40,22 +40,20 @@ def save_findings(
             resource_ids = data.get(
                 "resource_ids"
             )
-
-            if (
-                isinstance(
-                    resource_ids,
-                    list,
-                )
-                and resource_ids
-            ):
-
+        if resource_id is None and isinstance(resource_ids, list):
+            if len(resource_ids) == 1:
                 resource_id = resource_ids[0]
 
+            elif len(resource_ids) > 1:
+                raise ValueError(
+                    "Raw finding contains multiple resource_ids. "
+            "Persist one resource-level finding per resource."
+        )
         if not resource_id:
-
             raise ValueError(
                 "Raw finding is missing resource_id."
-            )
+    )
+
 
         resource_type = str(
             data.get(

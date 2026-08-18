@@ -1,4 +1,8 @@
-#/aws_cost_optimizer/collectors/cost/collector.py
+"""
+AWS Cost Explorer collector.
+
+Collects cost data for a ScanRun and persists it as CostRecord rows.
+"""
 
 from __future__ import annotations
 
@@ -6,11 +10,13 @@ from datetime import date
 from typing import Any
 
 from backend.database.models.cost_record import CostRecord
-from collectors.cost.cost_explorer import (
+
+from aws_cost_optimizer.collectors.cost.cost_explorer import (
     get_cost_usage,
     get_monthly_totals,
     get_regions_with_costs,
 )
+
 from aws_cost_optimizer.collectors.cost.periods import (
     breakdown_from_ce_monthly,
     month_keys_in_period,
@@ -18,6 +24,7 @@ from aws_cost_optimizer.collectors.cost.periods import (
 
 
 class CostCollector:
+    """Collect and validate AWS billing data for one scan."""
 
     def collect(
         self,
@@ -28,13 +35,17 @@ class CostCollector:
         start = scan.start_date.isoformat()
         end = scan.end_date.isoformat()
 
+        # ----------------------------------------------------------
+        # Determine billing regions
+        # ----------------------------------------------------------
+
         if scan.region:
             regions = [scan.region]
 
             print(
-                f"  Collecting costs for region: "
-                f"{scan.region}"
+                f"  Collecting costs for region: {scan.region}"
             )
+
         else:
             regions = get_regions_with_costs(
                 start,
@@ -47,6 +58,10 @@ class CostCollector:
 
         saved_count = 0
         collected_total = 0.0
+
+        # ----------------------------------------------------------
+        # Collect Cost Explorer data
+        # ----------------------------------------------------------
 
         for region in regions:
 
@@ -76,26 +91,34 @@ class CostCollector:
                     service_name = keys[0]
                     usage_type_name = keys[1]
 
-                    # If OPERATION is requested, it will be the third key.
                     operation_name = (
                         keys[2]
                         if len(keys) >= 3 and keys[2]
                         else None
                     )
 
-                    metrics = group.get("Metrics", {})
+                    metrics = group.get(
+                        "Metrics",
+                        {},
+                    )
 
                     cost_metric = metrics.get(
                         "UnblendedCost",
                         {},
                     )
 
-                    amount = float(
-                        cost_metric.get(
-                            "Amount",
-                            0.0,
+                    try:
+                        amount = float(
+                            cost_metric.get(
+                                "Amount",
+                                0.0,
+                            )
                         )
-                    )
+                    except (
+                        TypeError,
+                        ValueError,
+                    ):
+                        amount = 0.0
 
                     if amount == 0:
                         continue
@@ -106,12 +129,18 @@ class CostCollector:
                     )
 
                     usage_quantity = None
+
                     if usage_metric.get("Amount") is not None:
+
                         try:
                             usage_quantity = float(
                                 usage_metric["Amount"]
                             )
-                        except (TypeError, ValueError):
+
+                        except (
+                            TypeError,
+                            ValueError,
+                        ):
                             usage_quantity = None
 
                     unit = usage_metric.get("Unit")
@@ -137,11 +166,15 @@ class CostCollector:
 
         db.commit()
 
+        # ----------------------------------------------------------
+        # Validate collected cost
+        # ----------------------------------------------------------
+
         validation = self._validate(
-            start,
-            end,
-            collected_total,
-            scan.region,
+            start=start,
+            end=end,
+            collected_total=collected_total,
+            region=scan.region,
             scan_start=scan.start_date,
             scan_end=scan.end_date,
         )
@@ -149,6 +182,10 @@ class CostCollector:
         validation["saved_count"] = saved_count
 
         return validation
+
+    # ==============================================================
+    # VALIDATION
+    # ==============================================================
 
     def _validate(
         self,
@@ -167,16 +204,31 @@ class CostCollector:
             region=region,
         )
 
-        monthly_total = 0.0
-        monthly_breakdown = breakdown_from_ce_monthly(monthly_results)
+        monthly_breakdown = (
+            breakdown_from_ce_monthly(
+                monthly_results
+            )
+        )
 
-        for row in monthly_breakdown:
-            monthly_total += float(row["cost"])
+        monthly_total = sum(
+            float(row["cost"])
+            for row in monthly_breakdown
+        )
 
-        account_breakdown: list[dict[str, float | str]] = []
+        account_breakdown: list[
+            dict[str, float | str]
+        ] = []
+
         if region:
-            account_breakdown = breakdown_from_ce_monthly(
-                get_monthly_totals(start, end, region=None)
+
+            account_breakdown = (
+                breakdown_from_ce_monthly(
+                    get_monthly_totals(
+                        start,
+                        end,
+                        region=None,
+                    )
+                )
             )
 
         difference = abs(
@@ -185,40 +237,59 @@ class CostCollector:
 
         matches = difference < 0.01
 
-        months_included = (
-            month_keys_in_period(scan_start, scan_end)
-            if scan_start and scan_end
-            else [row["month"] for row in monthly_breakdown]
-        )
+        if scan_start and scan_end:
+
+            months_included = (
+                month_keys_in_period(
+                    scan_start,
+                    scan_end,
+                )
+            )
+
+        else:
+
+            months_included = [
+                row["month"]
+                for row in monthly_breakdown
+            ]
+
+        # ----------------------------------------------------------
+        # Console output
+        # ----------------------------------------------------------
 
         print(
-            f"    Collected total:  "
+            f"    Collected total: "
             f"${collected_total:.2f}"
         )
 
         print(
-            f"    Monthly sum:      "
+            f"    Monthly sum:     "
             f"${monthly_total:.2f}"
         )
 
         if region:
-            print(f"    Billing scope:    {region}")
+            print(
+                f"    Billing scope:   {region}"
+            )
         else:
-            print("    Billing scope:    all regions")
+            print(
+                "    Billing scope:   all regions"
+            )
 
         for row in monthly_breakdown:
+
             print(
                 f"      {row['month']}: "
                 f"${float(row['cost']):,.2f}"
             )
 
         print(
-            f"    Difference:       "
+            f"    Difference:      "
             f"${difference:.2f}"
         )
 
         print(
-            f"    Match:            "
+            "    Match:           "
             f"{'✓' if matches else '✗'}"
         )
 
@@ -230,5 +301,9 @@ class CostCollector:
             "monthly_breakdown": monthly_breakdown,
             "account_monthly_breakdown": account_breakdown,
             "months_included": months_included,
-            "billing_scope": region or "all regions",
+            "billing_scope": (
+                region
+                if region
+                else "all regions"
+            ),
         }

@@ -1,7 +1,26 @@
+"""
+Resource snapshot model.
+
+A ResourceSnapshot represents the state/evidence of a stable AWS
+resource during one specific scan.
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from ..base import Base
 
@@ -15,13 +34,19 @@ class ResourceSnapshot(Base):
     )
 
     resource_id: Mapped[int] = mapped_column(
-        ForeignKey("resources.id", ondelete="CASCADE"),
+        ForeignKey(
+            "resources.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
 
     scan_run_id: Mapped[int] = mapped_column(
-        ForeignKey("scan_runs.id", ondelete="CASCADE"),
+        ForeignKey(
+            "scan_runs.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
         index=True,
     )
@@ -51,7 +76,6 @@ class ResourceSnapshot(Base):
         nullable=True,
     )
 
-    # Additional collector evidence persisted as JSON.
     relationships: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
@@ -70,6 +94,7 @@ class ResourceSnapshot(Base):
     collected_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
+        nullable=False,
     )
 
     resource = relationship(
