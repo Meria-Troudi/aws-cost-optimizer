@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { getAccount, getCostRegions } from '../api/client'
-import { formatDate } from '../utils/format'
+import {
+  formatDate,
+  formatMoneyOrDash,
+  pluralize,
+} from '../utils/format'
 
 function formatLocalDate(value) {
   const year = value.getFullYear()
@@ -37,11 +41,12 @@ export default function ScanPage({
     start_date: dates.start_date,
     end_date: dates.end_date,
     region: '',
-    cost_threshold: 100,
+    cost_threshold: 0,
   })
 
   const [account, setAccount] = useState(null)
   const [accountLoading, setAccountLoading] = useState(true)
+  const [accountError, setAccountError] = useState(null)
   const [availableRegions, setAvailableRegions] = useState([])
 
   useEffect(() => {
@@ -60,8 +65,17 @@ export default function ScanPage({
             Array.isArray(regionData?.regions) ? regionData.regions : [],
           )
         }
-      } catch {
-        // Account information is optional for the scan form.
+      } catch (err) {
+        // Account details are optional, but an unreachable backend
+        // must not look like "this account simply has no regions" --
+        // that renders an empty region picker with no explanation.
+        if (mounted) {
+          setAccountError(
+            err instanceof Error
+              ? err.message
+              : String(err),
+          )
+        }
       } finally {
         if (mounted) {
           setAccountLoading(false)
@@ -107,6 +121,15 @@ export default function ScanPage({
     status === 'done' ||
     scanData?.status === 'completed' ||
     scanData?.status === 'completed_with_errors'
+
+  // The id must be read off the scan itself. Passing the click handler
+  // directly (onClick={onViewResults}) hands React's SyntheticEvent to
+  // the parent as the scan id, which then requests
+  // /api/scans/[object Object].
+  const scanId =
+    scanData?.id ??
+    scanData?.scan_id ??
+    null
 
   const progress =
     scanData?.progress_percent ??
@@ -156,6 +179,13 @@ export default function ScanPage({
       {error && (
         <div className="page-error section-gap">
           {error}
+        </div>
+      )}
+
+      {!error && accountError && (
+        <div className="page-error section-gap">
+          Could not load account details or the region list:{' '}
+          {accountError}
         </div>
       )}
 
@@ -287,9 +317,9 @@ export default function ScanPage({
                 <button
                   type="button"
                   className="small-btn"
-                  onClick={onViewResults}
+                  onClick={() => onViewResults(scanId)}
                 >
-                  View Results 
+                  View Results
                 </button>
               )}
             </div>
@@ -356,9 +386,9 @@ export default function ScanPage({
             </div>
 
             <div className="scan-status-row">
-              <span>Threshold</span>
+              <span>Minimum spend</span>
               <strong>
-                ${Number(form.cost_threshold || 0).toFixed(2)}
+                {formatMoneyOrDash(form.cost_threshold || 0)}
               </strong>
             </div>
 
@@ -409,17 +439,15 @@ export default function ScanPage({
                   </b>
 
                   <span>
-                    {scanData.findings_count ?? 0}{' '}
-                    finding
-                    {(scanData.findings_count ?? 0) === 1
-                      ? ''
-                      : 's'}{' '}
+                    {pluralize(
+                      scanData.findings_count ?? 0,
+                      'finding',
+                    )}{' '}
                     ·{' '}
-                    {scanData.recommendations_count ?? 0}{' '}
-                    recommendation
-                    {(scanData.recommendations_count ?? 0) === 1
-                      ? ''
-                      : 's'}
+                    {pluralize(
+                      scanData.recommendations_count ?? 0,
+                      'recommendation',
+                    )}
                   </span>
                 </div>
               </div>
@@ -427,9 +455,9 @@ export default function ScanPage({
               <button
                 type="button"
                 className="small-btn primary-btn"
-                onClick={onViewResults}
+                onClick={() => onViewResults(scanId)}
               >
-                View  Results 
+                View Results
               </button>
             </div>
           )}

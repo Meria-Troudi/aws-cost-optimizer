@@ -13,15 +13,13 @@ import { getScans } from './api/client'
 
 export default function App() {
 
+
   const routeToTab = (pathname) => (
     { '/analysis': 'analysis', '/results': 'results', '/overview': 'overview' }[pathname] || 'overview'
   )
   const [activeTab, setActiveTab] = useState(() => routeToTab(window.location.pathname))
   const [selectedScanId, setSelectedScanId] = useState(null)
 
-  /*
-   * Dashboard
-   */
   const {
     dashboardData,
     loading: dashboardLoading,
@@ -31,9 +29,6 @@ export default function App() {
     refreshCosts,
   } = useDashboard()
 
-  /*
-   * Dashboard current-month scan (quick action)
-   */
   const {
     scanning: dashboardScanning,
     scanData: dashboardScanData,
@@ -45,16 +40,9 @@ export default function App() {
       if (scanId) {
         setSelectedScanId(scanId)
       }
-      /*
-       * Do not auto-navigate; the dashboard shows the persisted
-       * completed scan panel and the user can click View Results.
-       */
     },
   })
 
-  /*
-   * Scan (Analysis page)
-   */
   const {
     scanData,
     loading: scanLoading,
@@ -64,17 +52,22 @@ export default function App() {
     runScan,
   } = useScan()
 
-  /*
-   * Results
-   */
   const {
     resultsScan,
     findings,
     recommendations,
+    costSummary,
+    costDrivers,
+    collectionSummary,
+    collectionSummaryLoading,
+    collectionSummaryError,
+    loadCollectionSummary,
     loading: resultsLoading,
     error: resultsError,
     loadResults,
-  } = useScanResults(selectedScanId)
+  } = useScanResults(
+    selectedScanId,
+  )
 
   useEffect(() => {
     let active = true
@@ -85,13 +78,15 @@ export default function App() {
         )
         if (active && latest?.id) setSelectedScanId(latest.id)
       })
-      .catch(() => {})
+      .catch((err) => {
+        // Preselecting the most recent scan is best-effort, but a
+        // silent catch made an unreachable backend indistinguishable
+        // from "no scans yet". Log it so the failure is diagnosable.
+        console.error('Could not load the scan list:', err)
+      })
     return () => { active = false }
   }, [])
 
-  /*
-   * When scan completes, open results.
-   */
   useEffect(() => {
     if (!scanData) return
 
@@ -123,9 +118,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  /*
-   * Navigation
-   */
   function handleTabChange(tab) {
     setActiveTab(tab)
     window.history.pushState({}, '', `/${tab}`)
@@ -135,9 +127,6 @@ export default function App() {
     }
   }
 
-  /*
-   * Run analysis
-   */
   async function handleRunAnalysis(config) {
     try {
       const scanId = await runScan(config)
@@ -145,12 +134,6 @@ export default function App() {
       if (scanId) {
         setSelectedScanId(scanId)
       }
-
-      /*
-       * useScan handles polling.
-       * When the scan becomes completed,
-       * the useEffect above opens Results.
-       */
     } catch (error) {
       console.error(
         'Failed to run cost analysis:',
@@ -159,16 +142,10 @@ export default function App() {
     }
   }
 
-  /*
-   * Dashboard -> Analysis
-   */
   function handleOpenAnalysis() {
     handleTabChange('analysis')
   }
 
-  /*
-   * Dashboard -> Results
-   */
   function handleViewOptimization(scanId) {
     const resolvedId =
       scanId ??
@@ -184,9 +161,6 @@ export default function App() {
     handleTabChange('results')
   }
 
-  /*
-   * Scan -> Results
-   */
   function handleViewResults(scanId) {
     if (scanId) {
       setSelectedScanId(scanId)
@@ -206,20 +180,19 @@ export default function App() {
 
         {activeTab === 'overview' && (
           <DashboardTab
-            dashboardData={dashboardData}
-            loading={dashboardLoading}
-            refreshing={refreshing}
-            error={dashboardError}
-            onRunAnalysis={handleOpenAnalysis}
-            onViewOptimization={handleViewOptimization}
-            onRefreshCosts={refreshCosts}
-            onFilterChange={loadDashboard}
-            onScanCurrentMonth={scanCurrentMonth}
-            scanning={dashboardScanning}
-            scanData={dashboardScanData}
-            scanError={dashboardScanError}
-            lastScanId={selectedScanId}
-          />
+  dashboardData={dashboardData}
+  loading={dashboardLoading}
+  refreshing={refreshing}
+  error={dashboardError}
+  onRunAnalysis={handleOpenAnalysis}
+  onViewOptimization={handleViewOptimization}
+  onRefreshCosts={refreshCosts}
+  onScanCurrentMonth={scanCurrentMonth}
+  scanning={dashboardScanning}
+  scanData={dashboardScanData}
+  scanError={dashboardScanError}
+  lastScanId={selectedScanId}
+/>
         )}
 
         {activeTab === 'analysis' && (
@@ -243,6 +216,12 @@ export default function App() {
             scan={resultsScan}
             findings={findings}
             recommendations={recommendations}
+            costSummary={costSummary}
+            costDrivers={costDrivers}
+            collectionSummary={collectionSummary}
+            collectionSummaryLoading={collectionSummaryLoading}
+            collectionSummaryError={collectionSummaryError}
+            onLoadCollectionSummary={loadCollectionSummary}
             loading={resultsLoading}
             error={resultsError}
             onBack={() =>

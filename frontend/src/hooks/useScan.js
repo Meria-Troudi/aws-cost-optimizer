@@ -13,6 +13,11 @@ import {
 const POLL_INTERVAL_MS = 3000
 const MAX_POLLS = 600
 
+// Consecutive failed status checks tolerated before giving up. The scan
+// runs server-side, so a dropped request or a backend restart must not
+// be reported to the user as a failed scan.
+const MAX_CONSECUTIVE_POLL_ERRORS = 5
+
 function isTerminalStatus(status) {
   return [
     'completed',
@@ -72,6 +77,7 @@ export function useScan() {
       (scanId) =>
         new Promise((resolve, reject) => {
           let attempts = 0
+          let consecutiveErrors = 0
           let finished = false
 
           const finish = (callback, value) => {
@@ -95,6 +101,9 @@ export function useScan() {
                 finish(resolve, scanId)
                 return
               }
+
+              // A poll succeeded, so any earlier blip was transient.
+              consecutiveErrors = 0
 
               setScanData(data)
 
@@ -169,16 +178,41 @@ export function useScan() {
                 )
               }
             } catch (err) {
-              setLoading(false)
+              if (!mountedRef.current) {
+                finish(resolve, scanId)
+                return
+              }
 
-              setStatus('idle')
+              consecutiveErrors += 1
 
               const message =
                 err instanceof Error
                   ? err.message
                   : String(err)
 
-              setError(message)
+              // The scan runs server-side and keeps going regardless of
+              // whether we can reach the API. Giving up on the first
+              // dropped request or backend restart reported a healthy
+              // scan as failed, so tolerate a short outage and only
+              // surface a soft warning while retrying.
+              if (
+                consecutiveErrors <
+                MAX_CONSECUTIVE_POLL_ERRORS
+              ) {
+                setError(
+                  `Lost contact with the backend (attempt ${consecutiveErrors} of ${MAX_CONSECUTIVE_POLL_ERRORS}). Retrying — the scan is still running.`,
+                )
+
+                return
+              }
+
+              setLoading(false)
+
+              setStatus('idle')
+
+              setError(
+                `${message} — gave up after ${consecutiveErrors} consecutive failed status checks. The scan may still be running; reopen it from the results page.`,
+              )
 
               finish(
                 reject,
