@@ -55,24 +55,18 @@ function ChangeRow({
 
       </div>
 
-      <div className="movement-value mono">
-
-        <strong>
-          {amount != null
-            ? formatChange(amount)
-            : '—'}
-        </strong>
+      <span className={`movement-delta mono ${direction}`}>
+        {isUp ? '▲' : '▼'}{' '}
+        {amount != null
+          ? formatChange(amount)
+          : '—'}
 
         {pct != null && (
-          <span>
-            {formatPct(
-              pct,
-              true,
-            )}
-          </span>
+          <small>
+            {formatPct(pct, true)}
+          </small>
         )}
-
-      </div>
+      </span>
     </div>
   )
 }
@@ -181,11 +175,6 @@ export default function ServiceChangesPanel({
           <h3>
             What changed in AWS spend
           </h3>
-
-          <p>
-            The largest contributors to
-            spend expansion and reduction.
-          </p>
         </div>
 
         <span className="snapshot-count">
