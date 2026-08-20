@@ -26,6 +26,10 @@ from typing import Any
 from . import analyzers as _analyzers  # noqa: F401
 from .base import Analyzer
 from .context import AnalysisContext
+from .financial import (
+    calculate_savings,
+    normalize_financial_impact,
+)
 from .finding import Finding
 from .registry import get_analyzers
 
@@ -308,6 +312,45 @@ class AnalysisEngine:
             finding.metadata.setdefault(
                 "billing_usage_type",
                 str(usage_type),
+            )
+
+        # ----------------------------------------------------------
+        # Financial impact.
+        #
+        # No analyzer populated Finding.impact, so calculate_savings()
+        # was never called and every financial block came out as all
+        # None -- the platform could not report an observed cost, let
+        # alone explain why a savings figure was absent.
+        #
+        # It is filled in centrally here rather than in each analyzer
+        # because the inputs (billing amount, attribution scope) come
+        # from the collection plan, not from analyzer logic. An
+        # analyzer that sets its own impact still wins.
+        #
+        # This deliberately does NOT invent savings: with
+        # attribution_scope="collection_plan", calculate_savings
+        # returns the observed cost plus the basis
+        # "cost_not_resource_attributed", which is the honest answer
+        # when service-level spend cannot be pinned to one resource.
+        # ----------------------------------------------------------
+
+        if not finding.impact:
+
+            impact = calculate_savings(
+                billing.get("amount"),
+                confidence=finding.confidence,
+                attribution_scope=billing.get(
+                    "attribution_scope"
+                ),
+            )
+
+            currency = billing.get("currency")
+
+            if currency:
+                impact["currency"] = str(currency)
+
+            finding.impact = normalize_financial_impact(
+                impact
             )
 
         # ----------------------------------------------------------
