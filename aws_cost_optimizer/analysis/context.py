@@ -40,11 +40,6 @@ class AnalysisContext:
     cost_context: (
         dict[str, Any] | None
     ) = None
-
-    # ==============================================================
-    # IDENTITY
-    # ==============================================================
-
     @property
     def resource_id(
         self,
@@ -86,11 +81,6 @@ class AnalysisContext:
             return None
 
         return str(value)
-
-    # ==============================================================
-    # COLLECTOR DATA
-    # ==============================================================
-
     def observations(
         self,
     ) -> dict[str, Any]:
@@ -201,11 +191,6 @@ class AnalysisContext:
             if isinstance(value, dict)
             else {}
         )
-
-    # ==============================================================
-    # BILLING
-    # ==============================================================
-
     def billing(
         self,
     ) -> dict[str, Any]:
@@ -238,11 +223,6 @@ class AnalysisContext:
             return float(value)
 
         return None
-
-    # ==============================================================
-    # OBSERVATION PERIOD
-    # ==============================================================
-
     def period(
         self,
     ) -> dict[str, Any]:
@@ -266,11 +246,6 @@ class AnalysisContext:
             if isinstance(value, dict)
             else {}
         )
-
-    # ==============================================================
-    # METRICS
-    # ==============================================================
-
     def metric(
         self,
         name: str,
@@ -349,36 +324,49 @@ class AnalysisContext:
         return metric_status(
             self.metric(name)
         )
-
-    # ==============================================================
-    # DATA QUALITY
-    # ==============================================================
-
     def collector_data_quality(
         self,
     ) -> dict[str, Any]:
+        """
+        Collector-reported data quality for this resource.
 
-        value = self.observations().get(
+        BaseCollector writes data_quality at the TOP level of the
+        resource document (see collectors/base.py), so that is the
+        canonical location and is checked first. Some collectors --
+        NAT Gateway in particular -- additionally publish a richer
+        block inside observations, so the two are merged with the
+        nested block taking precedence for keys it defines.
+
+        Reading only the nested block (the previous behaviour) meant
+        every collector except NAT returned {}, so findings shipped an
+        empty data-quality section while appearing to carry evidence.
+        """
+
+        merged: dict[str, Any] = {}
+
+        top_level = self.resource.get(
             "data_quality",
             {},
         )
 
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
+        if isinstance(top_level, dict):
+            merged.update(top_level)
+
+        nested = self.observations().get(
+            "data_quality",
+            {},
         )
+
+        if isinstance(nested, dict):
+            merged.update(nested)
+
+        return merged
 
     def data_quality(
         self,
     ) -> dict[str, Any]:
 
         return self.collector_data_quality()
-
-    # ==============================================================
-    # OPTIMIZATION EVIDENCE
-    # ==============================================================
-
     def optimization_evidence(
         self,
     ) -> dict[str, Any]:
@@ -413,11 +401,6 @@ class AnalysisContext:
                 return nested
 
         return {}
-
-    # ==============================================================
-    # COMPATIBILITY
-    # ==============================================================
-
     def rds_billing_match(
         self,
     ) -> dict[str, Any]:
