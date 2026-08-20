@@ -40,6 +40,31 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def close_out_interrupted_scans() -> None:
+    """
+    Scans run in daemon threads, so a restart or crash leaves their
+    rows stuck in 'pending'/'running' forever and the UI polls them
+    until it gives up. Close them out on startup.
+    """
+
+    from backend.database.connection import SessionLocal
+    from backend.database.scan_recovery import recover_stuck_scans
+
+    db = SessionLocal()
+
+    try:
+        recover_stuck_scans(db)
+    except Exception as exc:
+        db.rollback()
+        print(
+            "[startup] Could not recover interrupted scans: "
+            f"{type(exc).__name__}: {exc}"
+        )
+    finally:
+        db.close()
+
+
 app.include_router(account_router)
 app.include_router(dashboard_router)
 app.include_router(scans_router)

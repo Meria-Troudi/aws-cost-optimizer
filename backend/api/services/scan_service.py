@@ -26,6 +26,7 @@ from aws_cost_optimizer.recommendations.optimization import (
 
 from backend.database.models.cost_record import CostRecord
 from backend.database.repositories.scan_run_repository import update_scan_progress
+from backend.database.utils import json_dumps
 
 
 class ScanService:
@@ -104,6 +105,23 @@ class ScanService:
             cost_validation = cost_collector.collect(
                 self.db,
                 scan,
+            )
+
+            scan.cost_validation_json = json_dumps(
+                {
+                    "collected_total": cost_validation.get(
+                        "collected_total"
+                    ),
+                    "monthly_total": cost_validation.get(
+                        "monthly_total"
+                    ),
+                    "difference": cost_validation.get(
+                        "difference"
+                    ),
+                    "matches": cost_validation.get(
+                        "matches"
+                    ),
+                }
             )
 
             self._report_progress(scan, 15)
@@ -209,11 +227,6 @@ class ScanService:
                     )
                     or 0.0
                 )
-
-                # ------------------------------------------
-                # Invalid plan
-                # ------------------------------------------
-
                 if not collector_name:
                     result = {
                         "collector": None,
@@ -270,15 +283,16 @@ class ScanService:
                     ] += 1
 
                     continue
-
-                # ------------------------------------------
-                # Billing context
-                # ------------------------------------------
-
                 cost_context = {
                     "service": service,
                     "usage_type": usage_type,
                     "region": region,
+                    # Read by normalize_billing_context()
+                    # (aws_cost_optimizer/analysis/billing.py) as the
+                    # top-level attribution signal -- this cost is a
+                    # usage-type+region total, not one resource's cost.
+                    "attribution_scope": "collection_plan",
+                    "resource_cost_attributed": False,
                     "cost": {
                         "value": cost_value,
                         "currency": "USD",
@@ -806,6 +820,19 @@ class ScanService:
                 ).replace(
                     tzinfo=None
                 )
+
+        # update_scan_progress() deliberately clamps in-flight progress
+        # to 99 so a running scan never displays as finished. Only the
+        # terminal transition may write 100, and it must be written
+        # here because ScanService sets status directly rather than
+        # going through complete_scan_run().
+        if status == "completed":
+
+            if hasattr(
+                scan,
+                "progress_percent",
+            ):
+                scan.progress_percent = 100.0
 
     @staticmethod
     def _set_error(
