@@ -1,0 +1,503 @@
+recommendations:
+
+  review_unused_resource:
+    title: "Review unused resource"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Confirm dependencies and business requirements before removal.
+
+    default_reason: >
+      The resource shows limited or no observed use.
+
+    variants:
+
+      rds_stopped:
+        title: "Review stopped RDS instances"
+        reason: "{count} RDS instance{plural} are stopped."
+        action: "Confirm recovery, backup, and application requirements before removal."
+
+      rds_idle:
+        title: "Review idle RDS instances"
+        reason: "{count} RDS instance{plural} show very low activity."
+        action: "Review workload and recovery needs before stopping, resizing, or removing."
+
+      rds_read_replica:
+        title: "Review underused RDS read replicas"
+        reason: "{count} RDS read replica{plural} show low activity."
+        action: "Confirm reporting, failover, and scaling needs before resizing or removing."
+
+      elb_no_activity:
+        title: "Review inactive load balancers"
+        reason: "{count} load balancer{plural} show no activity."
+        action: "Confirm listeners, targets, scheduled traffic, and failover needs before removal."
+
+      quicksight_stale_dashboard:
+        title: "Review stale QuickSight dashboards"
+        reason: "{count} QuickSight dashboard{plural} show no recent views."
+        action: "Confirm reporting cycles and scheduled usage before removing the dashboard."
+
+      quicksight_stale_analysis:
+        title: "Review stale QuickSight analyses"
+        reason: "Stale QuickSight analyses: {count} with no recent activity."
+        action: "Confirm the analysis is no longer used before removing it."
+
+      quicksight_orphaned_dataset:
+        title: "Review potentially orphaned QuickSight datasets"
+        reason: "{count} QuickSight dataset{plural} are not referenced by a dashboard or analysis."
+        action: "Confirm the dataset is unused before removing it or its SPICE capacity."
+
+      elb_low_traffic:
+        title: "Review low-traffic load balancers"
+        reason: "{count} load balancer{plural} show low traffic."
+        action: "Review traffic patterns and application requirements before consolidation."
+
+      elb_no_healthy_targets:
+        title: "Review load balancers without healthy targets"
+        reason: "{count} load balancer{plural} have no healthy targets."
+        action: "Review target health and failover requirements before changes."
+
+      elb_low_capacity:
+        title: "Review load balancers with low capacity-unit usage"
+        reason: "{count} load balancer{plural} show low consumed-LCU usage."
+        action: "Review traffic patterns and consider consolidation."
+
+  review_rightsizing:
+    title: "Review rightsizing"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Compare observed demand with lower-cost capacity options.
+
+    default_reason: >
+      Observed utilization may be below configured capacity.
+
+    variants:
+
+      rds_utilization:
+        title: "Review RDS rightsizing"
+        reason: "{count} RDS instance{plural} show low utilization."
+        action: "Review CPU, memory, I/O, connections, and peak demand before resizing."
+
+      eks_workers:
+        title: "Review EKS worker capacity"
+        reason: "{count} EKS cluster{plural} show low worker utilization."
+        action: "Review CPU, memory, peaks, and scheduling constraints before reducing capacity."
+
+      eks_pod_cpu:
+        title: "Review EKS pod CPU requests"
+        reason: "{count} EKS cluster{plural} show pod CPU reservations well above actual usage."
+        action: "Review pod CPU requests against observed utilization."
+
+      eks_pod_memory:
+        title: "Review EKS pod memory requests"
+        reason: "{count} EKS cluster{plural} show pod memory reservations well above actual usage."
+        action: "Review pod memory requests against observed utilization."
+
+      eks_gpu:
+        title: "Review EKS GPU capacity utilization"
+        reason: "{count} EKS cluster{plural} show underutilized GPU capacity."
+        action: "Review GPU-backed node group sizing against observed utilization."
+
+  review_capacity_configuration:
+    title: "Review capacity configuration"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Compare configured capacity with observed demand and performance needs.
+
+    default_reason: >
+      Current capacity configuration may not match workload demand.
+
+    variants:
+
+      rds_io_pressure:
+        title: "Review RDS I/O capacity"
+        reason: "{count} RDS instance{plural} show I/O pressure."
+        action: "Review IOPS, latency, throughput, and storage configuration."
+
+      eks_reserved_capacity:
+        title: "Review EKS node resource reservation"
+        reason: "{count} EKS cluster{plural} have high reserved node CPU or memory capacity."
+        action: "Review pod resource requests against actual utilization."
+
+      nat_high_data_processing:
+        title: "Review high-traffic NAT Gateways"
+        reason: "{count} NAT Gateway{plural} show high data processing volume."
+        action: "Review traffic patterns and whether the cost exposure is expected."
+
+      quicksight_spice_capacity:
+        title: "Review QuickSight SPICE capacity"
+        reason: "{count} QuickSight account{plural} show SPICE capacity pressure."
+        action: "Review SPICE capacity against consumed capacity and dataset retention needs."
+
+      quicksight_spice_dataset:
+        title: "Review QuickSight SPICE datasets"
+        reason: "{count} QuickSight dataset{plural} consume SPICE capacity and warrant review."
+        action: "Review dataset refresh schedules, retention, and whether SPICE storage is still required."
+
+      quicksight_dashboard_errors:
+        title: "Review QuickSight dashboards reporting errors"
+        reason: "{count} QuickSight dashboard{plural} reported errors."
+        action: "Review dashboard data sources and refresh failures."
+
+      quicksight_data_source_failure:
+        title: "Review failing QuickSight data sources"
+        reason: "{count} QuickSight data source{plural} reported connection or refresh failures."
+        action: "Review data source connectivity, credentials, and refresh configuration."
+
+  review_network_resource:
+    title: "Review network resource"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Confirm dependencies and traffic requirements before changing the resource.
+
+    default_reason: >
+      Network usage or configuration indicates the resource may warrant review.
+
+    variants:
+
+      nat_idle:
+        title: "Review idle NAT Gateways"
+        reason: "{count} NAT Gateway{plural} show no observed activity."
+        action: "Confirm routes, workloads, scheduled traffic, and failover needs."
+
+      nat_low_traffic:
+        title: "Review low-traffic NAT Gateways"
+        reason: "{count} NAT Gateway{plural} show low traffic."
+        action: "Review traffic, routing, and availability requirements."
+
+      nat_no_route_dependency:
+        title: "Review NAT Gateways with no route dependency"
+        reason: "{count} NAT Gateway{plural} have no route table currently pointing to them."
+        action: "Confirm no workload depends on the NAT Gateway before removing it."
+
+      nat_blackhole_routes:
+        title: "Review NAT Gateways with only blackhole routes"
+        reason: "{count} NAT Gateway{plural} have routes that all lead nowhere (blackholed)."
+        action: "Confirm the NAT Gateway's routes before removing it or fixing routing."
+
+      tgw_no_attachments:
+        title: "Review Transit Gateways without attachments"
+        reason: "{count} Transit Gateway{plural} have no attachments."
+        action: "Confirm the Transit Gateway is still required."
+
+      tgw_no_traffic:
+        title: "Review inactive Transit Gateways"
+        reason: "{count} Transit Gateway{plural} show no observed traffic."
+        action: "Confirm intermittent, scheduled, and failover traffic."
+
+  review_network_path:
+    title: "Review network path"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Review routing for a simpler or lower-cost path.
+
+    default_reason: >
+      Network topology and activity indicate a possible path optimization.
+
+    variants:
+
+      nat_cross_az:
+        title: "Review cross-AZ NAT routing"
+        reason: "{count} NAT Gateway{plural} have cross-AZ dependencies."
+        action: "Review same-AZ NAT placement without reducing availability."
+
+      nat_endpoint:
+        title: "Review NAT-to-endpoint opportunity"
+        reason: "{count} NAT Gateway{plural} carry observed AWS service traffic without matching endpoint coverage."
+        action: "Validate endpoint type, routes, and application dependencies."
+
+      tgw_unrouted:
+        title: "Review unrouted Transit Gateway attachments"
+        reason: "{count} Transit Gateway attachment{plural} have no discovered VPC route."
+        action: "Review VPC routes and Transit Gateway routing design."
+
+  review_network_configuration:
+    title: "Review network configuration"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Review routes, associations, and dependencies before changes.
+
+    default_reason: >
+      Network configuration contains a condition that warrants review.
+
+    variants:
+
+      tgw_unassociated:
+        title: "Review unassociated Transit Gateway attachments"
+        reason: "{count} Transit Gateway attachment{plural} have no route-table association."
+        action: "Confirm the intended Transit Gateway routing design."
+
+      tgw_blackhole:
+        title: "Review Transit Gateway blackhole routes"
+        reason: "{count} Transit Gateway route{plural} are blackholed."
+        action: "Review affected routes and remove obsolete targets where required."
+
+      tgw_vpc_blackhole:
+        title: "Review VPC blackhole routes"
+        reason: "{count} VPC route{plural} to Transit Gateway are blackholed."
+        action: "Review and correct affected VPC routes."
+
+  review_public_ip:
+    title: "Review public IPv4 usage"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Confirm application and future requirements before release.
+
+    default_reason: >
+      Public IPv4 usage may be unnecessary.
+
+    variants:
+
+      unassociated:
+        title: "Review unassociated public IPv4 addresses"
+        reason: "{count} public IPv4 address{plural} are unassociated."
+        action: "Confirm DNS, failover, migration, and future requirements before release."
+
+      stopped_instance:
+        title: "Review public IPv4 on stopped EC2"
+        reason: "{count} public IPv4 address{plural} belong to stopped EC2 instances."
+        action: "Confirm instance lifecycle and future requirements before release."
+
+      in_use_review:
+        title: "Review public IPv4 addresses in active use"
+        reason: "{count} public IPv4 address{plural} are in active use and incur public IPv4 charges."
+        action: "Review whether direct public IPv4 connectivity is required for these resources."
+
+  review_backup_configuration:
+    title: "Review backup retention"
+    category: "cost_optimization"
+    scope: "region"
+
+    default_action: >
+      Compare retention with recovery and compliance requirements.
+
+    default_reason: >
+      Backup retention may exceed required policy.
+
+    variants:
+
+      retention:
+        title: "Review backup retention"
+        reason: "{count} resource{plural} have high backup retention."
+        action: "Confirm recovery and compliance requirements before reducing retention."
+
+
+routes:
+
+  nat_gateway_idle:
+    recommendation_key: review_network_resource
+    variant_key: nat_idle
+    role: primary
+
+  nat_gateway_low_traffic:
+    recommendation_key: review_network_resource
+    variant_key: nat_low_traffic
+    role: primary
+
+  nat_gateway_no_route_dependency:
+    recommendation_key: review_network_resource
+    variant_key: nat_no_route_dependency
+    role: primary
+
+  nat_gateway_cross_az:
+    recommendation_key: review_network_path
+    variant_key: nat_cross_az
+    role: primary
+
+  nat_gateway_endpoint_opportunity:
+    recommendation_key: review_network_path
+    variant_key: nat_endpoint
+    role: primary
+
+  nat_gateway_high_data_processing:
+    recommendation_key: review_capacity_configuration
+    variant_key: nat_high_data_processing
+    role: primary
+
+  rds_stopped_instance:
+    recommendation_key: review_unused_resource
+    variant_key: rds_stopped
+    role: primary
+
+  rds_no_activity:
+    recommendation_key: review_unused_resource
+    variant_key: rds_idle
+    role: primary
+
+  rds_instance_possible_oversized:
+    recommendation_key: review_rightsizing
+    variant_key: rds_utilization
+    role: primary
+
+  rds_underused_read_replica:
+    recommendation_key: review_unused_resource
+    variant_key: rds_read_replica
+    role: primary
+
+  rds_backup_retention_review:
+    recommendation_key: review_backup_configuration
+    variant_key: retention
+    role: primary
+
+  eks_low_worker_utilization:
+    recommendation_key: review_rightsizing
+    variant_key: eks_workers
+    role: primary
+
+  eks_high_node_resource_reservation:
+    recommendation_key: review_capacity_configuration
+    variant_key: eks_reserved_capacity
+    role: primary
+
+  eks_pod_cpu_request_overprovisioning:
+    recommendation_key: review_rightsizing
+    variant_key: eks_pod_cpu
+    role: primary
+
+  eks_pod_memory_request_overprovisioning:
+    recommendation_key: review_rightsizing
+    variant_key: eks_pod_memory
+    role: primary
+
+  eks_gpu_underutilization:
+    recommendation_key: review_rightsizing
+    variant_key: eks_gpu
+    role: primary
+
+  elb_no_observed_activity:
+    recommendation_key: review_unused_resource
+    variant_key: elb_no_activity
+    role: primary
+
+  elb_low_traffic:
+    recommendation_key: review_unused_resource
+    variant_key: elb_low_traffic
+    role: primary
+
+  elb_idle_target_group:
+    recommendation_key: review_unused_resource
+    variant_key: elb_no_activity
+    role: primary
+
+  elb_no_healthy_targets_no_traffic:
+    recommendation_key: review_unused_resource
+    variant_key: elb_no_healthy_targets
+    role: primary
+
+  elb_low_capacity_usage:
+    recommendation_key: review_unused_resource
+    variant_key: elb_low_capacity
+    role: primary
+
+  transit_gateway_no_attachments:
+    recommendation_key: review_network_resource
+    variant_key: tgw_no_attachments
+    role: primary
+
+  transit_gateway_no_observed_traffic:
+    recommendation_key: review_network_resource
+    variant_key: tgw_no_traffic
+    role: primary
+
+  transit_gateway_unrouted_attachment:
+    recommendation_key: review_network_path
+    variant_key: tgw_unrouted
+    role: primary
+
+  transit_gateway_unassociated_attachment:
+    recommendation_key: review_network_configuration
+    variant_key: tgw_unassociated
+    role: primary
+
+  transit_gateway_blackhole_routes:
+    recommendation_key: review_network_configuration
+    variant_key: tgw_blackhole
+    role: primary
+
+  transit_gateway_vpc_blackhole_routes:
+    recommendation_key: review_network_configuration
+    variant_key: tgw_vpc_blackhole
+    role: primary
+
+  transit_gateway_high_traffic:
+    recommendation_key: review_network_resource
+    variant_key: tgw_no_traffic
+    role: primary
+
+  elastic_ip_unassociated:
+    recommendation_key: review_public_ip
+    variant_key: unassociated
+    role: primary
+
+  elastic_ip_on_stopped_instance:
+    recommendation_key: review_public_ip
+    variant_key: stopped_instance
+    role: primary
+
+  public_ipv4_in_use_review:
+    recommendation_key: review_public_ip
+    variant_key: in_use_review
+    role: primary
+
+  vpc_endpoint_gateway_missing_route:
+    recommendation_key: review_network_configuration
+    variant_key: tgw_unassociated
+    role: primary
+
+  vpc_endpoint_gateway_partial_route_coverage:
+    recommendation_key: review_network_configuration
+    variant_key: tgw_unassociated
+    role: primary
+
+  vpc_endpoint_interface_eni_mismatch:
+    recommendation_key: review_network_configuration
+    variant_key: tgw_unassociated
+    role: primary
+
+  quicksight_spice_capacity_pressure:
+    recommendation_key: review_capacity_configuration
+    variant_key: quicksight_spice_capacity
+    role: primary
+
+  quicksight_stale_dashboard:
+    recommendation_key: review_unused_resource
+    variant_key: quicksight_stale_dashboard
+    role: primary
+
+  quicksight_dashboard_errors:
+    recommendation_key: review_capacity_configuration
+    variant_key: quicksight_dashboard_errors
+    role: primary
+
+  quicksight_potentially_orphaned_dataset:
+    recommendation_key: review_unused_resource
+    variant_key: quicksight_orphaned_dataset
+    role: primary
+
+  quicksight_spice_dataset_review:
+    recommendation_key: review_capacity_configuration
+    variant_key: quicksight_spice_dataset
+    role: primary
+
+  quicksight_data_source_failure:
+    recommendation_key: review_capacity_configuration
+    variant_key: quicksight_data_source_failure
+    role: primary
+
+  quicksight_stale_analysis:
+    recommendation_key: review_unused_resource
+    variant_key: quicksight_stale_analysis
+    role: primary

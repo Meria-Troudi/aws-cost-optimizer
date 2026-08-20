@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import {
-  formatCompact,
-  formatMoneyOrDash,
-} from '../../utils/format'
+import { formatMoneyOrDash } from '../../utils/format'
+import { PALETTE } from '../../utils/serviceStyle'
+
 
 const CHART_W = 1160
 const CHART_H = 250
+
+const LINE_COLOR = PALETTE[0]
 
 function buildSmoothPath(points) {
   if (points.length < 2) return ''
@@ -40,8 +41,8 @@ function getPointLabel(point) {
 export default function CostHeroChart({
   hero,
   forecast,
-  filters,
-}) {
+  forecastInfo,
+})  {
   const [activeIdx, setActiveIdx] = useState(null)
   const [mounted, setMounted] = useState(false)
 
@@ -49,45 +50,7 @@ export default function CostHeroChart({
     ? hero.trend_points
     : []
 
-  const activeFilterLabel = useMemo(() => {
-    if (!filters) return null
-
-    const parts = []
-
-    if (
-      filters.region &&
-      filters.region !== 'all'
-    ) {
-      parts.push(filters.region)
-    }
-
-    if (
-      filters.service &&
-      filters.service !== 'all'
-    ) {
-      parts.push(filters.service)
-    }
-
-    if (
-      filters.period &&
-      filters.period !== '3m'
-    ) {
-      const periodMap = {
-        '6m': 'Last 6 months',
-        '12m': 'Last 12 months',
-        custom: 'Custom range',
-      }
-
-      parts.push(
-        periodMap[filters.period] ||
-          filters.period,
-      )
-    }
-
-    return parts.length
-      ? parts.join(' · ')
-      : null
-  }, [filters])
+  
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -97,6 +60,11 @@ export default function CostHeroChart({
     return () => cancelAnimationFrame(frame)
   }, [hero?.trend_points])
 
+  const hasForecast =
+    forecastInfo?.status === 'available' &&
+    forecast != null &&
+    Number.isFinite(Number(forecast))
+
   const bars = useMemo(() => {
     if (!points.length) return []
 
@@ -104,6 +72,7 @@ export default function CostHeroChart({
       ...points.map(
         point => Number(point.cost) || 0,
       ),
+      hasForecast ? Number(forecast) : 0,
       1,
     )
 
@@ -129,6 +98,11 @@ export default function CostHeroChart({
 
       const y = CHART_H - height
 
+      const forecastHeight =
+        point.is_current && hasForecast
+          ? Math.max(8, (Number(forecast) / maxCost) * 180)
+          : null
+
       return {
         ...point,
         cost,
@@ -138,11 +112,15 @@ export default function CostHeroChart({
         barW: width,
         cx: x + width / 2,
         cy: y,
+        forecastY:
+          forecastHeight != null
+            ? CHART_H - forecastHeight
+            : null,
         index,
         delay: `${index * 0.045}s`,
       }
     })
-  }, [points, forecast])
+  }, [points, forecast, hasForecast])
 
   useEffect(() => {
     if (!bars.length) {
@@ -192,6 +170,10 @@ export default function CostHeroChart({
       ? bars[activeIdx]
       : bars[bars.length - 1]
 
+  const forecastBar = bars.find(
+    bar => bar.forecastY != null,
+  )
+
   return (
     <div className="hero-chart">
 
@@ -223,6 +205,26 @@ export default function CostHeroChart({
         </div>
       )}
 
+      {forecastBar && (
+        <div
+          className="hero-badge hero-badge-forecast mono"
+          style={{
+            left: `${
+              (forecastBar.cx / CHART_W) * 100
+            }%`,
+            top: `${
+              (forecastBar.forecastY / CHART_H) * 100
+            }%`,
+          }}
+        >
+          <span>
+            {formatMoneyOrDash(forecast)}
+          </span>
+
+          <small>Forecast</small>
+        </div>
+      )}
+
       <svg
         className="hero-svg"
         viewBox={`0 0 ${CHART_W} ${CHART_H}`}
@@ -240,13 +242,13 @@ export default function CostHeroChart({
           >
             <stop
               offset="0%"
-              stopColor="#E8394B"
+              stopColor={LINE_COLOR}
               stopOpacity=".34"
             />
 
             <stop
               offset="100%"
-              stopColor="#E8394B"
+              stopColor={LINE_COLOR}
               stopOpacity="0"
             />
           </linearGradient>
@@ -288,10 +290,34 @@ export default function CostHeroChart({
           }`}
           d={linePath}
           fill="none"
-          stroke="#E8394B"
+          stroke={LINE_COLOR}
           strokeWidth="3"
           strokeLinecap="round"
         />
+
+        {bars.map(bar =>
+          bar.forecastY != null ? (
+            <g
+              key={`forecast-${bar.index}`}
+              className="hero-forecast"
+            >
+              <line
+                className="hero-forecast-line"
+                x1={bar.cx}
+                y1={bar.cy}
+                x2={bar.cx}
+                y2={bar.forecastY}
+              />
+
+              <circle
+                className="hero-forecast-dot"
+                cx={bar.cx}
+                cy={bar.forecastY}
+                r="5"
+              />
+            </g>
+          ) : null,
+        )}
 
         {bars.map(bar => (
           <g
@@ -391,54 +417,7 @@ export default function CostHeroChart({
         ))}
       </div>
 
-      {activeFilterLabel && (
-        <div className="hero-chart-context">
-          <span>Filtered view</span>
-          <strong>
-            {activeFilterLabel}
-          </strong>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export function HeroBottomFigure({
-  hero,
-}) {
-  const total = hero?.total_spend
-  const compact = formatCompact(total)
-
-  const useK =
-    total != null &&
-    Number(total) >= 1000
-
-  return (
-    <div className="hero-bottom">
-      <div>
-        <div className="hero-caption">
-          {hero?.total_label ||
-            'Collected spend'}
-        </div>
-
-        <div className="hero-figure">
-          <span className="num">
-            {compact}
-          </span>
-
-          <span className="unit">
-            {useK
-              ? 'k · Total cost'
-              : ' · Total cost'}
-          </span>
-        </div>
-      </div>
-
-      <div className="hero-bottom-side">
-        <span className="hero-caption">
-      
-        </span>
-      </div>
+    
     </div>
   )
 }
