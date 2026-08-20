@@ -1,0 +1,26 @@
+# Direct runtime dependencies for the AWS Cost Optimizer.
+#
+# Ranges are pinned to the currently-installed major version so a fresh
+# clone reproduces a working environment without freezing transitive
+# packages. Install with:
+#
+#     pip install -r requirements.txt
+#
+# Development/test extras live in requirements-dev.txt.
+
+# API layer
+fastapi>=0.136,<1.0
+uvicorn>=0.46,<1.0
+
+# Persistence
+SQLAlchemy>=2.0,<3.0
+
+# Request/response models
+pydantic>=2.12,<3.0
+
+# AWS SDK -- Cost Explorer, CloudWatch, CloudTrail, EC2, RDS, EKS,
+# ELBv2, QuickSight, STS
+boto3>=1.43,<2.0
+
+# The planner and collection profiles are YAML-driven
+PyYAML>=6.0,<7.0
