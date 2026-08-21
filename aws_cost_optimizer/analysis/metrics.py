@@ -77,6 +77,16 @@ def metric_has_observed_data(
     if not isinstance(metric, dict):
         return False
 
+    # metric_summary() output already carries the correct verdict
+    # under "observed", using its own "observed"/"zero"/"missing"/
+    # "unknown"/"error" vocabulary -- its "status" is never "ok",
+    # so the raw-shape check below would silently return False for
+    # every summary, including fully-observed ones. Detect the
+    # summary shape (the raw collector output never has this key)
+    # and trust its own verdict instead of re-deriving it.
+    if "observed" in metric:
+        return metric.get("observed") is True
+
     return (
         metric.get("status") == "ok"
         and metric.get("has_data") is True
@@ -416,6 +426,9 @@ def metric_summary(
             "observed": False,
             "zero": False,
             "value": None,
+            "average": None,
+            "maximum": None,
+            "minimum": None,
             "datapoints": 0,
             "statistic": None,
             "unit": None,
@@ -448,6 +461,21 @@ def metric_summary(
 
         "value":
             metric.get("value")
+            if observed
+            else None,
+
+        "average":
+            metric.get("average")
+            if observed
+            else None,
+
+        "maximum":
+            metric.get("maximum")
+            if observed
+            else None,
+
+        "minimum":
+            metric.get("minimum")
             if observed
             else None,
 

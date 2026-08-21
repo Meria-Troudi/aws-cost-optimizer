@@ -1,0 +1,791 @@
+========================================================================
+AWS COST OPTIMIZER — SCAN #52
+Generated: 2026-08-21T21:20:56.874073+00:00
+========================================================================
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ SCAN INFORMATION                                                      │
+└────────────────────────────────────────────────────────────────────────┘
+ Account        : 125484409625
+ Period         : 2026-06-15 → 2026-08-16 (inclusive · CE end 2026-08-17)
+ Region         : eu-west-1
+ Cost threshold : $0.00
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ COST SUMMARY                                                          │
+└────────────────────────────────────────────────────────────────────────┘
+ Billing scope  : eu-west-1
+ Period total   : $1,109.56
+ Monthly total  : $1,109.56
+ Validation     : PASS
+ Difference     : $0.00
+ Months         : 2026-06, 2026-07, 2026-08
+
+ Monthly spend:
+   2026-06   $    295.62
+   2026-07   $    572.03
+   2026-08   $    241.91
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ COST DRIVERS                                                          │
+└────────────────────────────────────────────────────────────────────────┘
+ Period total: $1,109.56
+
+ 1. EC2 - Other — $359.42 (32.4%)
+    EU-NatGateway-Hours — $350.40 (97.5%)
+    EU-EBS:VolumeUsage.gp3 — $9.02 (2.5%)
+    EU-NatGateway-Bytes — $0.00 (0.0%)
+ 2. Amazon Relational Database Service — $281.34 (25.4%)
+    EU-InstanceUsage:db.t3.large — $243.14 (86.4%)
+    EU-InstanceUsage:db.r6g.large — $28.58 (10.2%)
+    EU-RDS:ChargedBackupUsage — $5.48 (1.9%)
+ 3. Amazon Virtual Private Cloud — $241.83 (21.8%)
+    EU-VpcEndpoint-Hours — $91.21 (37.7%)
+    EU-TransitGateway-Hours — $75.65 (31.3%)
+    EU-PublicIPv4:InUseAddress — $52.28 (21.6%)
+ 4. Amazon Elastic Container Service for Kubernetes — $140.14 (12.6%)
+    EU-AmazonEKS-Hours:perCluster — $140.14 (100.0%)
+ 5. Amazon Elastic Load Balancing — $38.10 (3.4%)
+    EU-LoadBalancerUsage — $38.10 (100.0%)
+ 6. AWS WAF — $32.79 (3.0%)
+    EU-WebACLV2 — $20.49 (62.5%)
+    EU-RuleV2 — $12.30 (37.5%)
+ 7. AWS Secrets Manager — $8.14 (0.7%)
+    EU-AWSSecretsManager-Secrets — $8.14 (100.0%)
+    EU-AWSSecretsManager-APIRequests — $0.00 (0.0%)
+ 8. AWS Key Management Service — $3.92 (0.4%)
+    eu-west-1-KMS-Keys — $3.92 (100.0%)
+    eu-west-1-KMS-Requests — $0.00 (0.0%)
+ 9. Amazon EC2 Container Registry (ECR) — $2.06 (0.2%)
+    EU-TimedStorage-ByteHrs — $2.06 (100.0%)
+10. Amazon Simple Storage Service — $0.94 (0.1%)
+    EU-TimedStorage-ByteHrs — $0.94 (99.7%)
+    EU-Requests-Tier1 — $0.00 (0.2%)
+    EU-Requests-Tier2 — $0.00 (0.1%)
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ COLLECTION SUMMARY                                                    │
+└────────────────────────────────────────────────────────────────────────┘
+ Collector             Region          Resources    Reconciliation
+────────────────────────────────────────────────────────────────────────
+ nat_gateway         eu-west-1          3          current
+   Billing: EU-NatGateway-Hours ($350.40)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ rds                 eu-west-1          1          current_mismatch
+   Billing: EU-InstanceUsage:db.t3.large ($243.14)
+   Note: Historical billing identifies a resource configuration that does not match the current discovered resource. Billing is retained as historical evidence only.
+ eks                 eu-west-1          0          historical
+   Billing: EU-AmazonEKS-Hours:perCluster ($140.14)
+   Note: Historical billing exists without a current discovered resource.
+ vpc_endpoint        eu-west-1          1          current
+   Billing: EU-VpcEndpoint-Hours ($91.21)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ transit_gateway     eu-west-1          1          current
+   Billing: EU-TransitGateway-Hours ($75.65)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ public_ipv4         eu-west-1          9          current
+   Billing: EU-PublicIPv4:InUseAddress ($52.28)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ elb                 eu-west-1          1          current
+   Billing: EU-LoadBalancerUsage ($38.10)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ waf                 eu-west-1          2          current
+   Billing: EU-WebACLV2 ($20.49)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ ebs                 eu-west-1          1          current
+   Billing: EU-EBS:VolumeUsage.gp3 ($9.02)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+ aurora_cluster      eu-west-1          1          current
+   Billing: EU-Aurora:StorageIOUsage ($4.09)
+   Note: Current resources were discovered. The billing usage type does not provide a reliable resource identity, so billing remains collection-plan evidence.
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ OPTIMIZATION FINDINGS                                                 │
+└────────────────────────────────────────────────────────────────────────┘
+
+[MEDIUM] Load balancer with no registered targets
+Confidence: High
+Resources: 1
+Reason: 1 load balancer match this finding. The load balancer has no registered targets.
+
+Resource: arn:aws:elasticloadbalancing:eu-west-1:125484409625:loadbalancer/app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8
+  • target count: 0
+  • target health complete: true
+
+[MEDIUM] NAT Gateway is idle
+Confidence: Medium
+Resources: 3
+Reason: 3 nat gateways match this finding. No NAT traffic or connections were observed during the complete collection period.
+
+Resource: nat-01300ff326d760430
+  • traffic: 0 bytes
+  • connections: 0 count
+
+Resource: nat-0d463e26d7078a280
+  • traffic: 0 bytes
+  • connections: 0 count
+
+Resource: nat-0c1e45289f55f6248
+  • traffic: 0 bytes
+  • connections: 0 count
+
+[MEDIUM] RDS instance is stopped
+Confidence: High
+Resources: 1
+Reason: 1 rds instance match this finding. The RDS instance is currently stopped. Review whether it is still required before removing or retaining it.
+
+Resource: cito-colline-test-aurorapgdbinstance-4lksmnmhn75x
+  • status: stopped
+  • engine: aurora-postgresql
+  • instance class: db.r6g.large
+
+[MEDIUM] Review unused WAF Web ACL
+Confidence: Medium
+Resources: 2
+Reason: 2 waf web acls match this finding. The Web ACL has no discovered protected resource association and no observed WAF requests during the analysis period.
+
+Resource: arn:aws:wafv2:eu-west-1:125484409625:regional/webacl/CITO-COLLINE-TEST-WebACL/97c19171-1c3a-45f0-ba3c-30a531dbe615
+  • protected resource count: 0
+  • Observed WAF request activity.
+
+Resource: arn:aws:wafv2:eu-west-1:125484409625:regional/webacl/CITO-TEST-WebACL/56e39661-9817-46ec-b818-aec64745e9f2
+  • protected resource count: 0
+  • Observed WAF request activity.
+
+[MEDIUM] Unassociated Elastic IP
+Confidence: High
+Resources: 3
+Reason: 3 public ipv4s match this finding. An allocated Elastic IP is not associated with a resource.
+
+Resource: eipalloc-08834d443849f3607
+  • public ip: 52.209.124.143
+  • allocation id: eipalloc-08834d443849f3607
+  • associated: false
+  • billing usage type: PublicIPv4IdleAddress
+
+Resource: eipalloc-060b3f1492ab99a6f
+  • public ip: 54.76.217.18
+  • allocation id: eipalloc-060b3f1492ab99a6f
+  • associated: false
+  • billing usage type: PublicIPv4IdleAddress
+
+Resource: eipalloc-0b9320de55f39cf54
+  • public ip: 99.81.36.167
+  • allocation id: eipalloc-0b9320de55f39cf54
+  • associated: false
+  • billing usage type: PublicIPv4IdleAddress
+
+[INFO] Aurora cluster context
+Confidence: High
+Resources: 1
+Reason: 1 rds instance match this finding. This instance belongs to an Aurora cluster. Rightsizing should consider writer/reader roles and cluster availability together.
+
+Resource: cito-colline-test-aurorapgdbinstance-4lksmnmhn75x
+  • aurora: {engine=aurora-postgresql}
+
+DATA QUALITY
+----------------------------------------------------------------------
+
+[INFO] Billing resource mismatch
+Billing usage EU-InstanceUsage:db.t3.large indicates db.t3.large, while the current resource is db.r6g.large. This is a billing/resource attribution mismatch. The current resource remains fully eligible for its normal service optimization analysis.
+Note: Billing usage type represents historical billing evidence and does not necessarily identify the current resource.
+
+[INFO] Historical cost has no current resource
+Amazon Elastic Container Service for Kubernetes billing usage type EU-AmazonEKS-Hours:perCluster represents about $140.14, but no current eks_cluster was discovered in eu-west-1. The spend is retained as historical evidence. No current resource exists for a resource-level optimization recommendation.
+Note: Historical billing does not identify a currently active resource by itself.
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ RECOMMENDATIONS                                                       │
+└────────────────────────────────────────────────────────────────────────┘
+
+[MEDIUM] review_network
+Resources: 3
+Confidence: medium
+Why: The recommendation is supported by the collected finding evidence.
+Action: review_network_architecture
+Observed cost: $350.40
+Status: Requires Validation
+
+[MEDIUM] review_unused
+Resources: 1
+Confidence: high
+Why: The recommendation is supported by the collected finding evidence.
+Action: review_unused
+Observed cost: $38.10
+Potential savings: $38.10
+Status: Requires Validation
+
+[MEDIUM] review_unused
+Resources: 3
+Confidence: high
+Why: The recommendation is supported by the collected finding evidence.
+Action: review_unused
+Observed cost: $52.28
+Status: Requires Validation
+
+[MEDIUM] review_unused
+Resources: 1
+Confidence: high
+Why: The recommendation is supported by the collected finding evidence.
+Action: review_unused
+Observed cost: $243.14
+Status: Requires Validation
+
+┌────────────────────────────────────────────────────────────────────────┐
+│ RESOURCE DETAILS                                                      │
+└────────────────────────────────────────────────────────────────────────┘
+
+EC2 - Other
+ Region     : eu-west-1
+ Usage type : EU-NatGateway-Hours
+ Cost       : $350.40
+ Resources  : 3 nat_gateway
+
+  Resource: nat-01300ff326d760430
+  Configuration:
+    nat_gateway_id: nat-01300ff326d760430
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-0b6c1932fc0f60c01
+    availability_zone: eu-west-1c
+    availability_mode: zonal
+    regional: False
+    connectivity_type: public
+    state: available
+    create_time: 2026-03-05T13:12:51+00:00
+    public_ip: 54.194.164.248
+    private_ip: 10.102.180.170
+    elastic_ip_allocation_id: eipalloc-0bdc73bb3914f1b50
+    network_interface_id: eni-0f94fc25cb7d0844b
+    address_count: 1
+    public: True
+    private: False
+  Observations:
+    Metrics: 14 observed, 2 no-data, 0 errors
+  Topology:
+    vpc_endpoint_count: 1
+    VPC endpoints: com.amazonaws.eu-west-1.s3
+
+  Resource: nat-0d463e26d7078a280
+  Configuration:
+    nat_gateway_id: nat-0d463e26d7078a280
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-03473de5ad251d22c
+    availability_zone: eu-west-1a
+    availability_mode: zonal
+    regional: False
+    connectivity_type: public
+    state: available
+    create_time: 2026-03-05T13:12:51+00:00
+    public_ip: 54.170.108.125
+    private_ip: 10.102.180.135
+    elastic_ip_allocation_id: eipalloc-04ea1eb8a7cb6399f
+    network_interface_id: eni-0c73bd0b657bdcdcb
+    address_count: 1
+    public: True
+    private: False
+  Observations:
+    Metrics: 14 observed, 2 no-data, 0 errors
+  Topology:
+    vpc_endpoint_count: 1
+    VPC endpoints: com.amazonaws.eu-west-1.s3
+
+  Resource: nat-0c1e45289f55f6248
+  Configuration:
+    nat_gateway_id: nat-0c1e45289f55f6248
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-0aa03550d35072400
+    availability_zone: eu-west-1b
+    availability_mode: zonal
+    regional: False
+    connectivity_type: public
+    state: available
+    create_time: 2026-03-05T13:12:51+00:00
+    public_ip: 52.49.208.70
+    private_ip: 10.102.180.152
+    elastic_ip_allocation_id: eipalloc-0581bed887c9ff075
+    network_interface_id: eni-0e963d566fb283be7
+    address_count: 1
+    public: True
+    private: False
+  Observations:
+    Metrics: 14 observed, 2 no-data, 0 errors
+  Topology:
+    vpc_endpoint_count: 1
+    VPC endpoints: com.amazonaws.eu-west-1.s3
+
+Amazon Relational Database Service
+ Region     : eu-west-1
+ Usage type : EU-InstanceUsage:db.t3.large
+ Cost       : $243.14
+ Resources  : 1 rds_instance
+
+  Resource: cito-colline-test-aurorapgdbinstance-4lksmnmhn75x
+  Configuration:
+    status: stopped
+    instance_class: db.r6g.large
+    engine: aurora-postgresql
+    engine_version: 15.12
+    deployment: {"multi_az": false, "availability_zone": "eu-west-1a", "secondary_availability_zone": null, "availability_zone_group": "eu-west-1a"}
+    storage: {"storage_type": "aurora", "allocated_storage_gib": 1, "max_allocated_storage_gib": null, "iops": null, "storage_throughput_mibps": 0, "storage_encrypted": true, "kms_key_id": "arn:aws:kms:eu-west-1:125484409625:key/mrk-55d740eaa3ed479eb3ba93ccc29dbe2a"}
+    backup: {"backup_retention_days": 7, "preferred_backup_window": "22:13-22:43", "copy_tags_to_snapshot": false, "delete_automated_backups": null}
+    performance: {"performance_insights_enabled": false, "performance_insights_retention_days": null, "performance_insights_kms_key_id": null, "monitoring_interval": 0, "monitoring_role_arn": null}
+    network: {"publicly_accessible": false, "subnet_group": "cito-colline-test-dbsubnetgroup-swmk7uvdvhkf", "vpc_id": "vpc-0ffb9abe478e30fe0", "endpoint": {"address": "cito-colline-test-aurorapgdbinstance-4lksmnmhn75x.czfgvwc3asn9.eu-west-1.rds.amazonaws.com", "port": 5432, "hosted_zone_id": "Z29XKXDKYMONMX"}}
+    availability: {"promotion_tier": 1, "preferred_maintenance_window": "sat:03:01-sat:03:31"}
+    pricing: {"license_model": "postgresql-license", "storage_type": "aurora", "engine": "aurora-postgresql", "engine_version": "15.12", "instance_class": "db.r6g.large", "multi_az": false}
+    cluster: {"db_cluster_identifier": "cito-colline-test-aurorapgdbcluster-jotvv2bornfx", "read_replica_source": null, "read_replica_identifiers": []}
+    deletion_protection: False
+    iam_database_authentication_enabled: False
+    auto_minor_version_upgrade: True
+    ca_certificate_identifier: rds-ca-rsa2048-g1
+    db_parameter_groups: [{"DBParameterGroupName": "default.aurora-postgresql15", "ParameterApplyStatus": "in-sync"}]
+    option_group_memberships: [{"OptionGroupName": "default:aurora-postgresql-15", "Status": "in-sync"}]
+    license_model: postgresql-license
+    availability_zone: eu-west-1a
+  Observations:
+    CloudWatch: ok
+    Metrics: 11 observed, 2 no-data, 0 errors
+  Topology:
+    vpc_endpoint_count: 1
+    Route tables: rtb-08a291482340c25c4, rtb-046fe7c17bc87ac7a, rtb-091f2dc759b901e80, rtb-0a5e9209f996f7322, rtb-08270b87f0aaa4b57
+    Subnets: subnet-09a483672e89f9242, subnet-03473de5ad251d22c, subnet-0606e2697c2d9b40b, subnet-0b6c1932fc0f60c01, subnet-0bd33bdaee420f000, subnet-0bfbab44ed517e747, subnet-0fc5b5505beef7643, subnet-0f73a3cf8d58514d2, subnet-0aa03550d35072400
+    VPC endpoints: com.amazonaws.eu-west-1.s3
+
+Amazon Virtual Private Cloud
+ Region     : eu-west-1
+ Usage type : EU-VpcEndpoint-Hours
+ Cost       : $91.21
+ Resources  : 1 vpc_endpoint
+
+  Resource: vpce-0cffaa2c0c4df3654
+  Configuration:
+    service_name: com.amazonaws.eu-west-1.s3
+    service_region: eu-west-1
+    endpoint_type: Gateway
+    state: available
+    creation_timestamp: 2026-03-05T13:12:48+00:00
+    policy_document: {"Version":"2008-10-17","Statement":[{"Effect":"Allow","Principal":"*","Action":"*","Resource":"*"}]}
+    private_dns_enabled: False
+    dns_options: {"DnsRecordIpType": "service-defined"}
+    dns_entries: []
+    route_table_ids: ["rtb-091f2dc759b901e80", "rtb-0a5e9209f996f7322", "rtb-08270b87f0aaa4b57"]
+    subnet_ids: []
+    network_interface_ids: []
+    security_group_ids: []
+    owner_id: 125484409625
+    requester_managed: False
+    ip_address_type: ipv4
+  Topology:
+    vpc_endpoint_count: 1
+    Route tables: rtb-08a291482340c25c4, rtb-046fe7c17bc87ac7a, rtb-091f2dc759b901e80, rtb-0a5e9209f996f7322, rtb-08270b87f0aaa4b57
+    Subnets: subnet-09a483672e89f9242, subnet-03473de5ad251d22c, subnet-0606e2697c2d9b40b, subnet-0b6c1932fc0f60c01, subnet-0bd33bdaee420f000, subnet-0bfbab44ed517e747, subnet-0fc5b5505beef7643, subnet-0f73a3cf8d58514d2, subnet-0aa03550d35072400
+    VPC endpoints: com.amazonaws.eu-west-1.s3
+
+Amazon Virtual Private Cloud
+ Region     : eu-west-1
+ Usage type : EU-TransitGateway-Hours
+ Cost       : $75.65
+ Resources  : 1 transit_gateway
+
+  Resource: tgw-062074b475a863638
+  Configuration:
+    transit_gateway_id: tgw-062074b475a863638
+    state: available
+    owner_id: 952586423564
+    creation_time: 2021-05-27T08:18:48+00:00
+    amazon_side_asn: 64512
+    transit_gateway_cidr_blocks: []
+    default_route_table_association: enable
+    default_route_table_propagation: enable
+    association_default_route_table_id: tgw-rtb-0fb1c6ba84dd7c879
+    propagation_default_route_table_id: tgw-rtb-0fb1c6ba84dd7c879
+    dns_support: enable
+    vpn_ecmp_support: enable
+    auto_accept_shared_attachments: enable
+    security_group_referencing_support: disable
+    multicast_support: disable
+  Relationships:
+    vpc_attachment_count: 1
+    other_attachment_count: 0
+    peering_attachment_count: 0
+    route_table_count: None
+    route_count: None
+    blackhole_route_count: None
+  Observations:
+    CloudWatch: no_data
+    Metrics: 0 observed, 9 no-data, 0 errors
+  Topology:
+    tgw_subnet_count: 6
+
+Amazon Virtual Private Cloud
+ Region     : eu-west-1
+ Usage type : EU-PublicIPv4:InUseAddress
+ Cost       : $52.28
+ Resources  : 9 public_ipv4
+
+  Resource: eipalloc-0fbd092c87eb3b50c
+  Configuration:
+    public_ip: 52.208.191.63
+    allocation_id: eipalloc-0fbd092c87eb3b50c
+    association_id: eipassoc-0384d76ef9e0e5714
+    associated: True
+    state: associated
+    network_interface_id: eni-0fa29385f82ba916c
+    network_interface_type: interface
+    network_interface_owner_id: amazon-elb
+    requester_managed: True
+    requester_id: amazon-elb
+    service_managed: True
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-0aa03550d35072400
+    availability_zone: eu-west-1b
+    public_ip_type: service_managed:interface
+    address_type: elastic_ip
+    address_source: elastic_ip
+    service_principal: amazon-elb
+    interface_description: ELB app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8
+    cost_relevant: True
+    billing_usage_type: PublicIPv4InUseAddress
+    optimization_candidate: False
+    release_candidate: False
+
+  Resource: eipalloc-08834d443849f3607
+  Configuration:
+    public_ip: 52.209.124.143
+    allocation_id: eipalloc-08834d443849f3607
+    associated: False
+    state: idle
+    requester_managed: False
+    service_managed: False
+    public_ip_type: elastic_ip
+    address_type: elastic_ip
+    address_source: elastic_ip
+    cost_relevant: True
+    billing_usage_type: PublicIPv4IdleAddress
+    optimization_candidate: True
+    release_candidate: True
+
+  Resource: eipalloc-0581bed887c9ff075
+  Configuration:
+    public_ip: 52.49.208.70
+    allocation_id: eipalloc-0581bed887c9ff075
+    association_id: eipassoc-0c5da62f3828a3144
+    associated: True
+    state: associated
+    network_interface_id: eni-0e963d566fb283be7
+    network_interface_type: nat_gateway
+    network_interface_owner_id: 121358213739
+    requester_managed: True
+    requester_id: 121358213739
+    service_managed: True
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-0aa03550d35072400
+    availability_zone: eu-west-1b
+    public_ip_type: service_managed:nat_gateway
+    address_type: elastic_ip
+    address_source: elastic_ip
+    service_principal: 121358213739
+    interface_description: Interface for NAT Gateway nat-0c1e45289f55f6248
+    cost_relevant: True
+    billing_usage_type: PublicIPv4InUseAddress
+    optimization_candidate: False
+    release_candidate: False
+
+  Resource: eipalloc-03b04563e7a13106b
+  Configuration:
+    public_ip: 52.50.29.220
+    allocation_id: eipalloc-03b04563e7a13106b
+    association_id: eipassoc-0e45a721fde72919c
+    associated: True
+    state: associated
+    network_interface_id: eni-0cff5ab1d1d9bdf91
+    network_interface_type: interface
+    network_interface_owner_id: amazon-elb
+    requester_managed: True
+    requester_id: amazon-elb
+    service_managed: True
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-03473de5ad251d22c
+    availability_zone: eu-west-1a
+    public_ip_type: service_managed:interface
+    address_type: elastic_ip
+    address_source: elastic_ip
+    service_principal: amazon-elb
+    interface_description: ELB app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8
+    cost_relevant: True
+    billing_usage_type: PublicIPv4InUseAddress
+    optimization_candidate: False
+    release_candidate: False
+
+  Resource: eipalloc-04ea1eb8a7cb6399f
+  Configuration:
+    public_ip: 54.170.108.125
+    allocation_id: eipalloc-04ea1eb8a7cb6399f
+    association_id: eipassoc-0d2d8c45f1f3b9674
+    associated: True
+    state: associated
+    network_interface_id: eni-0c73bd0b657bdcdcb
+    network_interface_type: nat_gateway
+    network_interface_owner_id: 194251917446
+    requester_managed: True
+    requester_id: 194251917446
+    service_managed: True
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-03473de5ad251d22c
+    availability_zone: eu-west-1a
+    public_ip_type: service_managed:nat_gateway
+    address_type: elastic_ip
+    address_source: elastic_ip
+    service_principal: 194251917446
+    interface_description: Interface for NAT Gateway nat-0d463e26d7078a280
+    cost_relevant: True
+    billing_usage_type: PublicIPv4InUseAddress
+    optimization_candidate: False
+    release_candidate: False
+
+  Resource: eipalloc-0bdc73bb3914f1b50
+  Configuration:
+    public_ip: 54.194.164.248
+    allocation_id: eipalloc-0bdc73bb3914f1b50
+    association_id: eipassoc-0cdca93b66d1b10b7
+    associated: True
+    state: associated
+    network_interface_id: eni-0f94fc25cb7d0844b
+    network_interface_type: nat_gateway
+    network_interface_owner_id: 107863576637
+    requester_managed: True
+    requester_id: 107863576637
+    service_managed: True
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-0b6c1932fc0f60c01
+    availability_zone: eu-west-1c
+    public_ip_type: service_managed:nat_gateway
+    address_type: elastic_ip
+    address_source: elastic_ip
+    service_principal: 107863576637
+    interface_description: Interface for NAT Gateway nat-01300ff326d760430
+    cost_relevant: True
+    billing_usage_type: PublicIPv4InUseAddress
+    optimization_candidate: False
+    release_candidate: False
+
+  Resource: eipalloc-060b3f1492ab99a6f
+  Configuration:
+    public_ip: 54.76.217.18
+    allocation_id: eipalloc-060b3f1492ab99a6f
+    associated: False
+    state: idle
+    requester_managed: False
+    service_managed: False
+    public_ip_type: elastic_ip
+    address_type: elastic_ip
+    address_source: elastic_ip
+    cost_relevant: True
+    billing_usage_type: PublicIPv4IdleAddress
+    optimization_candidate: True
+    release_candidate: True
+
+  Resource: eipalloc-012522205e097cdde
+  Configuration:
+    public_ip: 63.32.150.223
+    allocation_id: eipalloc-012522205e097cdde
+    association_id: eipassoc-09e386c08b7c0f466
+    associated: True
+    state: associated
+    network_interface_id: eni-08c65346811634180
+    network_interface_type: interface
+    network_interface_owner_id: amazon-elb
+    requester_managed: True
+    requester_id: amazon-elb
+    service_managed: True
+    vpc_id: vpc-0ffb9abe478e30fe0
+    subnet_id: subnet-0b6c1932fc0f60c01
+    availability_zone: eu-west-1c
+    public_ip_type: service_managed:interface
+    address_type: elastic_ip
+    address_source: elastic_ip
+    service_principal: amazon-elb
+    interface_description: ELB app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8
+    cost_relevant: True
+    billing_usage_type: PublicIPv4InUseAddress
+    optimization_candidate: False
+    release_candidate: False
+
+  Resource: eipalloc-0b9320de55f39cf54
+  Configuration:
+    public_ip: 99.81.36.167
+    allocation_id: eipalloc-0b9320de55f39cf54
+    associated: False
+    state: idle
+    requester_managed: False
+    service_managed: False
+    public_ip_type: elastic_ip
+    address_type: elastic_ip
+    address_source: elastic_ip
+    cost_relevant: True
+    billing_usage_type: PublicIPv4IdleAddress
+    optimization_candidate: True
+    release_candidate: True
+
+Amazon Elastic Load Balancing
+ Region     : eu-west-1
+ Usage type : EU-LoadBalancerUsage
+ Cost       : $38.10
+ Resources  : 1 load_balancer
+
+  Resource: arn:aws:elasticloadbalancing:eu-west-1:125484409625:loadbalancer/app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8
+  Configuration:
+    load_balancer_arn: arn:aws:elasticloadbalancing:eu-west-1:125484409625:loadbalancer/app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8
+    load_balancer_name: CITO-COLLINE-TEST-ALB
+    type: application
+    scheme: internet-facing
+    state: active
+    created_time: 2026-03-05T13:48:21.819000+00:00
+    vpc_id: vpc-0ffb9abe478e30fe0
+    dns_name: CITO-COLLINE-TEST-ALB-732525331.eu-west-1.elb.amazonaws.com
+    canonical_hosted_zone_id: Z32O12XQLNTSW2
+    ip_address_type: ipv4
+    availability_zone_count: 3
+    subnet_ids: ["subnet-03473de5ad251d22c", "subnet-0aa03550d35072400", "subnet-0b6c1932fc0f60c01"]
+    subnet_count: 3
+    security_group_count: 5
+    service_managed: False
+    optimization_allowed: True
+    release_allowed: True
+  Relationships:
+    listener_count: 2
+    target_group_count: 2
+    target_count: 0
+    healthy_target_count: 0
+    unhealthy_target_count: 0
+  Observations:
+    CloudWatch: ok
+    Metrics: 1 observed, 18 no-data, 0 errors
+  Topology:
+    vpc_endpoint_count: 1
+    Route tables: rtb-08a291482340c25c4, rtb-046fe7c17bc87ac7a, rtb-091f2dc759b901e80, rtb-0a5e9209f996f7322, rtb-08270b87f0aaa4b57
+    Subnets: subnet-09a483672e89f9242, subnet-03473de5ad251d22c, subnet-0606e2697c2d9b40b, subnet-0b6c1932fc0f60c01, subnet-0bd33bdaee420f000, subnet-0bfbab44ed517e747, subnet-0fc5b5505beef7643, subnet-0f73a3cf8d58514d2, subnet-0aa03550d35072400
+    VPC endpoints: com.amazonaws.eu-west-1.s3
+
+AWS WAF
+ Region     : eu-west-1
+ Usage type : EU-WebACLV2
+ Cost       : $20.49
+ Resources  : 2 waf_web_acl
+
+  Resource: arn:aws:wafv2:eu-west-1:125484409625:regional/webacl/CITO-COLLINE-TEST-WebACL/97c19171-1c3a-45f0-ba3c-30a531dbe615
+  Configuration:
+    web_acl_id: 97c19171-1c3a-45f0-ba3c-30a531dbe615
+    name: CITO-COLLINE-TEST-WebACL
+    arn: arn:aws:wafv2:eu-west-1:125484409625:regional/webacl/CITO-COLLINE-TEST-WebACL/97c19171-1c3a-45f0-ba3c-30a531dbe615
+    scope: REGIONAL
+    default_action: block
+    rule_count: 5
+    custom_rule_count: 1
+    managed_rule_group_count: 4
+    customer_rule_group_count: 0
+    managed_rule_groups: [{"name": "AWSManagedRulesCommonRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": ["NoUserAgent_HEADER", "RestrictedExtensions_URIPATH", "GenericRFI_QUERYARGUMENTS", "GenericRFI_BODY", "CrossSiteScripting_BODY", "GenericLFI_BODY", "SizeRestrictions_BODY"], "scope_down": false}, {"name": "AWSManagedRulesKnownBadInputsRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": ["PROPFIND_METHOD"], "scope_down": false}, {"name": "AWSManagedRulesLinuxRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": [], "scope_down": false}, {"name": "AWSManagedRulesSQLiRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": [], "scope_down": false}]
+    rule_groups: []
+    custom_rules: ["CombinedIPWhitelist"]
+    rules: [{"name": "AWS-AWSManagedRulesCommonRuleSet", "priority": 0, "action": "managed_rule_group_default", "override_action": {"None": {}}, "metric_name": "AWS-AWSManagedRulesCommonRuleSet", "cloudwatch_metrics_enabled": false, "sampled_requests_enabled": true, "statement_type": "managed_rule_group", "managed_rule_group": {"name": "AWSManagedRulesCommonRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": ["NoUserAgent_HEADER", "RestrictedExtensions_URIPATH", "GenericRFI_QUERYARGUMENTS", "GenericRFI_BODY", "CrossSiteScripting_BODY", "GenericLFI_BODY", "SizeRestrictions_BODY"], "scope_down": false}, "rule_group": null, "contains_captcha": false, "contains_challenge": false}, {"name": "AWS-AWSManagedRulesKnownBadInputsRuleSet", "priority": 1, "action": "managed_rule_group_default", "override_action": {"None": {}}, "metric_name": "AWS-AWSManagedRulesCommonRuleSet", "cloudwatch_metrics_enabled": false, "sampled_requests_enabled": true, "statement_type": "managed_rule_group", "managed_rule_group": {"name": "AWSManagedRulesKnownBadInputsRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": ["PROPFIND_METHOD"], "scope_down": false}, "rule_group": null, "contains_captcha": false, "contains_challenge": false}, {"name": "AWS-AWSManagedRulesLinuxRuleSet", "priority": 2, "action": "managed_rule_group_default", "override_action": {"None": {}}, "metric_name": "AWS-AWSManagedRulesLinuxRuleSet", "cloudwatch_metrics_enabled": false, "sampled_requests_enabled": true, "statement_type": "managed_rule_group", "managed_rule_group": {"name": "AWSManagedRulesLinuxRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": [], "scope_down": false}, "rule_group": null, "contains_captcha": false, "contains_challenge": false}, {"name": "AWS-AWSManagedRulesSQLiRuleSet", "priority": 3, "action": "managed_rule_group_default", "override_action": {"None": {}}, "metric_name": "AWS-AWSManagedRulesSQLiRuleSet", "cloudwatch_metrics_enabled": false, "sampled_requests_enabled": true, "statement_type": "managed_rule_group", "managed_rule_group": {"name": "AWSManagedRulesSQLiRuleSet", "vendor_name": "AWS", "version": null, "excluded_rules": [], "scope_down": false}, "rule_group": null, "contains_captcha": false, "contains_challenge": false}, {"name": "CombinedIPWhitelist", "priority": 10, "action": "allow", "override_action": null, "metric_name": "CombinedIPWhitelistV3", "cloudwatch_metrics_enabled": true, "sampled_requests_enabled": true, "statement_type": "OrStatement", "managed_rule_group": null, "rule_group": null, "contains_captcha": false, "contains_challenge": false}]
+    capacity_wcu: 1303.0
+    capacity_over_1500: False
+    visibility: {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "CITO-COLLINE-TEST-WebACL-Metric"}
+    sampled_requests_enabled: True
+    cloudwatch_metrics_enabled: True
+    association_config: {}
+    associations: []
+    association_count: 0
+    logging: {"enabled": false}
+    logging_enabled: False
+    premium_features: []
+    captcha_rule_count: 0
+    challenge_rule_count: 0
+    body_inspection: {"configured_limits_kb": [], "maximum_configured_kb": null}
+  Observations:
+    Metrics: 0 observed, 25 no-data, 0 errors
+  Topology:
+
+  Resource: arn:aws:wafv2:eu-west-1:125484409625:regional/webacl/CITO-TEST-WebACL/56e39661-9817-46ec-b818-aec64745e9f2
+  Configuration:
+    web_acl_id: 56e39661-9817-46ec-b818-aec64745e9f2
+    name: CITO-TEST-WebACL
+    arn: arn:aws:wafv2:eu-west-1:125484409625:regional/webacl/CITO-TEST-WebACL/56e39661-9817-46ec-b818-aec64745e9f2
+    scope: REGIONAL
+    default_action: block
+    rule_count: 1
+    custom_rule_count: 0
+    managed_rule_group_count: 0
+    customer_rule_group_count: 1
+    managed_rule_groups: []
+    rule_groups: [{"arn": "arn:aws:wafv2:eu-west-1:125484409625:regional/rulegroup/CITO-TEST-Vermeg-Support-RG/2208b310-3fd3-4097-a4e9-aacbc6d9b3fd", "excluded_rules": []}]
+    custom_rules: []
+    rules: [{"name": "CITO-AR-Vermeg-Support-WebACLRule", "priority": 0, "action": "managed_rule_group_default", "override_action": {"None": {}}, "metric_name": "CITO-AR-Vermeg-Support-Rule-Metrics", "cloudwatch_metrics_enabled": true, "sampled_requests_enabled": true, "statement_type": "rule_group", "managed_rule_group": null, "rule_group": {"arn": "arn:aws:wafv2:eu-west-1:125484409625:regional/rulegroup/CITO-TEST-Vermeg-Support-RG/2208b310-3fd3-4097-a4e9-aacbc6d9b3fd", "excluded_rules": []}, "contains_captcha": false, "contains_challenge": false}]
+    capacity_wcu: 1.0
+    capacity_over_1500: False
+    visibility: {"SampledRequestsEnabled": true, "CloudWatchMetricsEnabled": true, "MetricName": "CITO-AR-WebACL-Metric"}
+    sampled_requests_enabled: True
+    cloudwatch_metrics_enabled: True
+    association_config: {}
+    associations: []
+    association_count: 0
+    logging: {"enabled": false}
+    logging_enabled: False
+    premium_features: []
+    captcha_rule_count: 0
+    challenge_rule_count: 0
+    body_inspection: {"configured_limits_kb": [], "maximum_configured_kb": null}
+  Observations:
+    Metrics: 0 observed, 10 no-data, 0 errors
+  Topology:
+
+EC2 - Other
+ Region     : eu-west-1
+ Usage type : EU-EBS:VolumeUsage.gp3
+ Cost       : $9.02
+ Resources  : 1 ebs_volume
+
+  Resource: vol-062ccd47d0b441cb2
+  Configuration:
+    volume_id: vol-062ccd47d0b441cb2
+    availability_zone: eu-west-1b
+    state: in-use
+    size_gib: 50
+    volume_type: gp3
+    iops: 3000
+    throughput_mibps: 125
+    encrypted: True
+    kms_key_id: arn:aws:kms:eu-west-1:125484409625:key/8795e1dc-9d61-466f-9de2-9991332d487b
+    snapshot_id: snap-09d671401fe8a168b
+    create_time: 2025-08-25T14:26:53.746000+00:00
+    attachments: [{"instance_id": "i-0a9bc755898dfd188", "device": "/dev/sda1", "state": "attached", "delete_on_termination": true}]
+    attachment_count: 1
+    attached: True
+    instance_ids: ["i-0a9bc755898dfd188"]
+  Observations:
+    Metrics: 0 observed, 5 no-data, 0 errors
+  Topology:
+
+Amazon Relational Database Service
+ Region     : eu-west-1
+ Usage type : EU-Aurora:StorageIOUsage
+ Cost       : $4.09
+ Resources  : 1 aurora_cluster
+
+  Resource: cito-colline-test-aurorapgdbcluster-jotvv2bornfx
+  Configuration:
+    cluster: {"identifier": "cito-colline-test-aurorapgdbcluster-jotvv2bornfx", "arn": "arn:aws:rds:eu-west-1:125484409625:cluster:cito-colline-test-aurorapgdbcluster-jotvv2bornfx", "status": "stopped", "engine": "aurora-postgresql", "engine_version": "15.12", "engine_mode": "provisioned", "database_name": "colline", "master_username": "lrmmdb", "cluster_create_time": "2026-03-05T13:48:09.213000+00:00"}
+    storage: {"storage_type": null, "allocated_storage": 1, "storage_encrypted": true, "kms_key_id": "arn:aws:kms:eu-west-1:125484409625:key/mrk-55d740eaa3ed479eb3ba93ccc29dbe2a"}
+    backup: {"backup_retention_days": 7, "preferred_backup_window": "22:13-22:43", "copy_tags_to_snapshot": true}
+    availability: {"availability_zones": ["eu-west-1a", "eu-west-1b", "eu-west-1c"], "multi_az": false, "promotion_tier_count": 1}
+    endpoints: {"writer": "cito-colline-test-aurorapgdbcluster-jotvv2bornfx.cluster-czfgvwc3asn9.eu-west-1.rds.amazonaws.com", "reader": "cito-colline-test-aurorapgdbcluster-jotvv2bornfx.cluster-ro-czfgvwc3asn9.eu-west-1.rds.amazonaws.com", "custom": []}
+    network: {"vpc_security_group_ids": ["sg-066aae7ffde59b74b", "sg-0a9ef63a294cef9e2"], "db_subnet_group": "cito-colline-test-dbsubnetgroup-swmk7uvdvhkf"}
+    serverless_v2: {"enabled": false, "min_capacity": null, "max_capacity": null, "seconds_until_auto_pause": null}
+    serverless_v1: {"enabled": false, "min_capacity": null, "max_capacity": null, "auto_pause": null, "seconds_until_auto_pause": null}
+    deletion_protection: False
+    iam_database_authentication_enabled: False
+    enabled_cloudwatch_logs_exports: []
+    db_cluster_parameter_group: cito-colline-test-aurorapgparametergroup-rgnodgaclghu
+    associated_roles: []
+  Observations:
+    CloudWatch: ok
+  Topology:

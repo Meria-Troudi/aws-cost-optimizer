@@ -24,18 +24,12 @@ class ResourceCatalog:
                 f"Resource catalog not found: {catalog_path}"
             )
 
-        with open(
-            catalog_path,
-            "r",
-            encoding="utf-8",
+        with open( catalog_path, "r",  encoding="utf-8",
         ) as file:
             data = yaml.safe_load(file)
 
         if not isinstance(data, dict):
-            raise ValueError(
-                "resource_catalog.yaml must contain a mapping."
-            )
-
+            raise ValueError("resource_catalog.yaml must contain a mapping.")
         self.items: Dict[str, Dict[str, Any]] = data
 
     def by_key(self, key: str) -> Dict[str, Any] | None:

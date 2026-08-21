@@ -6,7 +6,7 @@ import {
   formatMoneyOrDash,
 } from '../utils/format'
 
-import CostDriverList from './dashboard/CostDriverList'
+import CostDriverList from './CostDriverList'
 
 export default function CollectionSummaryModal({
   open,

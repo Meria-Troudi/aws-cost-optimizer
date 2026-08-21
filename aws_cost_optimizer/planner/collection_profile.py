@@ -21,6 +21,7 @@ class CollectionProfile:
 
     ALIASES = {
         "elastic_ip": "public_ipv4",
+        "quicksight_asset": "quicksight",
     }
 
     def __init__(self) -> None:

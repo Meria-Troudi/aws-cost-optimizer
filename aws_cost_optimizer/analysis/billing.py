@@ -1,12 +1,6 @@
 """
 Billing context utilities.
 
-Billing is evidence about AWS spend. It is not automatically
-resource-level cost.
-
-A billing context explicitly records its attribution scope so that
-recommendation logic cannot accidentally treat collection-plan spend
-as the cost of one discovered resource.
 """
 
 from __future__ import annotations
@@ -24,13 +18,7 @@ UNKNOWN = "unknown"
 def normalize_billing_context(
     value: Any,
 ) -> dict[str, Any]:
-    """
-    Normalize billing information.
 
-    Important:
-        `amount` is preserved, but callers must inspect
-        `attribution_scope` before using it as resource-level cost.
-    """
 
     if value is None:
         return {}

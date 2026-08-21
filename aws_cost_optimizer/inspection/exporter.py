@@ -9,7 +9,7 @@ from pathlib import Path
 import json
 from typing import Any
 
-from aws_cost_optimizer.collectors.cost.periods import period_label
+from aws_cost_optimizer.collection.cost.periods import period_label
 
 def _box(title: str, width: int = 72) -> list[str]:
     title = str(title)
@@ -159,11 +159,6 @@ class ScanExporter:
             f"Generated: {now}",
             "=" * 72,
         ]
-
-    # ==================================================================
-    # SCAN INFORMATION
-    # ==================================================================
-
     def _section_scan_info(self) -> list[str]:
 
         region = (
@@ -306,11 +301,11 @@ class ScanExporter:
     def _section_cost_drivers(self) -> list[str]:
 
         from backend.database.connection import SessionLocal
-        from backend.database.repositories.service_cost_repository import (
+        from backend.database.repositories.cost.service_costs import (
             get_period_cost_total,
             get_service_costs_with_rank,
         )
-        from backend.database.repositories.usage_type_cost_repository import (
+        from backend.database.repositories.cost.usage_types import (
             get_usage_types_by_service,
         )
 
@@ -672,11 +667,36 @@ class ScanExporter:
             "RECOMMENDATIONS"
         )
 
-        recommendations = (
-            recommendations or []
+        # The frontend reads recommendations from the database via
+        # get_recommendations_by_scan + present_recommendations, so it
+        # always shows every persisted recommendation for the scan.
+        # The in-memory list passed to export() only contains the
+        # recommendations generated during the current run, which can
+        # be a subset. Read from the DB the same way the frontend does
+        # so the summary always matches the frontend.
+        from backend.database.connection import SessionLocal
+        from backend.database.repositories.recommendation_repository import (
+            get_recommendations_by_scan,
+        )
+        from backend.api.presenters.recommendation_presenter import (
+            present_recommendations,
         )
 
-        if not recommendations:
+        db = SessionLocal()
+
+        try:
+
+            presented = present_recommendations(
+                get_recommendations_by_scan(
+                    db,
+                    self.scan_id,
+                )
+            )
+
+        finally:
+            db.close()
+
+        if not presented:
 
             lines.append(
                 " No recommendations generated."
@@ -684,7 +704,7 @@ class ScanExporter:
 
             return lines
 
-        for recommendation in recommendations:
+        for recommendation in presented:
 
             if not isinstance(
                 recommendation,
@@ -745,17 +765,69 @@ class ScanExporter:
             )
         ).strip()
 
+        confidence = str(
+            recommendation.get(
+                "confidence",
+                "",
+            )
+        ).strip()
+
+        status = str(
+            recommendation.get(
+                "status",
+                "",
+            )
+        ).strip()
+
+        financial_impact = _safe_dict(
+            recommendation.get(
+                "financial_impact"
+            )
+        )
+
         lines.append("")
         lines.append(f"[{priority}] {title}")
 
         if resource_ids:
             lines.append(f"Resources: {len(resource_ids)}")
 
+        if confidence:
+            lines.append(f"Confidence: {confidence}")
+
         if reason:
             lines.append(f"Why: {reason}")
 
         if action:
             lines.append(f"Action: {action}")
+
+        observed_cost = financial_impact.get(
+            "observed_monthly_cost"
+        )
+
+        if isinstance(
+            observed_cost,
+            (int, float),
+        ):
+            lines.append(
+                f"Observed cost: ${observed_cost:,.2f}"
+            )
+
+        estimated_savings = financial_impact.get(
+            "estimated_monthly_savings"
+        )
+
+        if isinstance(
+            estimated_savings,
+            (int, float),
+        ):
+            lines.append(
+                f"Potential savings: ${estimated_savings:,.2f}"
+            )
+
+        if status:
+            lines.append(
+                f"Status: {status.replace('_', ' ').title()}"
+            )
 
         return lines
 

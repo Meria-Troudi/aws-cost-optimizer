@@ -1,32 +1,23 @@
 import { useMemo, useState } from 'react'
+
 import {
-  formatDate,
   formatMoneyOrDash,
+  pluralize,
+  sevClass,
   sevLabel,
   truncateId,
 } from '../utils/format'
+
 import { serviceStyle } from '../utils/serviceStyle'
+
+import {
+  RECONCILIATION_TYPES,
+  attributionInfo,
+} from '../mappers/findings'
+
 import UnifiedFindingRecommendationModal from './UnifiedFindingRecommendationModal'
-
-const RECONCILIATION_TYPES = [
-  'historical_unmatched',
-  'historical_spend_no_current_resource',
-  'historical_resource_not_found',
-  'collection_no_matching_resources',
-  'billing_resource_mismatch',
-  'billing_no_cost',
-  'billing_reconciliation_unknown',
-]
-
-function severityClass(severity) {
-  const value = String(severity || 'low').toLowerCase()
-
-  if (value === 'critical') return 'sev-critical'
-  if (value === 'high') return 'sev-high'
-  if (value === 'medium') return 'sev-medium'
-
-  return 'sev-low'
-}
+import CollectionSummaryModal from './CollectionSummaryModal'
+import CostDriverList from './CostDriverList'
 
 function resourceLabel(finding) {
   const count =
@@ -44,11 +35,16 @@ function resourceLabel(finding) {
     finding?.resource_id
 
   return id
-    ? truncateId(id, 28)
+    ? truncateId(
+        id,
+        28,
+      )
     : 'No resource identified'
 }
 
-function recommendationTitle(recommendation) {
+function recommendationTitle(
+  recommendation,
+) {
   return (
     recommendation?.title ||
     recommendation?.name ||
@@ -57,186 +53,384 @@ function recommendationTitle(recommendation) {
   )
 }
 
-function recommendationReason(recommendation) {
+function recommendationReason(
+  recommendation,
+) {
   return (
-    recommendation?.rationale ||
     recommendation?.reason ||
+    recommendation?.rationale ||
     recommendation?.description ||
-    'Review this recommendation and its supporting evidence.'
+    'No recommendation rationale was recorded.'
   )
 }
 
-function recommendationId(recommendation) {
+function recommendationId(
+  recommendation,
+) {
   return (
     recommendation?.id ||
     recommendation?.recommendation_id ||
-    recommendation?.finding_id ||
+    recommendation?.recommendation_key ||
     null
   )
 }
 
 function findingId(finding) {
-  return finding?.id || finding?.finding_id || null
+  return (
+    finding?.id ||
+    finding?.finding_id ||
+    null
+  )
 }
 
-function normalizeFindingKey(finding) {
+function normalizeFindingKey(
+  finding,
+) {
   return String(
     findingId(finding) ??
+      finding?.finding_key ??
+      finding?.finding_type ??
       finding?.key ??
       finding?.fullTitle ??
       '',
   )
 }
 
+/*
+ * Resolve the source finding without opening it.
+ *
+ * This function is intentionally separate from modal state.
+ * A recommendation may reference a finding, but that does
+ * not mean the finding modal should also be opened.
+ */
 function findRelatedFinding(
   recommendation,
   findingList,
 ) {
-  if (!recommendation) return null
-
-  const explicitId =
-    recommendation.finding_id ||
-    recommendation.findingId ||
-    recommendation.related_finding_id
-
-  if (explicitId != null) {
-    const match = findingList.find(
-      (finding) =>
-        String(findingId(finding)) ===
-        String(explicitId),
-    )
-
-    if (match) return match
+  if (!recommendation) {
+    return null
   }
 
-  const explicitFinding =
-    recommendation.finding
+  /*
+   * 1. Direct finding ID.
+   */
+  const explicitIds = [
+    recommendation.finding_id,
+    recommendation.findingId,
+    recommendation.related_finding_id,
+  ].filter(
+    (value) =>
+      value !== null &&
+      value !== undefined &&
+      value !== '',
+  )
+
+  for (const explicitId of explicitIds) {
+    const match = findingList.find(
+      (finding) =>
+        String(
+          findingId(finding),
+        ) === String(explicitId),
+    )
+
+    if (match) {
+      return match
+    }
+  }
+
+  /*
+   * 2. Explicit embedded finding.
+   */
+  if (
+    recommendation.finding &&
+    typeof recommendation.finding ===
+      'object'
+  ) {
+    return recommendation.finding
+  }
+
+  /*
+   * 3. Recommendation may carry source finding IDs.
+   */
+  const sourceFindingIds = Array.isArray(
+    recommendation.source_finding_ids,
+  )
+    ? recommendation.source_finding_ids
+    : []
+
+  for (const sourceId of sourceFindingIds) {
+    const match = findingList.find(
+      (finding) =>
+        String(
+          findingId(finding),
+        ) === String(sourceId),
+    )
+
+    if (match) {
+      return match
+    }
+  }
+
+  /*
+   * 4. Resource identity.
+   */
+  const affectedResources =
+    Array.isArray(
+      recommendation.affected_resources,
+    )
+      ? recommendation.affected_resources
+      : []
 
   if (
-    explicitFinding &&
-    typeof explicitFinding === 'object'
-  ) {
-    return explicitFinding
-  }
-
-  const resourceId =
     recommendation.resource_id ||
-    recommendation.resourceId
+    recommendation.resourceId ||
+    affectedResources.length
+  ) {
+    const resourceCandidates = [
+      recommendation.resource_id,
+      recommendation.resourceId,
+      ...affectedResources,
+    ].filter(Boolean)
 
-  if (resourceId) {
     const match = findingList.find(
-      (finding) =>
-        finding.resourceIds?.includes(
-          resourceId,
-        ) ||
-        finding.resource_ids?.includes(
-          resourceId,
-        ) ||
-        finding.resource === resourceId ||
-        finding.resource_id === resourceId,
+      (finding) => {
+        const findingResources = [
+          ...(finding.resourceIds || []),
+          ...(finding.resource_ids || []),
+          finding.resource,
+          finding.resource_id,
+        ].filter(Boolean)
+
+        return resourceCandidates.some(
+          (candidate) =>
+            findingResources.includes(
+              candidate,
+            ),
+        )
+      },
     )
 
-    if (match) return match
+    if (match) {
+      return match
+    }
   }
 
-  const service = recommendation.service
-  const region = recommendation.region
+  /*
+   * 5. Service + region fallback.
+   */
+  const recommendationService =
+    recommendation.service ||
+    recommendation.resource_type
 
-  if (service || region) {
+  const recommendationRegion =
+    recommendation.region ||
+    null
+
+  if (
+    recommendationService ||
+    recommendationRegion
+  ) {
+    const serviceMatch =
+      String(
+        recommendationService || '',
+      ).toLowerCase()
+
+    const regionMatch =
+      String(
+        recommendationRegion || '',
+      ).toLowerCase()
+
     return (
-      findingList.find((finding) => {
-        const serviceMatches =
-          !service ||
-          String(
-            finding.service || '',
-          ).toLowerCase() ===
-            String(service).toLowerCase()
+      findingList.find(
+        (finding) => {
+          const findingService =
+            String(
+              finding.service ||
+                finding.resource_type ||
+                '',
+            ).toLowerCase()
 
-        const regionMatches =
-          !region ||
-          !finding.region ||
-          String(
-            finding.region,
-          ).toLowerCase() ===
-            String(region).toLowerCase()
+          const findingRegion =
+            String(
+              finding.region || '',
+            ).toLowerCase()
 
-        return (
-          serviceMatches &&
-          regionMatches
-        )
-      }) || null
+          const serviceOk =
+            !serviceMatch ||
+            findingService ===
+              serviceMatch
+
+          const regionOk =
+            !regionMatch ||
+            !findingRegion ||
+            findingRegion ===
+              regionMatch
+
+          return serviceOk && regionOk
+        },
+      ) || null
     )
   }
 
   return null
 }
 
-/* -------------------------------------------------------------------------- */
-/* Finding row                                                                */
-/* -------------------------------------------------------------------------- */
 
-function FindingRow({
-  finding,
-  onClick,
-}) {
-  const style = serviceStyle(
-    finding.service,
+const SEVERITY_RANK = {
+  critical: 4,
+  high: 3,
+  medium: 2,
+  low: 1,
+}
+
+function findingTitle(finding) {
+  return (
+    finding.fullTitle ||
+    finding.title ||
+    'Optimization finding'
   )
+}
 
+function findingService(finding) {
+  return (
+    finding.service ||
+    finding.resource_type ||
+    'AWS service'
+  )
+}
+
+const SCOPE_TONE_COLORS = {
+  good: { bg: 'rgba(34,197,94,0.15)', fg: '#15803d' },
+  neutral: { bg: 'rgba(148,163,184,0.2)', fg: '#475569' },
+}
+
+function CostScopeTag({ scope }) {
+  if (!scope) {
+    return null
+  }
+
+  const info = attributionInfo(scope)
+  const colors =
+    SCOPE_TONE_COLORS[info.tone] ||
+    SCOPE_TONE_COLORS.neutral
+
+  return (
+    <span
+      title={info.tooltip}
+      style={{
+        display: 'inline-block',
+        marginTop: 4,
+        padding: '1px 7px',
+        borderRadius: 999,
+        fontSize: '0.7em',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        background: colors.bg,
+        color: colors.fg,
+      }}
+    >
+      {info.label}
+    </span>
+  )
+}
+
+function FindingHeroCard({ finding, onClick }) {
   return (
     <button
       type="button"
-      className="finding-result-row"
+      className="finding-hero"
       onClick={onClick}
     >
-      <div
-        className="fnd-ico"
-        style={{
-          background: style.color,
-        }}
-      >
-        {style.icon}
-      </div>
+      <div>
+        <span
+          className={`sev-badge on-dark ${sevClass(
+            finding.severity,
+          )}`}
+        >
+          {sevLabel(finding.severity)}
+        </span>
 
-      <div className="finding-result-main">
-        <div className="fnd-service-name">
-          {finding.service || 'AWS service'}
+        <h3>{findingTitle(finding)}</h3>
+
+        <div className="fh-meta">
+          {findingService(finding)}
         </div>
 
-        <div className="fnd-issue">
-          {finding.fullTitle ||
-            finding.title ||
-            'Optimization finding'}
-        </div>
-
-        <div className="fnd-resource">
+        <div className="fh-resource">
           {resourceLabel(finding)}
         </div>
       </div>
 
-      <span
-        className={`sev-badge ${severityClass(
-          finding.severity,
-        )}`}
-      >
-        {sevLabel(finding.severity)}
-      </span>
+      <div>
+        <div className="fh-saving mono">
+          {finding.costLabel ||
+            formatMoneyOrDash(finding.cost)}
+        </div>
 
-      <div className="fnd-saving">
-        {finding.costLabel ||
-          formatMoneyOrDash(
-            finding.cost,
-          )}
+        <CostScopeTag scope={finding.costScope} />
+
+        <div className="fh-link">
+          View details <span>→</span>
+        </div>
       </div>
-
-  
     </button>
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/* Recommendation row                                                         */
-/* -------------------------------------------------------------------------- */
+function FindingCard({ finding, onClick }) {
+  const style = serviceStyle(findingService(finding))
+
+  return (
+    <button
+      type="button"
+      className="finding-card"
+      onClick={onClick}
+    >
+      <div>
+        <div className="fc-top">
+          <div
+            className="fc-ico"
+            style={{ background: style.color }}
+          >
+            {style.icon}
+          </div>
+
+          <span
+            className={`sev-badge ${sevClass(
+              finding.severity,
+            )}`}
+          >
+            {sevLabel(finding.severity)}
+          </span>
+        </div>
+
+        <h4>{findingService(finding)}</h4>
+
+        <div className="fc-resource">
+          {resourceLabel(finding)}
+        </div>
+
+        <div className="fc-issue">
+          {findingTitle(finding)}
+        </div>
+      </div>
+
+      <div className="fc-foot">
+        <div>
+          <span className="fc-saving mono">
+            {finding.costLabel ||
+              formatMoneyOrDash(finding.cost)}
+          </span>
+
+          <CostScopeTag scope={finding.costScope} />
+        </div>
+
+        <span className="fc-arrow">→</span>
+      </div>
+    </button>
+  )
+}
+
 
 function RecommendationRow({
   recommendation,
@@ -244,14 +438,48 @@ function RecommendationRow({
   onClick,
 }) {
   const priority =
-    recommendation.priority ||
-    recommendation.severity ||
+    recommendation?.priority ||
+    recommendation?.severity ||
     'medium'
 
   const affectedResources =
-    recommendation.affectedResourceCount ??
-    recommendation.affected_resource_count ??
-    1
+    recommendation
+      ?.affectedResourceCount ??
+    recommendation
+      ?.affected_resource_count ??
+    (
+      Array.isArray(
+        recommendation?.affected_resources,
+      )
+        ? recommendation
+            .affected_resources
+            .length
+        : 1
+    )
+
+  const resourceIdList =
+    Array.isArray(
+      recommendation?.affectedResources,
+    )
+      ? recommendation.affectedResources
+      : Array.isArray(
+            recommendation?.affected_resources,
+          )
+        ? recommendation.affected_resources
+        : []
+
+  // One recommendation per finding is the norm now, so several rows
+  // can share an identical title/reason (e.g. 3 separate idle NAT
+  // gateways) -- show the specific resource ID so they don't read
+  // as accidental duplicates.
+  const resourceIdLabel =
+    Number(affectedResources) === 1 &&
+    resourceIdList[0]
+      ? truncateId(
+          String(resourceIdList[0]),
+          24,
+        )
+      : null
 
   return (
     <button
@@ -264,15 +492,23 @@ function RecommendationRow({
           {recommendationTitle(
             recommendation,
           )}
+
+          {resourceIdLabel && (
+            <span className="recommendation-resource-id mono">
+              {' '}
+              · {resourceIdLabel}
+            </span>
+          )}
         </div>
 
         <div className="recommendation-meta">
-          {recommendation.meta ||
-            `${affectedResources} ${
-              affectedResources === 1
-                ? 'resource'
-                : 'resources'
-            } affected`}
+          {affectedResources}{' '}
+          {Number(
+            affectedResources,
+          ) === 1
+            ? 'resource'
+            : 'resources'}{' '}
+          affected
         </div>
 
         <div className="recommendation-reason">
@@ -283,31 +519,27 @@ function RecommendationRow({
 
         {relatedFinding && (
           <div className="recommendation-related">
-            Based on:{' '}
+            Source finding:{' '}
             {relatedFinding.fullTitle ||
-              relatedFinding.title}
+              relatedFinding.title ||
+              'Optimization finding'}
           </div>
         )}
       </div>
 
       <div className="recommendation-priority">
         <span
-          className={`sev-badge ${severityClass(
+          className={`sev-badge ${sevClass(
             priority,
           )}`}
         >
           {sevLabel(priority)}
         </span>
       </div>
-
-      
     </button>
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/* Reconciliation row                                                         */
-/* -------------------------------------------------------------------------- */
 
 function ReconciliationRow({
   finding,
@@ -338,15 +570,10 @@ function ReconciliationRow({
             finding.cost,
           )}
       </span>
-
-     
     </button>
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/* Page                                                                       */
-/* -------------------------------------------------------------------------- */
 
 export default function ResultsPage({
   scanId,
@@ -354,17 +581,18 @@ export default function ResultsPage({
   findings = {},
   recommendations = [],
   costSummary = null,
+  costDrivers = [],
+  collectionSummary = null,
+  collectionSummaryLoading = false,
+  collectionSummaryError = null,
+  onLoadCollectionSummary,
+  hasResults = false,
   loading = false,
   error = null,
   onRefresh,
   onBack,
   onRunAnalysis,
 }) {
-  const hasResults = Boolean(resultsScan && [
-    'completed',
-    'completed_with_errors',
-  ].includes(String(resultsScan.status || '').toLowerCase()))
-
   const [
     selectedFinding,
     setSelectedFinding,
@@ -375,26 +603,38 @@ export default function ResultsPage({
     setSelectedRecommendation,
   ] = useState(null)
 
+  const [
+    collectionSummaryOpen,
+    setCollectionSummaryOpen,
+  ] = useState(false)
+
+  function openCollectionSummary() {
+    setCollectionSummaryOpen(true)
+    onLoadCollectionSummary?.(scanId)
+  }
+
   const findingList = useMemo(
-    () => Object.values(findings || {}),
+    () =>
+      Object.values(
+        findings || {},
+      ),
     [findings],
   )
 
   const recommendationList =
-    Array.isArray(recommendations)
+    Array.isArray(
+      recommendations,
+    )
       ? recommendations
       : []
 
-  const scanRegion =
-    resultsScan?.region ||
-    'All regions'
-
   const reconciliationFindings =
-    findingList.filter((finding) =>
-      RECONCILIATION_TYPES.includes(
-        finding.findingType ||
-          finding.finding_type,
-      ),
+    findingList.filter(
+      (finding) =>
+        RECONCILIATION_TYPES.includes(
+          finding.findingType ||
+            finding.finding_type,
+        ),
     )
 
   const optimizationFindings =
@@ -406,57 +646,40 @@ export default function ResultsPage({
         ),
     )
 
+  const rankedFindings =
+    optimizationFindings
+      .slice()
+      .sort((a, b) => {
+        const rankDiff =
+          (SEVERITY_RANK[String(b.severity || '').toLowerCase()] || 0) -
+          (SEVERITY_RANK[String(a.severity || '').toLowerCase()] || 0)
+
+        if (rankDiff !== 0) return rankDiff
+
+        return Number(b?.cost || 0) - Number(a?.cost || 0)
+      })
+
+  /*
+   * IMPORTANT:
+   *
+   * A finding click MUST open a finding only.
+   * The linked recommendation is merely available
+   * through "View recommendation" inside the modal.
+   */
   function openFinding(finding) {
-    // Find a recommendation linked to this finding
-    const linkedRec = recommendationList.find(
-      (rec) => {
-        const recFindingId =
-          rec.finding_id ||
-          rec.findingId ||
-          rec.related_finding_id
-        const findingIdV = findingId(finding)
-
-        if (
-          recFindingId != null &&
-          findingIdV != null
-        ) {
-          return (
-            String(recFindingId) ===
-            String(findingIdV)
-          )
-        }
-
-        return (
-          !rec.service ||
-          !finding.service ||
-          String(rec.service).toLowerCase() ===
-            String(finding.service).toLowerCase()
-        ) &&
-        (
-          !rec.region ||
-          !finding.region ||
-          String(rec.region).toLowerCase() ===
-            String(finding.region).toLowerCase()
-        )
-      },
-    )
-
-    setSelectedRecommendation(
-      linkedRec || null,
-    )
+    setSelectedRecommendation(null)
     setSelectedFinding(finding)
   }
 
+  /*
+   * A recommendation click MUST open a recommendation only.
+   * The related finding is passed separately so the modal
+   * can display a "Source finding" link.
+   */
   function openRecommendation(
     recommendation,
   ) {
-    const related =
-      findRelatedFinding(
-        recommendation,
-        findingList,
-      )
-
-    setSelectedFinding(related)
+    setSelectedFinding(null)
     setSelectedRecommendation(
       recommendation,
     )
@@ -467,85 +690,178 @@ export default function ResultsPage({
     setSelectedRecommendation(null)
   }
 
-  function focusFinding(finding) {
-    if (!finding) return
+  /*
+   * Open the source finding from a recommendation.
+   */
+  function openSourceFinding(
+    finding,
+  ) {
+    if (!finding) {
+      return
+    }
 
+    setSelectedRecommendation(null)
     setSelectedFinding(finding)
   }
 
-  function openRecommendationFromFinding(finding) {
-    if (!finding) return
-
-    // Try to find a recommendation linked to this finding
-    const linked = recommendationList.find(
-      (rec) => {
-        const recFindingId =
-          rec.finding_id ||
-          rec.findingId
-        if (
-          recFindingId != null &&
-          findingId(finding) != null
-        ) {
-          return (
-            String(recFindingId) ===
-            String(findingId(finding))
-          )
-        }
-
-        return (
-          (!rec.service ||
-            !finding.service ||
-            String(rec.service).toLowerCase() ===
-              String(finding.service).toLowerCase()) &&
-          (!rec.region ||
-            !finding.region ||
-            String(rec.region).toLowerCase() ===
-              String(finding.region).toLowerCase())
-        )
-      },
-    )
-
-    if (linked) {
-      setSelectedRecommendation(linked)
+  /*
+   * Open the recommendation associated with
+   * the currently displayed finding.
+   */
+  function openRecommendationFromFinding(
+    finding,
+  ) {
+    if (!finding) {
+      return
     }
 
-    setSelectedFinding(finding)
+    const findingIdentifier =
+      findingId(finding)
+
+    const linked =
+      recommendationList.find(
+        (recommendation) => {
+          const recommendationFindingIds =
+            [
+              recommendation.finding_id,
+              recommendation.findingId,
+              recommendation.related_finding_id,
+              ...(Array.isArray(
+                recommendation.source_finding_ids,
+              )
+                ? recommendation.source_finding_ids
+                : []),
+            ].filter(
+              (value) =>
+                value !== null &&
+                value !== undefined,
+            )
+
+          if (
+            findingIdentifier != null
+          ) {
+            const directMatch =
+              recommendationFindingIds.some(
+                (value) =>
+                  String(value) ===
+                  String(
+                    findingIdentifier,
+                  ),
+              )
+
+            if (directMatch) {
+              return true
+            }
+          }
+
+          const findingResources = [
+            ...(finding.resourceIds ||
+              []),
+            ...(finding.resource_ids ||
+              []),
+            finding.resource,
+            finding.resource_id,
+          ].filter(Boolean)
+
+          const recommendationResources =
+            [
+              recommendation.resource_id,
+              recommendation.resourceId,
+              ...(Array.isArray(
+                recommendation.affected_resources,
+              )
+                ? recommendation.affected_resources
+                : []),
+            ].filter(Boolean)
+
+          if (
+            findingResources.length &&
+            recommendationResources.some(
+              (resource) =>
+                findingResources.includes(
+                  resource,
+                ),
+            )
+          ) {
+            return true
+          }
+
+          const findingService =
+            String(
+              finding.service ||
+                finding.resource_type ||
+                '',
+            ).toLowerCase()
+
+          const recommendationService =
+            String(
+              recommendation.service ||
+                recommendation.resource_type ||
+                '',
+            ).toLowerCase()
+
+          const findingRegion =
+            String(
+              finding.region || '',
+            ).toLowerCase()
+
+          const recommendationRegion =
+            String(
+              recommendation.region || '',
+            ).toLowerCase()
+
+          return (
+            findingService &&
+            recommendationService &&
+            findingService ===
+              recommendationService &&
+            (
+              !recommendationRegion ||
+              !findingRegion ||
+              findingRegion ===
+                recommendationRegion
+            )
+          )
+        },
+      )
+
+    /*
+     * Do not open an empty recommendation modal.
+     */
+    if (!linked) {
+      return
+    }
+
+    setSelectedFinding(null)
+    setSelectedRecommendation(
+      linked,
+    )
   }
 
   const scanNumber =
     resultsScan?.id ??
-    resultsScan?.scan_id
+    resultsScan?.scan_id ??
+    scanId
 
-  /*
-   * Cost summary
-   */
-  const totalFindingCost = findingList.reduce(
-    (sum, finding) =>
-      sum + Number(finding.cost || 0),
-    0,
-  )
-
-  const totalMonthlySavings =
-    recommendationList.reduce(
-      (sum, rec) =>
+  const totalFindingCost =
+    findingList.reduce(
+      (sum, finding) =>
         sum +
         Number(
-          rec.estimated_monthly_savings ??
-            rec.estimatedMonthlySavings ??
-            rec.monthly_savings ??
-            0,
+          finding?.cost || 0,
         ),
       0,
     )
 
-  const totalAnnualSavings =
+  const totalMonthlySavings =
     recommendationList.reduce(
-      (sum, rec) =>
+      (sum, recommendation) =>
         sum +
         Number(
-          rec.estimated_annual_savings ??
-            rec.estimatedAnnualSavings ??
-            rec.annual_savings ??
+          recommendation
+            ?.financial_impact
+            ?.estimated_monthly_savings ??
+            recommendation?.estimated_monthly_savings ??
             0,
         ),
       0,
@@ -554,22 +870,24 @@ export default function ResultsPage({
   return (
     <div className="results-page">
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Header                                                             */}
-      {/* ------------------------------------------------------------------ */}
-
       <div className="header-row">
         <div className="headline">
-          <h1>Optimization Insights</h1>
+
+          <h1>
+            Optimization Insights
+          </h1>
 
           <div className="sub">
-            Review what is driving AWS cost,
-            where action is recommended, and
-            which resources need attention.
+            Review detected cost conditions,
+            recommended optimization actions,
+            supporting evidence, and affected
+            AWS resources.
           </div>
+
         </div>
 
         <div className="dashboard-actions">
+
           <button
             type="button"
             className="small-btn"
@@ -578,6 +896,16 @@ export default function ResultsPage({
             ← Back to overview
           </button>
 
+          {hasResults && (
+            <button
+              type="button"
+              className="small-btn"
+              onClick={openCollectionSummary}
+            >
+              View Collection Summary
+            </button>
+          )}
+
           <button
             type="button"
             className="small-btn primary-btn"
@@ -585,6 +913,7 @@ export default function ResultsPage({
           >
             Run New Analysis
           </button>
+
         </div>
       </div>
 
@@ -604,18 +933,19 @@ export default function ResultsPage({
         !hasResults &&
         !error && (
           <div className="empty-state section-gap">
+
             <div className="empty-ico">
               ◎
             </div>
 
             <h3>
-              No optimization results yet
+              No optimization results
             </h3>
 
             <p>
               Run an analysis to identify
-              cost-saving opportunities and
-              resources that need attention.
+              cost conditions and
+              optimization opportunities.
             </p>
 
             <button
@@ -625,19 +955,20 @@ export default function ResultsPage({
             >
               Run Optimization Analysis
             </button>
+
           </div>
         )}
 
       {hasResults &&
         resultsScan && (
           <>
-            {/* ------------------------------------------------------------ */}
-            {/* Scan summary                                                  */}
-            {/* ------------------------------------------------------------ */}
 
             <section className="panel section-gap results-summary-panel">
+
               <div className="panel-head">
+
                 <div>
+
                   <div className="eyebrow">
                     / Analysis Summary
                   </div>
@@ -648,25 +979,33 @@ export default function ResultsPage({
 
                   <div className="panel-sub">
                     {resultsScan.start_date ||
-                      '—'}{' '}
-                    {' '}
+                      '—'}
+                    {' → '}
                     {resultsScan.end_date ||
                       '—'}
                     {' · '}
-                    {scanRegion}
+                    {resultsScan.region ||
+                      'All regions'}
                   </div>
+
                 </div>
 
                 <button
                   type="button"
                   className="small-btn"
-                  onClick={() => onRefresh?.(scanNumber)}
+                  onClick={() =>
+                    onRefresh?.(
+                      scanNumber,
+                    )
+                  }
                 >
                   Refresh Results
                 </button>
+
               </div>
 
               <div className="stats-row">
+
                 <div className="stat-chip">
                   <span className="stat-k">
                     Scan status
@@ -675,6 +1014,16 @@ export default function ResultsPage({
                   <span className="stat-v">
                     {resultsScan.status ||
                       '—'}
+                  </span>
+                </div>
+
+                <div className="stat-chip">
+                  <span className="stat-k">
+                    Analysis-period spend
+                  </span>
+
+                  <span className="stat-v mono">
+                    {formatMoneyOrDash(costSummary?.total_cost,)}
                   </span>
                 </div>
 
@@ -692,16 +1041,6 @@ export default function ResultsPage({
 
                 <div className="stat-chip">
                   <span className="stat-k">
-                    Analysis-period spend
-                  </span>
-
-                  <span className="stat-v mono">
-                    {formatMoneyOrDash(costSummary?.total_cost)}
-                  </span>
-                </div>
-
-                <div className="stat-chip">
-                  <span className="stat-k">
                     Recommended actions
                   </span>
 
@@ -712,57 +1051,68 @@ export default function ResultsPage({
                   </span>
                 </div>
 
-                <div className="stat-chip">
+                <div
+                  className="stat-chip"
+                  title="Sum of estimated savings across recommendations where cost is confirmed as the affected resource's own cost. Shared or unconfirmed billing evidence is excluded."
+                >
                   <span className="stat-k">
-                    Implied monthly impact
+                    Potential monthly savings (confirmed)
                   </span>
 
                   <span className="stat-v mono">
-                    {totalMonthlySavings > 0
-                      ? formatMoneyOrDash(
-                          totalMonthlySavings,
-                        )
-                      : '—'}
+                    {formatMoneyOrDash(
+                      totalMonthlySavings,
+                    )}
                   </span>
                 </div>
 
-                <div className="stat-chip">
-                  <span className="stat-k">
-                    Implied annual impact
-                  </span>
-
-                  <span className="stat-v mono">
-                    {totalAnnualSavings > 0
-                      ? formatMoneyOrDash(
-                          totalAnnualSavings,
-                        )
-                      : '—'}
-                  </span>
-                </div>
               </div>
+
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Findings                                                       */}
-            {/* ------------------------------------------------------------ */}
+            <section className="panel cost-drivers-panel section-gap">
+
+              <div className="panel-head">
+
+                <div>
+
+                  <div className="eyebrow">
+                    / Cost Drivers
+                  </div>
+
+                  <div className="panel-title">
+                    Where the spend is concentrated
+                  </div>
+
+                </div>
+
+                <span className="snapshot-count">
+                  {pluralize(
+                    costDrivers.length,
+                    'service',
+                  )}
+                </span>
+
+              </div>
+
+              <CostDriverList drivers={costDrivers} />
+
+            </section>
 
             <section className="panel section-gap">
+
               <div className="panel-head">
+
                 <div>
+
                   <div className="eyebrow">
                     / What Needs Attention
                   </div>
 
                   <div className="panel-title">
-                    Optimization Findings
+                    Optimization findings
                   </div>
 
-                  <div className="panel-sub">
-                    Cost conditions detected in
-                    your AWS environment. Open a
-                    finding to review the affected
-                    resource and supporting evidence.
-                  </div>
                 </div>
 
                 <span className="snapshot-count">
@@ -772,6 +1122,7 @@ export default function ResultsPage({
                     ? 'finding'
                     : 'findings'}
                 </span>
+
               </div>
 
               {!optimizationFindings.length ? (
@@ -780,46 +1131,54 @@ export default function ResultsPage({
                   identified in this analysis.
                 </div>
               ) : (
-                <div className="findings-results-list">
-                  {optimizationFindings.map(
-                    (finding) => (
-                      <FindingRow
-                        key={normalizeFindingKey(
-                          finding,
-                        )}
-                        finding={finding}
-                        onClick={() =>
-                          openFinding(
-                            finding,
-                          )
-                        }
-                      />
-                    ),
+                <div className="findings-bento">
+
+                  <FindingHeroCard
+                    finding={rankedFindings[0]}
+                    onClick={() =>
+                      openFinding(rankedFindings[0])
+                    }
+                  />
+
+                  {rankedFindings.length > 1 && (
+                    <div className="findings-card-grid">
+                      {rankedFindings.slice(1).map(
+                        (finding) => (
+                          <FindingCard
+                            key={normalizeFindingKey(
+                              finding,
+                            )}
+                            finding={finding}
+                            onClick={() =>
+                              openFinding(
+                                finding,
+                              )
+                            }
+                          />
+                        ),
+                      )}
+                    </div>
                   )}
+
                 </div>
               )}
+
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Recommendations                                               */}
-            {/* ------------------------------------------------------------ */}
-
             <section className="panel section-gap recommendations-results-panel">
+
               <div className="panel-head">
+
                 <div>
+
                   <div className="eyebrow">
                     / What To Do Next
                   </div>
 
                   <div className="panel-title">
-                    Recommended Actions
+                    Recommended actions
                   </div>
 
-                  <div className="panel-sub">
-                    Practical actions generated
-                    from the findings and their
-                    supporting evidence.
-                  </div>
                 </div>
 
                 <span className="snapshot-count">
@@ -829,15 +1188,17 @@ export default function ResultsPage({
                     ? 'action'
                     : 'actions'}
                 </span>
+
               </div>
 
               {!recommendationList.length ? (
                 <div className="chart-empty">
                   No optimization actions were
-                  recommended for this scan.
+                  generated for this scan.
                 </div>
               ) : (
                 <div className="recommendations-list">
+
                   {recommendationList.map(
                     (
                       recommendation,
@@ -854,7 +1215,8 @@ export default function ResultsPage({
                           key={
                             recommendationId(
                               recommendation,
-                            ) || index
+                            ) ||
+                            index
                           }
                           recommendation={
                             recommendation
@@ -871,41 +1233,40 @@ export default function ResultsPage({
                       )
                     },
                   )}
+
                 </div>
               )}
+
             </section>
 
-            {/* ------------------------------------------------------------ */}
-            {/* Data quality                                                   */}
-            {/* ------------------------------------------------------------ */}
-
             <section className="panel section-gap data-quality-panel">
+
               <div className="panel-head">
+
                 <div>
+
                   <div className="eyebrow">
                     / Data Quality
                   </div>
 
                   <div className="panel-title">
-                    Billing & Resource Checks
+                    Billing & resource checks
                   </div>
 
-                  <div className="panel-sub">
-                    Items that may affect cost
-                    attribution or resource
-                    reconciliation. These are
-                    separate from optimization
-                    opportunities.
-                  </div>
                 </div>
 
                 <span className="snapshot-count">
-                  {reconciliationFindings.length}{' '}
-                  {reconciliationFindings.length ===
-                  1
-                    ? 'check'
-                    : 'checks'}
+                  {
+                    reconciliationFindings.length
+                  }{' '}
+                  {
+                    reconciliationFindings.length ===
+                    1
+                      ? 'check'
+                      : 'checks'
+                  }
                 </span>
+
               </div>
 
               {!reconciliationFindings.length ? (
@@ -916,6 +1277,7 @@ export default function ResultsPage({
                 </div>
               ) : (
                 <div className="reconciliation-list">
+
                   {reconciliationFindings.map(
                     (finding) => (
                       <ReconciliationRow
@@ -931,9 +1293,12 @@ export default function ResultsPage({
                       />
                     ),
                   )}
+
                 </div>
               )}
+
             </section>
+
           </>
         )}
 
@@ -951,11 +1316,22 @@ export default function ResultsPage({
             : null
         }
         onClose={closeModal}
-        onViewFinding={focusFinding}
+        onViewFinding={
+          openSourceFinding
+        }
         onViewRecommendation={
           openRecommendationFromFinding
         }
       />
+
+      <CollectionSummaryModal
+        open={collectionSummaryOpen}
+        loading={collectionSummaryLoading}
+        error={collectionSummaryError}
+        summary={collectionSummary}
+        onClose={() => setCollectionSummaryOpen(false)}
+      />
+
     </div>
   )
 }

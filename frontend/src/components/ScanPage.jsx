@@ -5,6 +5,10 @@ import {
   formatMoneyOrDash,
   pluralize,
 } from '../utils/format'
+import {
+  isDoneStatus,
+  isRunningStatus,
+} from '../utils/scanStatus'
 
 function formatLocalDate(value) {
   const year = value.getFullYear()
@@ -113,14 +117,11 @@ export default function ScanPage({
 
   const isRunning =
     loading ||
-    status === 'running' ||
-    status === 'analyzing' ||
-    status === 'pending'
+    isRunningStatus(status)
 
   const isDone =
     status === 'done' ||
-    scanData?.status === 'completed' ||
-    scanData?.status === 'completed_with_errors'
+    isDoneStatus(scanData?.status)
 
   // The id must be read off the scan itself. Passing the click handler
   // directly (onClick={onViewResults}) hands React's SyntheticEvent to

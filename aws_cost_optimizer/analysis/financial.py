@@ -36,27 +36,8 @@ def calculate_savings(
     confidence: str | None,
     attribution_scope: str | None = None,
     target_cost: float | None = None,
+    full_elimination: bool = False,
 ) -> dict[str, float | str | None]:
-    """
-    Calculate a conservative financial impact.
-
-    Rules
-    -----
-    1. No cost:
-        all financial values are None.
-
-    2. Resource-attributed cost + target cost:
-        savings = current - target.
-
-    3. Resource-attributed cost + high confidence:
-        savings may equal current cost.
-
-    4. Non-resource-attributed cost:
-        savings remain unquantified.
-
-    This prevents collection-plan spend from being presented
-    as savings for one individual resource.
-    """
 
     normalized_confidence = (
         str(confidence).strip().lower()
@@ -103,13 +84,6 @@ def calculate_savings(
     # --------------------------------------------------------------
     # Cost exists, but it is not attributed to the affected
     # resource.
-    #
-    # Example:
-    #
-    #   NAT Gateway usage = $500
-    #   3 NAT Gateways discovered
-    #
-    # We cannot claim that one NAT Gateway is responsible for $500.
     # --------------------------------------------------------------
 
     if normalized_scope != "resource":
@@ -159,56 +133,50 @@ def calculate_savings(
                 ),
                 "savings_basis": "target_cost",
             }
-
     # --------------------------------------------------------------
-    # Whole-cost savings are only allowed when:
-    #
-    #   resource-attributed
-    #   +
-    #   high confidence
-    #
-    # This is still conservative compared with blindly using
-    # collection-plan cost.
+    # Whole-cost savings are only allowed when the resource cost is
+    # attributed AND the finding itself means the resource can be
+    # fully eliminated (not merely "underutilized" or "stopped" --
+    # a stopped instance can still carry storage/backup cost, and
+    # confidence in the *detection* is not proof of full removal).
     # --------------------------------------------------------------
 
-    if normalized_confidence == "high":
-        savings = current
+    if full_elimination:
 
-    else:
-        savings = 0.0
+        return {
+            "observed_monthly_cost": round(
+                current,
+                2,
+            ),
+            "estimated_monthly_savings": round(
+                current,
+                2,
+            ),
+            "savings_confidence": (
+                normalized_confidence
+            ),
+            "savings_basis": (
+                "full_resource_elimination"
+            ),
+        }
 
+    # Resource-attributed cost exists, but nothing tells us how
+    # much of it would actually be saved.
     return {
         "observed_monthly_cost": round(
             current,
             2,
         ),
-        "estimated_monthly_savings": round(
-            savings,
-            2,
-        ),
-        "savings_confidence": (
-            normalized_confidence
-        ),
-        "savings_basis": (
-            "resource_attributed"
-        ),
+        "estimated_monthly_savings": None,
+        "savings_confidence": None,
+        "savings_basis": "target_cost_required",
     }
 
 
 def normalize_financial_impact(
     value: Any,
 ) -> dict[str, Any]:
-    """
-    Normalize financial impact into one canonical format.
 
-    Canonical fields:
-
-        observed_monthly_cost
-        estimated_monthly_savings
-        savings_confidence
-        savings_basis
-        currency
-    """
 
     if not isinstance(value, dict):
         return {

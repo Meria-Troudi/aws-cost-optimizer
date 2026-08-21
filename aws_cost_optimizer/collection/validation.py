@@ -14,6 +14,7 @@ from aws_cost_optimizer.analysis.reconciliation import (
     NO_COST,
     UNKNOWN,
     reconcile_collection_plan,
+    resource_id as _reconciliation_resource_id,
 )
 
 
@@ -61,6 +62,99 @@ def _plan_cost(
         return 0.0
 
 
+def _stamp_reconciled_billing(
+    resources: list[dict[str, Any]],
+    reconciliation: dict[str, Any],
+) -> None:
+    """
+    Write reconciliation's billing verdict onto each resource's own
+    cost_context, in place.
+
+    reconciliation computes ONE verdict for the whole plan (it may
+    only ever be "resource" scope when exactly one resource matched),
+    but `resources` here can contain more than that one resource --
+    e.g. an identity-matched RDS billing line where a second,
+    unrelated RDS instance was also discovered and is still being
+    analyzed. That second resource must not inherit the first one's
+    resource-scoped cost, so the verdict is applied per resource,
+    keyed by `matched_resource_ids`.
+
+    Safe to mutate in place: collection/manager.py gives every
+    resource its own cost_context copy, never a shared object.
+    """
+
+    matched_ids = set(
+        reconciliation.get(
+            "matched_resource_ids"
+        )
+        or []
+    )
+
+    reconciled_billing = (
+        reconciliation.get("billing")
+        or {}
+    )
+
+    claimable = reconciliation.get(
+        "claimable_resource_cost"
+    )
+
+    # Any resource that isn't THE claimed match still gets the
+    # billing as context/evidence -- just never as its own claimed
+    # cost, regardless of what the plan-level verdict says.
+    unclaimed_billing = dict(
+        reconciled_billing
+    )
+    unclaimed_billing[
+        "claimable_resource_cost"
+    ] = None
+
+    if unclaimed_billing.get(
+        "attribution_scope"
+    ) == "resource":
+        unclaimed_billing[
+            "attribution_scope"
+        ] = "collection_plan"
+        unclaimed_billing[
+            "resource_cost_attributed"
+        ] = False
+
+    for resource in resources:
+
+        if not isinstance(
+            resource,
+            dict,
+        ):
+            continue
+
+        cost_context = resource.get(
+            "cost_context"
+        )
+
+        if not isinstance(
+            cost_context,
+            dict,
+        ):
+            cost_context = {}
+            resource[
+                "cost_context"
+            ] = cost_context
+
+        is_claimed_match = (
+            claimable is not None
+            and _reconciliation_resource_id(
+                resource
+            )
+            in matched_ids
+        )
+
+        cost_context.update(
+            reconciled_billing
+            if is_claimed_match
+            else unclaimed_billing
+        )
+
+
 def enrich_collection_result(
     plan: dict[str, Any],
     result: dict[str, Any],
@@ -71,10 +165,16 @@ def enrich_collection_result(
         or []
     )
 
+    completed = (
+        result.get("status")
+        == "completed"
+    )
+
     reconciliation = (
         reconcile_collection_plan(
             plan,
             discovered_resources,
+            collection_complete=completed,
         )
     )
 
@@ -82,16 +182,21 @@ def enrich_collection_result(
         "status"
     )
 
-    completed = (
-        result.get("status")
-        == "completed"
-    )
-
     resources_for_analysis = (
         reconciliation.get(
             "resources_for_analysis"
         )
         or []
+    )
+
+    # This is the only place a resource document ever receives cost
+    # evidence, and the only place that evidence is allowed to carry
+    # a "resource" attribution verdict -- reconciliation already
+    # decided, above, whether that's honest for this plan. Analyzers
+    # must never re-derive attribution themselves.
+    _stamp_reconciled_billing(
+        resources_for_analysis,
+        reconciliation,
     )
 
     analysis_ready = (

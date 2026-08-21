@@ -6,14 +6,13 @@ Scan execution service.
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import func
 
-from aws_cost_optimizer.collectors.cost.collector import CostCollector
+from aws_cost_optimizer.collection.cost.collector import CostCollector
 from aws_cost_optimizer.planner.planner import CollectionPlanner
-from aws_cost_optimizer.collectors.manager import CollectorManager
+from aws_cost_optimizer.collection.manager import CollectorManager
 
 from aws_cost_optimizer.collection.validation import (
     resources_for_analysis,
@@ -25,7 +24,12 @@ from aws_cost_optimizer.recommendations.optimization import (
 )
 
 from backend.database.models.cost_record import CostRecord
-from backend.database.repositories.scan_run_repository import update_scan_progress
+from backend.database.repositories.scan_run_repository import (
+    complete_scan_run,
+    fail_scan_run,
+    mark_scan_running,
+    update_scan_progress,
+)
 from backend.database.utils import json_dumps
 
 
@@ -88,10 +92,10 @@ class ScanService:
         all_recommendations: list[dict[str, Any]] = []
 
         try:
-    
-            self._set_status(
-                scan,
-                "running",
+
+            mark_scan_running(
+                self.db,
+                scan.id,
             )
 
             self._safe_commit()
@@ -283,21 +287,20 @@ class ScanService:
                     ] += 1
 
                     continue
+                # Billing dimensions only. The attribution verdict
+                # (whether this cost is genuinely this resource's
+                # own, or shared/historical/unknown) is decided
+                # once, per resource, by reconciliation -- not
+                # guessed here before any resource has even been
+                # matched against the bill.
                 cost_context = {
                     "service": service,
                     "usage_type": usage_type,
                     "region": region,
-                    # Read by normalize_billing_context()
-                    # (aws_cost_optimizer/analysis/billing.py) as the
-                    # top-level attribution signal -- this cost is a
-                    # usage-type+region total, not one resource's cost.
-                    "attribution_scope": "collection_plan",
-                    "resource_cost_attributed": False,
                     "cost": {
                         "value": cost_value,
                         "currency": "USD",
                         "scope": "usage_type_region",
-                        "resource_level_attribution": False,
                     },
                 }
 
@@ -603,17 +606,15 @@ class ScanService:
 
             self._report_progress(scan, 100)
 
-            self._set_status(
-                scan,
-                "completed",
-            )
-
-            self._set_outcome(
-                scan,
-                {
-                    "status": "completed",
-                    "metrics": scan_metrics,
-                },
+            complete_scan_run(
+                self.db,
+                scan.id,
+                outcome=json_dumps(
+                    {
+                        "status": "completed",
+                        "metrics": scan_metrics,
+                    }
+                ),
             )
 
             self._safe_commit()
@@ -659,23 +660,17 @@ class ScanService:
                 except Exception:
                     pass
 
-                self._set_status(
-                    scan,
-                    "failed",
-                )
-
-                self._set_error(
-                    scan,
+                fail_scan_run(
+                    self.db,
+                    scan.id,
                     error_message,
-                )
-
-                self._set_outcome(
-                    scan,
-                    {
-                        "status": "failed",
-                        "error": error_message,
-                        "metrics": scan_metrics,
-                    },
+                    outcome=json_dumps(
+                        {
+                            "status": "failed",
+                            "error": error_message,
+                            "metrics": scan_metrics,
+                        }
+                    ),
                 )
 
                 self._safe_commit()
@@ -797,84 +792,6 @@ class ScanService:
         except Exception:
             self._safe_rollback()
 
-    @staticmethod
-    def _set_status(
-        scan,
-        status: str,
-    ) -> None:
-       
-
-        scan.status = status
-
-        if status in {
-            "completed",
-            "failed",
-        }:
-
-            if hasattr(
-                scan,
-                "finished_at",
-            ):
-                scan.finished_at = datetime.now(
-                    timezone.utc
-                ).replace(
-                    tzinfo=None
-                )
-
-        # update_scan_progress() deliberately clamps in-flight progress
-        # to 99 so a running scan never displays as finished. Only the
-        # terminal transition may write 100, and it must be written
-        # here because ScanService sets status directly rather than
-        # going through complete_scan_run().
-        if status == "completed":
-
-            if hasattr(
-                scan,
-                "progress_percent",
-            ):
-                scan.progress_percent = 100.0
-
-    @staticmethod
-    def _set_error(
-        scan,
-        message: str,
-    ) -> None:
-       
-
-        if hasattr(
-            scan,
-            "error_message",
-        ):
-            scan.error_message = str(
-                message
-            )
-
-    @staticmethod
-    def _set_outcome(
-        scan,
-        outcome: Any,
-    ) -> None:
-       
-
-        if not hasattr(
-            scan,
-            "outcome",
-        ):
-            return
-
-        try:
-            import json
-
-            scan.outcome = json.dumps(
-                outcome,
-                default=str,
-            )
-
-        except Exception:
-            scan.outcome = str(
-                outcome
-            )
-
     def _safe_commit(self) -> None:
         
 
@@ -905,148 +822,3 @@ class ScanService:
             ValueError,
         ):
             return 0
-
-    def build_summary(
-        self,
-        result: dict[str, Any],
-    ) -> dict[str, Any]:
-       
-        metrics = result.get(
-            "metrics",
-            {},
-        )
-
-        if not isinstance(
-            metrics,
-            dict,
-        ):
-            metrics = {}
-
-        findings = result.get(
-            "findings",
-            [],
-        )
-
-        recommendations = result.get(
-            "recommendations",
-            [],
-        )
-
-        if not isinstance(
-            findings,
-            list,
-        ):
-            findings = []
-
-        if not isinstance(
-            recommendations,
-            list,
-        ):
-            recommendations = []
-
-        return {
-            "scan_id": result.get(
-                "scan_id"
-            ),
-
-            "status": result.get(
-                "status"
-            ),
-
-            "total_cost": float(
-                metrics.get(
-                    "cost_collected",
-                    0.0,
-                )
-                or 0.0
-            ),
-
-            "resources": self._safe_int(
-                metrics.get(
-                    "resources_collected",
-                    0,
-                )
-            ),
-
-            "metrics_queried": self._safe_int(
-                metrics.get(
-                    "metrics_queried",
-                    0,
-                )
-            ),
-
-            "metrics_observed": self._safe_int(
-                metrics.get(
-                    "metrics_observed",
-                    0,
-                )
-            ),
-
-            "metrics_no_data": self._safe_int(
-                metrics.get(
-                    "metrics_no_data",
-                    0,
-                )
-            ),
-
-            "metric_errors": self._safe_int(
-                metrics.get(
-                    "metric_errors",
-                    0,
-                )
-            ),
-
-            "collection_plans": self._safe_int(
-                metrics.get(
-                    "collection_plans",
-                    0,
-                )
-            ),
-
-            "collection_not_found": self._safe_int(
-                metrics.get(
-                    "collection_not_found",
-                    0,
-                )
-            ),
-
-            "failed_collectors": self._safe_int(
-                metrics.get(
-                    "failed_collectors",
-                    0,
-                )
-            ),
-
-            "partial_collectors": self._safe_int(
-                metrics.get(
-                    "partial_collectors",
-                    0,
-                )
-            ),
-
-            "topology_collected": self._safe_int(
-                metrics.get(
-                    "topology_collected",
-                    0,
-                )
-            ),
-
-            "findings": len(
-                findings
-            ),
-
-            "recommendations": len(
-                recommendations
-            ),
-
-            "duration_seconds": round(
-                float(
-                    metrics.get(
-                        "total_duration",
-                        0.0,
-                    )
-                    or 0.0
-                ),
-                2,
-            ),
-        }

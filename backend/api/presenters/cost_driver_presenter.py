@@ -14,10 +14,10 @@ from backend.api.presenters.utils import parse_json_object
 from backend.database.repositories.collection_plan_repository import (
     get_collection_plans_for_scan,
 )
-from backend.database.repositories.service_cost_repository import (
+from backend.database.repositories.cost.service_costs import (
     get_service_costs_with_rank,
 )
-from backend.database.repositories.usage_type_cost_repository import (
+from backend.database.repositories.cost.usage_types import (
     get_usage_types_by_service,
 )
 from backend.database.models.scan_run import ScanRun

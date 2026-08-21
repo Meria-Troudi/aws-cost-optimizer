@@ -1,38 +1,187 @@
 """
-Live AWS Cost Explorer service for the dashboard.
+Live AWS Cost Explorer service.
 
+Architecture
+------------
+
+The dashboard has two different cost concerns:
+
+1. Live overview
+   - current MTD
+   - previous month
+   - forecast
+   - 6-month history
+   - top services
+   - top regions
+   - top usage types
+   - service movements
+
+2. Cost Explorer investigation
+   - region filter
+   - specific date/month/custom range
+   - breakdown by service / usage type / region
+   - service drill-down into usage type + region
+
+The overview intentionally uses MONTHLY Cost Explorer aggregation.
+The explorer also uses MONTHLY aggregation.
+
+This is deliberate:
+the dashboard does not need daily line-item data for these views.
+
+Completed ranges are cached indefinitely.
+Open/current ranges use a short cache TTL.
+
+Cost Explorer is queried lazily for service drill-downs.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import time
 from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from aws_cost_optimizer.config.client import get_client
 from aws_cost_optimizer.config.settings import CE_REGION
+from backend.api.services.analytics_constants import (
+    MIN_PRIOR_COST_FOR_PERCENTAGE,
+)
+
+
+# ---------------------------------------------------------------------
+# Cache
+# ---------------------------------------------------------------------
+
+_QUERY_CACHE: dict[str, tuple[float | None, Any]] = {}
+
+CACHE_TTL_SECONDS = 300
+
+
+def _cache_key(*parts: Any) -> str:
+    raw = json.dumps(
+        parts,
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(
+        raw.encode("utf-8")
+    ).hexdigest()
+
+
+def _cache_get(
+    key: str,
+) -> Any | None:
+
+    entry = _QUERY_CACHE.get(key)
+
+    if entry is None:
+        return None
+
+    expires_at, value = entry
+
+    if (
+        expires_at is not None
+        and time.time() >= expires_at
+    ):
+        _QUERY_CACHE.pop(
+            key,
+            None,
+        )
+        return None
+
+    return value
+
+
+def _cache_set(
+    key: str,
+    value: Any,
+    *,
+    end: date,
+    today: date,
+) -> None:
+
+    expires_at = (
+        None
+        if end <= today
+        else time.time() + CACHE_TTL_SECONDS
+    )
+
+    _QUERY_CACHE[key] = (
+        expires_at,
+        value,
+    )
+
+
+# ---------------------------------------------------------------------
+# Service
+# ---------------------------------------------------------------------
 
 
 class DashboardService:
 
     CURRENCY = "USD"
+
     DEFAULT_HISTORY_MONTHS = 6
-    DEFAULT_DIMENSION_LIMIT = 15
+
+    MAX_HISTORY_MONTHS = 12
+
     SERVICE_CHANGE_LIMIT = 10
+
+    DEFAULT_DIMENSION_LIMIT = 15
+
     MIN_CHANGE_AMOUNT = 1.0
-    MIN_PRIOR_COST_FOR_PERCENTAGE = 5.0
+
+    MIN_PRIOR_COST_FOR_PERCENTAGE = MIN_PRIOR_COST_FOR_PERCENTAGE
+
+    MIN_VISIBLE_COST = 0.01
+
+    PERIOD_TYPES = {
+        "rolling",
+        "current",
+        "previous",
+        "month",
+        "custom",
+    }
+
+    DIMENSIONS = {
+        "SERVICE",
+        "REGION",
+        "USAGE_TYPE",
+    }
 
     def __init__(self) -> None:
-        self.client = get_client("ce", CE_REGION)
+
+        self.client = get_client(
+            "ce",
+            CE_REGION,
+        )
+
+    # ================================================================
+    # DATE HELPERS
+    # ================================================================
 
     @staticmethod
-    def _month_start(value: date) -> date:
-        return value.replace(day=1)
+    def _month_start(
+        value: date,
+    ) -> date:
+
+        return value.replace(
+            day=1
+        )
 
     @staticmethod
-    def _next_month(value: date) -> date:
+    def _next_month(
+        value: date,
+    ) -> date:
+
         if value.month == 12:
-            return date(value.year + 1, 1, 1)
+            return date(
+                value.year + 1,
+                1,
+                1,
+            )
 
         return date(
             value.year,
@@ -41,8 +190,13 @@ class DashboardService:
         )
 
     @staticmethod
-    def _previous_month(value: date) -> date:
-        first = value.replace(day=1)
+    def _previous_month(
+        value: date,
+    ) -> date:
+
+        first = value.replace(
+            day=1
+        )
 
         if first.month == 1:
             return date(
@@ -63,39 +217,63 @@ class DashboardService:
         count: int,
     ) -> list[str]:
 
-        if count < 1:
-            raise ValueError(
-                "history_months must be greater than zero"
-            )
+        cursor = today.replace(
+            day=1
+        )
 
-        current = today.replace(day=1)
-
-        months: list[str] = []
-        cursor = current
+        values = []
 
         for _ in range(count):
-            months.append(cursor.strftime("%Y-%m"))
-            cursor = DashboardService._previous_month(cursor)
+            values.append(
+                cursor.strftime("%Y-%m")
+            )
+            cursor = DashboardService._previous_month(
+                cursor
+            )
 
-        months.reverse()
-        return months
+        return list(
+            reversed(values)
+        )
 
+    # ================================================================
+    # COST EXPLORER CORE QUERY
+    # ================================================================
 
     def _query(
         self,
         start: date,
         end: date,
         *,
-        granularity: str,
+        granularity: str = "MONTHLY",
         group_by: list[dict[str, str]] | None = None,
         region: str | None = None,
         service: str | None = None,
+        force_refresh: bool = False,
     ) -> list[dict[str, Any]]:
+
         if start >= end:
             raise ValueError(
                 f"Invalid Cost Explorer period: "
                 f"{start.isoformat()} >= {end.isoformat()}"
             )
+
+        cache_key = _cache_key(
+            "cost-query",
+            start.isoformat(),
+            end.isoformat(),
+            granularity,
+            group_by,
+            region,
+            service,
+        )
+
+        if not force_refresh:
+            cached = _cache_get(
+                cache_key
+            )
+
+            if cached is not None:
+                return cached
 
         params: dict[str, Any] = {
             "TimePeriod": {
@@ -103,7 +281,9 @@ class DashboardService:
                 "End": end.isoformat(),
             },
             "Granularity": granularity,
-            "Metrics": ["UnblendedCost"],
+            "Metrics": [
+                "UnblendedCost"
+            ],
         }
 
         if group_by:
@@ -116,7 +296,9 @@ class DashboardService:
                 {
                     "Dimensions": {
                         "Key": "REGION",
-                        "Values": [region],
+                        "Values": [
+                            region
+                        ],
                     }
                 }
             )
@@ -126,32 +308,51 @@ class DashboardService:
                 {
                     "Dimensions": {
                         "Key": "SERVICE",
-                        "Values": [service],
+                        "Values": [
+                            service
+                        ],
                     }
                 }
             )
 
         if len(filters) == 1:
+
             params["Filter"] = filters[0]
+
         elif len(filters) > 1:
+
             params["Filter"] = {
-                "And": filters,
+                "And": filters
             }
 
-        results_by_period: dict[str, dict[str, Any]] = {}
+        results_by_period: dict[
+            str,
+            dict[str, Any],
+        ] = {}
 
-        response = self.client.get_cost_and_usage(**params)
+        response = self.client.get_cost_and_usage(
+            **params
+        )
 
         self._merge_response(
             results_by_period,
             response,
         )
 
-        while response.get("NextPageToken"):
-            params["NextPageToken"] = response["NextPageToken"]
+        while response.get(
+            "NextPageToken"
+        ):
 
-            response = self.client.get_cost_and_usage(
-                **params
+            params["NextPageToken"] = (
+                response[
+                    "NextPageToken"
+                ]
+            )
+
+            response = (
+                self.client.get_cost_and_usage(
+                    **params
+                )
             )
 
             self._merge_response(
@@ -159,39 +360,51 @@ class DashboardService:
                 response,
             )
 
-        return [
+        result = [
             results_by_period[key]
-            for key in sorted(results_by_period)
+            for key in sorted(
+                results_by_period
+            )
         ]
+
+        _cache_set(
+            cache_key,
+            result,
+            end=end,
+            today=date.today(),
+        )
+
+        return result
 
     @staticmethod
     def _merge_response(
-        destination: dict[str, dict[str, Any]],
+        destination: dict[
+            str,
+            dict[str, Any],
+        ],
         response: dict[str, Any],
     ) -> None:
-        """
-        Merge paginated Cost Explorer responses.
-
-        Multiple pages can contain different groups for the same
-        time period, so groups are accumulated.
-        """
 
         for block in response.get(
             "ResultsByTime",
             [],
         ):
+
             period = block.get(
                 "TimePeriod",
                 {},
             )
 
-            period_start = period.get("Start")
+            start = period.get(
+                "Start"
+            )
 
-            if not period_start:
+            if not start:
                 continue
 
-            if period_start not in destination:
-                destination[period_start] = {
+            if start not in destination:
+
+                destination[start] = {
                     "TimePeriod": period,
                     "Estimated": block.get(
                         "Estimated",
@@ -204,34 +417,51 @@ class DashboardService:
                     ),
                 }
 
-            destination[period_start]["Groups"].extend(
-                block.get("Groups", [])
+            destination[start][
+                "Groups"
+            ].extend(
+                block.get(
+                    "Groups",
+                    [],
+                )
             )
 
+    # ================================================================
+    # SAFE AMOUNT
+    # ================================================================
+
     @staticmethod
-    def _amount(value: dict[str, Any]) -> float:
-        """
-        Extract UnblendedCost from either:
+    def _amount(
+        value: dict[str, Any],
+    ) -> float:
 
-        block["Total"]["UnblendedCost"]
-
-        or:
-
-        group["Metrics"]["UnblendedCost"]
-        """
-
-        if not isinstance(value, dict):
+        if not isinstance(
+            value,
+            dict,
+        ):
             return 0.0
 
-        metrics = value.get("Metrics")
+        metrics = value.get(
+            "Metrics"
+        )
 
-        if isinstance(metrics, dict):
-            unblended = metrics.get("UnblendedCost")
+        if isinstance(
+            metrics,
+            dict,
+        ):
 
-            if isinstance(unblended, dict):
+            cost = metrics.get(
+                "UnblendedCost"
+            )
+
+            if isinstance(
+                cost,
+                dict,
+            ):
+
                 try:
                     return float(
-                        unblended.get(
+                        cost.get(
                             "Amount",
                             0.0,
                         )
@@ -242,12 +472,18 @@ class DashboardService:
                 ):
                     return 0.0
 
-        unblended = value.get("UnblendedCost")
+        cost = value.get(
+            "UnblendedCost"
+        )
 
-        if isinstance(unblended, dict):
+        if isinstance(
+            cost,
+            dict,
+        ):
+
             try:
                 return float(
-                    unblended.get(
+                    cost.get(
                         "Amount",
                         0.0,
                     )
@@ -260,249 +496,126 @@ class DashboardService:
 
         return 0.0
 
+    # ================================================================
+    # OVERVIEW
+    # ================================================================
+
     def get_current_mtd(
         self,
+        *,
         today: date | None = None,
         region: str | None = None,
     ) -> dict[str, Any]:
+
         today = today or date.today()
 
-        month_start = self._month_start(today)
-
-        # Cost Explorer End is exclusive.
-        # tomorrow includes today's complete daily bucket.
-        end = today + timedelta(days=1)
-
-        results = self._query(
-            month_start,
-            end,
-            granularity="DAILY",
-            region=region,
+        start = self._month_start(
+            today
         )
 
-        amount = sum(
-            self._amount(
-                block.get(
-                    "Total",
-                    {},
-                )
-            )
-            for block in results
+        end = today + timedelta(
+            days=1
         )
-
-        estimated = any(
-            bool(
-                block.get(
-                    "Estimated",
-                    False,
-                )
-            )
-            for block in results
-        )
-
-        data_through = None
-
-        if results:
-            data_through = (
-                results[-1]
-                .get(
-                    "TimePeriod",
-                    {},
-                )
-                .get("End")
-            )
-
-        return {
-            "month": month_start.strftime("%Y-%m"),
-            "start_date": month_start.isoformat(),
-            "end_date": today.isoformat(),
-            "amount": round(amount, 2),
-            "currency": self.CURRENCY,
-            "calendar_days_elapsed": today.day,
-            "data_points": len(results),
-            "data_through": data_through,
-            "estimated": estimated,
-        }
-
-    def get_previous_comparable_mtd(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> dict[str, Any]:
-        today = today or date.today()
-
-        previous_month = self._previous_month(today)
-
-        days = min(
-            today.day,
-            monthrange(
-                previous_month.year,
-                previous_month.month,
-            )[1],
-        )
-
-        start = previous_month
-
-        # End is exclusive.
-        end = start + timedelta(days=days)
 
         results = self._query(
             start,
             end,
-            granularity="DAILY",
+            granularity="MONTHLY",
             region=region,
         )
 
         amount = sum(
             self._amount(
-                block.get(
+                item.get(
                     "Total",
                     {},
                 )
             )
-            for block in results
+            for item in results
         )
 
         estimated = any(
             bool(
-                block.get(
+                item.get(
                     "Estimated",
                     False,
                 )
             )
-            for block in results
+            for item in results
         )
 
-        data_through = None
-
-        if results:
-            data_through = (
-                results[-1]
-                .get(
-                    "TimePeriod",
-                    {},
-                )
-                .get("End")
-            )
-
         return {
-            "month": previous_month.strftime("%Y-%m"),
+            "month": start.strftime(
+                "%Y-%m"
+            ),
             "start_date": start.isoformat(),
-            "end_date": (
-                end - timedelta(days=1)
-            ).isoformat(),
-            "days": days,
-            "amount": round(amount, 2),
+            "end_date": today.isoformat(),
+            "amount": round(
+                amount,
+                2,
+            ),
             "currency": self.CURRENCY,
-            "data_points": len(results),
-            "data_through": data_through,
             "estimated": estimated,
         }
 
-    def get_mtd_comparison(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> dict[str, Any]:
-        current = self.get_current_mtd(
-            today=today,
-            region=region,
-        )
-
-        previous = self.get_previous_comparable_mtd(
-            today=today,
-            region=region,
-        )
-
-        difference = (
-            current["amount"]
-            - previous["amount"]
-        )
-
-        previous_amount = previous["amount"]
-
-        percentage = (
-            difference
-            / previous_amount
-            * 100
-            if previous_amount > 0
-            else None
-        )
-
-        if difference > 0.01:
-            direction = "increased"
-        elif difference < -0.01:
-            direction = "decreased"
-        else:
-            direction = "stable"
-
-        return {
-            "current": current,
-            "previous": previous,
-            "difference": round(
-                difference,
-                2,
-            ),
-            "percentage_change": (
-                round(
-                    percentage,
-                    2,
-                )
-                if percentage is not None
-                else None
-            ),
-            "direction": direction,
-        }
+    # ================================================================
+    # FORECAST
+    # ================================================================
 
     def get_current_month_forecast(
         self,
         today: date | None = None,
         region: str | None = None,
+        service: str | None = None,
+        *,
+        actual_mtd: float | None = None,
+        force_refresh: bool = False,
     ) -> dict[str, Any]:
 
+        from aws_cost_optimizer.collection.cost.cost_explorer import (
+            get_cost_forecast,
+        )
 
         today = today or date.today()
 
-        month_start = self._month_start(today)
-        next_month = self._next_month(today)
-
-        current = self.get_current_mtd(
-            today=today,
-            region=region,
+        month_start = self._month_start(
+            today
         )
 
-        actual_mtd = float(
-            current.get(
-                "amount",
-                0.0,
+        next_month = self._next_month(
+            today
+        )
+
+        if actual_mtd is None:
+
+            actual = self.get_current_mtd(
+                today=today,
+                region=region,
             )
-            or 0.0
-        )
 
-        forecast_start = today
-
-        data_through = current.get(
-            "data_through"
-        )
-
-        if data_through:
-            try:
-                data_through_date = date.fromisoformat(
-                    str(data_through)[:10]
+            actual_mtd = float(
+                actual.get(
+                    "amount",
+                    0.0,
                 )
+            )
 
-                if data_through_date > forecast_start:
-                    forecast_start = data_through_date
+        else:
 
-            except ValueError:
-                pass
+            actual_mtd = float(
+                actual_mtd
+            )
 
-        if forecast_start < month_start:
-            forecast_start = month_start
+        forecast_start = today + timedelta(
+            days=1
+        )
 
         if forecast_start >= next_month:
+
             return {
-                "month": month_start.strftime("%Y-%m"),
+                "month": month_start.strftime(
+                    "%Y-%m"
+                ),
                 "forecast": round(
                     actual_mtd,
                     2,
@@ -512,63 +625,144 @@ class DashboardService:
                     2,
                 ),
                 "remaining_forecast": 0.0,
-                "forecast_start": forecast_start.isoformat(),
+                "lower_bound": round(
+                    actual_mtd,
+                    2,
+                ),
+                "upper_bound": round(
+                    actual_mtd,
+                    2,
+                ),
+                "forecast_start": today.isoformat(),
                 "forecast_end": (
-                    next_month - timedelta(days=1)
+                    next_month
+                    - timedelta(
+                        days=1
+                    )
                 ).isoformat(),
                 "currency": self.CURRENCY,
                 "source": "aws_cost_explorer",
                 "status": "current_period_complete",
             }
 
-        params: dict[str, Any] = {
-            "TimePeriod": {
-                "Start": forecast_start.isoformat(),
-                "End": next_month.isoformat(),
-            },
-            "Granularity": "MONTHLY",
-            "Metric": "UNBLENDED_COST",
-        }
-
-        if region:
-            params["Filter"] = {
-                "Dimensions": {
-                    "Key": "REGION",
-                    "Values": [region],
-                }
-            }
-
-        response = self.client.get_cost_forecast(
-            **params
+        cache_key = _cache_key(
+            "forecast",
+            forecast_start.isoformat(),
+            next_month.isoformat(),
+            region,
+            service,
         )
 
-        total = response.get(
-            "Total",
-            {},
-        )
+        forecast_data = None
 
-        try:
-            remaining_forecast = float(
-                total.get(
-                    "Amount",
-                    0.0,
-                )
+        if not force_refresh:
+
+            forecast_data = _cache_get(
+                cache_key
             )
-        except (
-            TypeError,
-            ValueError,
-        ):
-            remaining_forecast = 0.0
 
-        projected_total = (
-            actual_mtd
-            + remaining_forecast
+        if forecast_data is None:
+
+            try:
+
+                forecast_data = get_cost_forecast(
+                    forecast_start.isoformat(),
+                    next_month.isoformat(),
+                    region=region,
+                    service=service,
+                    metric="UNBLENDED_COST",
+                    prediction_interval_level=80,
+                )
+
+            except Exception as exc:
+
+                return {
+                    "month": month_start.strftime(
+                        "%Y-%m"
+                    ),
+                    "forecast": None,
+                    "actual_mtd": round(
+                        actual_mtd,
+                        2,
+                    ),
+                    "remaining_forecast": None,
+                    "lower_bound": None,
+                    "upper_bound": None,
+                    "source": "aws_cost_explorer",
+                    "status": "unavailable",
+                    "error": str(exc),
+                }
+
+            _cache_set(
+                cache_key,
+                forecast_data,
+                end=next_month,
+                today=today,
+            )
+
+        remaining = float(
+            forecast_data.get(
+                "forecast",
+                0.0,
+            )
+            or 0.0
         )
+
+        projected = (
+            actual_mtd
+            + remaining
+        )
+
+        lower_bound = None
+        upper_bound = None
+
+        result_rows = forecast_data.get(
+            "results",
+            [],
+        )
+
+        if result_rows:
+
+            lower_values = [
+                row["lower_bound"]
+                for row in result_rows
+                if row.get(
+                    "lower_bound"
+                )
+                is not None
+            ]
+
+            upper_values = [
+                row["upper_bound"]
+                for row in result_rows
+                if row.get(
+                    "upper_bound"
+                )
+                is not None
+            ]
+
+            if lower_values:
+                lower_bound = (
+                    actual_mtd
+                    + sum(
+                        lower_values
+                    )
+                )
+
+            if upper_values:
+                upper_bound = (
+                    actual_mtd
+                    + sum(
+                        upper_values
+                    )
+                )
 
         return {
-            "month": month_start.strftime("%Y-%m"),
+            "month": month_start.strftime(
+                "%Y-%m"
+            ),
             "forecast": round(
-                projected_total,
+                projected,
                 2,
             ),
             "actual_mtd": round(
@@ -576,275 +770,44 @@ class DashboardService:
                 2,
             ),
             "remaining_forecast": round(
-                remaining_forecast,
+                remaining,
                 2,
+            ),
+            "lower_bound": (
+                round(
+                    lower_bound,
+                    2,
+                )
+                if lower_bound is not None
+                else None
+            ),
+            "upper_bound": (
+                round(
+                    upper_bound,
+                    2,
+                )
+                if upper_bound is not None
+                else None
             ),
             "forecast_start": forecast_start.isoformat(),
             "forecast_end": (
-                next_month - timedelta(days=1)
+                next_month
+                - timedelta(
+                    days=1
+                )
             ).isoformat(),
-            "currency": total.get(
-                "Unit",
-                self.CURRENCY,
-            ),
+            "currency": self.CURRENCY,
             "source": "aws_cost_explorer",
+            "metric": "UNBLENDED_COST",
+            "prediction_interval_level": 80,
             "status": "available",
         }
 
-    def get_monthly_cost(
-        self,
-        months: int = DEFAULT_HISTORY_MONTHS,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> list[dict[str, Any]]:
-        if months < 1:
-            raise ValueError(
-                "months must be greater than zero"
-            )
+    # ================================================================
+    # GENERIC MONTHLY GROUPING
+    # ================================================================
 
-        today = today or date.today()
-
-        current_month = self._month_start(today)
-
-        start = current_month
-
-        for _ in range(months - 1):
-            start = self._previous_month(start)
-
-        end = self._next_month(current_month)
-
-        results = self._query(
-            start,
-            end,
-            granularity="MONTHLY",
-            region=region,
-        )
-
-        output: list[dict[str, Any]] = []
-
-        for block in results:
-            period = block.get(
-                "TimePeriod",
-                {},
-            )
-
-            period_start = period.get("Start")
-
-            if not period_start:
-                continue
-
-            output.append(
-                {
-                    "month": period_start[:7],
-                    "start_date": period_start,
-                    "end_date": period.get("End"),
-                    "amount": round(
-                        self._amount(
-                            block.get(
-                                "Total",
-                                {},
-                            )
-                        ),
-                        2,
-                    ),
-                    "estimated": bool(
-                        block.get(
-                            "Estimated",
-                            False,
-                        )
-                    ),
-                    "currency": self.CURRENCY,
-                }
-            )
-
-        return sorted(
-            output,
-            key=lambda item: item["month"],
-        )
-
-    def get_monthly_service_cost(
-        self,
-        months: int = DEFAULT_HISTORY_MONTHS,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return monthly cost broken down by service."""
-        if months < 1:
-            raise ValueError(
-                "months must be greater than zero"
-            )
-
-        today = today or date.today()
-        current_month = self._month_start(today)
-        start = current_month
-
-        for _ in range(months - 1):
-            start = self._previous_month(start)
-
-        end = self._next_month(current_month)
-
-        results = self._query(
-            start,
-            end,
-            granularity="MONTHLY",
-            group_by=[
-                {
-                    "Type": "DIMENSION",
-                    "Key": "SERVICE",
-                }
-            ],
-            region=region,
-        )
-
-        by_month: dict[str, dict[str, float]] = {}
-
-        for block in results:
-            period = block.get("TimePeriod", {})
-            period_start = period.get("Start")
-
-            if not period_start:
-                continue
-
-            month_key = period_start[:7]
-
-            if month_key not in by_month:
-                by_month[month_key] = {}
-
-            for group in block.get("Groups", []):
-                keys = group.get("Keys", [])
-
-                if not keys:
-                    continue
-
-                service_name = keys[0]
-                amount = self._amount(group)
-
-                if amount <= 0:
-                    continue
-
-                by_month[month_key][service_name] = (
-                    by_month[month_key].get(
-                        service_name, 0.0
-                    )
-                    + amount
-                )
-
-        output: list[dict[str, Any]] = []
-
-        for month_key in sorted(by_month):
-            services_list = [
-                {
-                    "service": name,
-                    "amount": round(amount, 2),
-                }
-                for name, amount in sorted(
-                    by_month[month_key].items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            ]
-
-            output.append(
-                {
-                    "month": month_key,
-                    "services": services_list,
-                }
-            )
-
-        return output
-
-    def get_monthly_region_cost(
-        self,
-        months: int = DEFAULT_HISTORY_MONTHS,
-        today: date | None = None,
-        service: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return monthly cost broken down by region."""
-        if months < 1:
-            raise ValueError(
-                "months must be greater than zero"
-            )
-
-        today = today or date.today()
-        current_month = self._month_start(today)
-        start = current_month
-
-        for _ in range(months - 1):
-            start = self._previous_month(start)
-
-        end = self._next_month(current_month)
-
-        results = self._query(
-            start,
-            end,
-            granularity="MONTHLY",
-            group_by=[
-                {
-                    "Type": "DIMENSION",
-                    "Key": "REGION",
-                }
-            ],
-            service=service,
-        )
-
-        by_month: dict[str, dict[str, float]] = {}
-
-        for block in results:
-            period = block.get("TimePeriod", {})
-            period_start = period.get("Start")
-
-            if not period_start:
-                continue
-
-            month_key = period_start[:7]
-
-            if month_key not in by_month:
-                by_month[month_key] = {}
-
-            for group in block.get("Groups", []):
-                keys = group.get("Keys", [])
-
-                if not keys:
-                    continue
-
-                region_name = keys[0]
-                amount = self._amount(group)
-
-                if amount <= 0:
-                    continue
-
-                by_month[month_key][region_name] = (
-                    by_month[month_key].get(
-                        region_name, 0.0
-                    )
-                    + amount
-                )
-
-        output: list[dict[str, Any]] = []
-
-        for month_key in sorted(by_month):
-            regions_list = [
-                {
-                    "region": name,
-                    "amount": round(amount, 2),
-                }
-                for name, amount in sorted(
-                    by_month[month_key].items(),
-                    key=lambda item: item[1],
-                    reverse=True,
-                )
-            ]
-
-            output.append(
-                {
-                    "month": month_key,
-                    "regions": regions_list,
-                }
-            )
-
-        return output
-
-    def _get_grouped_cost(
+    def _monthly_grouped(
         self,
         start: date,
         end: date,
@@ -852,8 +815,16 @@ class DashboardService:
         dimension: str,
         region: str | None = None,
         service: str | None = None,
-        limit: int | None = DEFAULT_DIMENSION_LIMIT,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
+
+        dimension = dimension.upper()
+
+        if dimension not in self.DIMENSIONS:
+            raise ValueError(
+                f"Unsupported dimension: {dimension}"
+            )
+
         results = self._query(
             start,
             end,
@@ -868,13 +839,18 @@ class DashboardService:
             service=service,
         )
 
-        totals: dict[str, float] = {}
+        totals: dict[
+            str,
+            float,
+        ] = {}
 
         for block in results:
+
             for group in block.get(
                 "Groups",
                 [],
             ):
+
                 keys = group.get(
                     "Keys",
                     [],
@@ -883,12 +859,14 @@ class DashboardService:
                 if not keys:
                     continue
 
-                name = keys[0]
+                amount = self._amount(
+                    group
+                )
 
-                amount = self._amount(group)
-
-                if amount <= 0:
+                if amount < self.MIN_VISIBLE_COST:
                     continue
+
+                name = keys[0]
 
                 totals[name] = (
                     totals.get(
@@ -898,175 +876,289 @@ class DashboardService:
                     + amount
                 )
 
-        total = sum(totals.values())
+        total = sum(
+            totals.values()
+        )
 
-        output: list[dict[str, Any]] = []
+        rows = []
 
         for name, amount in sorted(
             totals.items(),
             key=lambda item: item[1],
             reverse=True,
         ):
-            output.append(
+
+            rows.append(
                 {
-                    dimension.lower(): name,
-                    "amount": round(
+                    "key": name,
+                    "cost": round(
                         amount,
                         2,
                     ),
-                    "share_pct": round(
-                        amount / total * 100,
-                        2,
-                    )
-                    if total
-                    else 0.0,
+                    "share_pct": (
+                        round(
+                            amount
+                            / total
+                            * 100,
+                            2,
+                        )
+                        if total
+                        else 0.0
+                    ),
                     "currency": self.CURRENCY,
                 }
             )
 
         if limit is not None:
-            output = output[:limit]
+            rows = rows[:limit]
 
-        for index, item in enumerate(
-            output,
+        for index, row in enumerate(
+            rows,
             start=1,
         ):
-            item["rank"] = index
+            row["rank"] = index
 
-        return output
+        return rows
 
-    def get_service_cost(
+    # ================================================================
+    # SERVICE / REGION / USAGE
+    # ================================================================
+
+    def _get_monthly_service_region_usage(
         self,
-        today: date | None = None,
+        start: date,
+        end: date,
+        *,
         region: str | None = None,
-    ) -> list[dict[str, Any]]:
-        today = today or date.today()
+        force_refresh: bool = False,
+    ) -> tuple[
+        list[dict[str, Any]],
+        list[dict[str, Any]],
+    ]:
 
-        return self._get_grouped_cost(
-            self._month_start(today),
-            today + timedelta(days=1),
-            dimension="SERVICE",
+        service_region = self._query(
+            start,
+            end,
+            granularity="MONTHLY",
+            group_by=[
+                {
+                    "Type": "DIMENSION",
+                    "Key": "SERVICE",
+                },
+                {
+                    "Type": "DIMENSION",
+                    "Key": "REGION",
+                },
+            ],
             region=region,
+            force_refresh=force_refresh,
         )
 
-    def _get_grouped_mtd_comparison(
+        service_usage = self._query(
+            start,
+            end,
+            granularity="MONTHLY",
+            group_by=[
+                {
+                    "Type": "DIMENSION",
+                    "Key": "SERVICE",
+                },
+                {
+                    "Type": "DIMENSION",
+                    "Key": "USAGE_TYPE",
+                },
+            ],
+            region=region,
+            force_refresh=force_refresh,
+        )
+
+        return (
+            service_region,
+            service_usage,
+        )
+
+    @staticmethod
+    def _flatten_groups(
+        results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+
+        rows = []
+
+        for block in results:
+
+            month = (
+                block
+                .get(
+                    "TimePeriod",
+                    {},
+                )
+                .get(
+                    "Start"
+                )
+            )
+
+            if not month:
+                continue
+
+            for group in block.get(
+                "Groups",
+                [],
+            ):
+
+                keys = group.get(
+                    "Keys",
+                    [],
+                )
+
+                if len(keys) < 2:
+                    continue
+
+                amount = DashboardService._amount(
+                    group
+                )
+
+                if (
+                    amount
+                    < DashboardService.MIN_VISIBLE_COST
+                ):
+                    continue
+
+                rows.append(
+                    {
+                        "month": month[
+                            :7
+                        ],
+                        "key1": keys[
+                            0
+                        ],
+                        "key2": keys[
+                            1
+                        ],
+                        "cost": amount,
+                    }
+                )
+
+        return rows
+
+    @staticmethod
+    def _totals_between(
+        rows: list[dict[str, Any]],
+        start: date,
+        end: date,
+        key_name: str,
+    ) -> dict[str, float]:
+
+        start_key = start.strftime(
+            "%Y-%m"
+        )
+
+        # `rows` are already at monthly granularity (one row per
+        # calendar month), but `end` is a day-precision exclusive
+        # bound that often falls *inside* its own month (e.g. "today
+        # + 1 day" for the still-open current month). Truncating that
+        # to "%Y-%m" and comparing with >= would wrongly exclude the
+        # entire current month. Anchor the inclusive upper bound to
+        # the last day actually covered by the window instead.
+        end_key = (
+            end - timedelta(days=1)
+        ).strftime("%Y-%m")
+
+        totals: dict[
+            str,
+            float,
+        ] = {}
+
+        for row in rows:
+
+            month = row[
+                "month"
+            ]
+
+            if month < start_key:
+                continue
+
+            if month > end_key:
+                continue
+
+            key = row[
+                key_name
+            ]
+
+            totals[key] = (
+                totals.get(
+                    key,
+                    0.0,
+                )
+                + row[
+                    "cost"
+                ]
+            )
+
+        return totals
+
+    def _rank_comparison(
         self,
+        current: dict[str, float],
+        previous: dict[str, float],
         *,
         dimension: str,
-        today: date | None = None,
-        region: str | None = None,
+        limit: int = 15,
     ) -> list[dict[str, Any]]:
-        """
-        Compare current MTD vs previous MTD for a given dimension.
 
-        The previous period uses the same number of elapsed days as the
-        current month (e.g. Aug 01-17 vs Jul 01-17), which makes the
-        month-over-month comparison valid for partial months.
-        """
-
-        today = today or date.today()
-
-        current_start = self._month_start(today)
-        current_end = today + timedelta(days=1)
-
-        previous_start = self._previous_month(today)
-
-        comparable_days = min(
-            today.day,
-            monthrange(
-                previous_start.year,
-                previous_start.month,
-            )[1],
-        )
-
-        previous_end = (
-            previous_start
-            + timedelta(days=comparable_days)
-        )
-
-        current_results = self._query(
-            current_start,
-            current_end,
-            granularity="MONTHLY",
-            group_by=[
-                {
-                    "Type": "DIMENSION",
-                    "Key": dimension,
-                }
-            ],
-            region=region,
-        )
-
-        previous_results = self._query(
-            previous_start,
-            previous_end,
-            granularity="MONTHLY",
-            group_by=[
-                {
-                    "Type": "DIMENSION",
-                    "Key": dimension,
-                }
-            ],
-            region=region,
-        )
-
-        current_totals = self._group_results(
-            current_results
-        )
-
-        previous_totals = self._group_results(
-            previous_results
+        total_current = sum(
+            current.values()
         )
 
         keys = (
-            set(current_totals)
-            | set(previous_totals)
+            set(current)
+            | set(previous)
         )
 
-        total_current = sum(
-            current_totals.values()
-        )
-
-        output: list[dict[str, Any]] = []
+        rows = []
 
         for key in keys:
-            current_amount = current_totals.get(
+
+            current_cost = current.get(
                 key,
                 0.0,
             )
 
-            previous_amount = previous_totals.get(
+            previous_cost = previous.get(
                 key,
                 0.0,
             )
 
-            change_amount = (
-                current_amount
-                - previous_amount
+            change = (
+                current_cost
+                - previous_cost
             )
 
             change_pct = (
-                change_amount
-                / previous_amount
+                change
+                / previous_cost
                 * 100
-                if previous_amount >= self.MIN_PRIOR_COST_FOR_PERCENTAGE
+                if previous_cost
+                >= self.MIN_PRIOR_COST_FOR_PERCENTAGE
                 else None
             )
 
-            output.append(
+            rows.append(
                 {
-                    dimension.lower():
-                        key,
+                    dimension: key,
+                    "cost": round(
+                        current_cost,
+                        2,
+                    ),
                     "current_cost": round(
-                        current_amount,
+                        current_cost,
                         2,
                     ),
                     "previous_cost": round(
-                        previous_amount,
+                        previous_cost,
                         2,
                     ),
                     "change_amount": round(
-                        change_amount,
+                        change,
                         2,
                     ),
                     "change_pct": (
@@ -1074,249 +1166,44 @@ class DashboardService:
                             change_pct,
                             2,
                         )
-                        if change_pct is not None
+                        if change_pct
+                        is not None
                         else None
                     ),
-                    "share_pct": round(
-                        current_amount
-                        / total_current
-                        * 100,
-                        2,
-                    )
-                    if total_current
-                    else 0.0,
+                    "share_pct": (
+                        round(
+                            current_cost
+                            / total_current
+                            * 100,
+                            2,
+                        )
+                        if total_current
+                        else 0.0
+                    ),
                     "currency": self.CURRENCY,
                 }
             )
 
-        output.sort(
-            key=lambda item: item["current_cost"],
+        rows.sort(
+            key=lambda row: row[
+                "cost"
+            ],
             reverse=True,
         )
 
-        return output
+        rows = rows[:limit]
 
-    def get_region_cost(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> list[dict[str, Any]]:
-        today = today or date.today()
+        for index, row in enumerate(
+            rows,
+            start=1,
+        ):
+            row["rank"] = index
 
-        return self._get_grouped_cost(
-            self._month_start(today),
-            today + timedelta(days=1),
-            dimension="REGION",
-            region=region,
-        )
+        return rows
 
-    def get_service_mtd(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return self._get_grouped_mtd_comparison(
-            dimension="SERVICE",
-            today=today,
-            region=region,
-        )
-
-    def get_region_mtd(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> list[dict[str, Any]]:
-        return self._get_grouped_mtd_comparison(
-            dimension="REGION",
-            today=today,
-            region=region,
-        )
-
-    def get_usage_type_cost(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-        service: str | None = None,
-    ) -> list[dict[str, Any]]:
-        today = today or date.today()
-
-        return self._get_grouped_cost(
-            self._month_start(today),
-            today + timedelta(days=1),
-            dimension="USAGE_TYPE",
-            region=region,
-            service=service,
-        )
-
-    def get_service_changes(
-        self,
-        today: date | None = None,
-        region: str | None = None,
-    ) -> list[dict[str, Any]]:
-       
-
-        today = today or date.today()
-
-        current_start = self._month_start(today)
-        current_end = today + timedelta(days=1)
-
-        previous_start = self._previous_month(today)
-
-        comparable_days = min(
-            today.day,
-            monthrange(
-                previous_start.year,
-                previous_start.month,
-            )[1],
-        )
-
-        previous_end = (
-            previous_start
-            + timedelta(days=comparable_days)
-        )
-
-        current_results = self._query(
-            current_start,
-            current_end,
-            granularity="MONTHLY",
-            group_by=[
-                {
-                    "Type": "DIMENSION",
-                    "Key": "SERVICE",
-                }
-            ],
-            region=region,
-        )
-
-        previous_results = self._query(
-            previous_start,
-            previous_end,
-            granularity="MONTHLY",
-            group_by=[
-                {
-                    "Type": "DIMENSION",
-                    "Key": "SERVICE",
-                }
-            ],
-            region=region,
-        )
-
-        current_totals = self._group_results(
-            current_results
-        )
-
-        previous_totals = self._group_results(
-            previous_results
-        )
-
-        services = (
-            set(current_totals)
-            | set(previous_totals)
-        )
-
-        output: list[dict[str, Any]] = []
-
-        for service in services:
-            current_amount = current_totals.get(
-                service,
-                0.0,
-            )
-
-            previous_amount = previous_totals.get(
-                service,
-                0.0,
-            )
-
-            difference = (
-                current_amount
-                - previous_amount
-            )
-
-            # Ignore tiny movements.
-            if abs(difference) < self.MIN_CHANGE_AMOUNT:
-                continue
-
-            percentage = (
-                difference
-                / previous_amount
-                * 100
-                if previous_amount >= self.MIN_PRIOR_COST_FOR_PERCENTAGE
-                else None
-            )
-
-            if difference > 0:
-                trend = "increased"
-            elif difference < 0:
-                trend = "decreased"
-            else:
-                trend = "stable"
-
-            output.append(
-                {
-                    "service": service,
-                    "current_amount": round(
-                        current_amount,
-                        2,
-                    ),
-                    "previous_amount": round(
-                        previous_amount,
-                        2,
-                    ),
-                    "difference": round(
-                        difference,
-                        2,
-                    ),
-                    "percentage_change": (
-                        round(
-                            percentage,
-                            2,
-                        )
-                        if percentage is not None
-                        else None
-                    ),
-                    "trend": trend,
-                }
-            )
-
-        output.sort(
-            key=lambda item: abs(
-                item["difference"]
-            ),
-            reverse=True,
-        )
-
-        return output[: self.SERVICE_CHANGE_LIMIT]
-
-    @staticmethod
-    def _group_results(
-        results: list[dict[str, Any]],
-    ) -> dict[str, float]:
-        totals: dict[str, float] = {}
-
-        for block in results:
-            for group in block.get(
-                "Groups",
-                [],
-            ):
-                keys = group.get(
-                    "Keys",
-                    [],
-                )
-
-                if not keys:
-                    continue
-
-                service = keys[0]
-
-                totals[service] = (
-                    totals.get(
-                        service,
-                        0.0,
-                    )
-                    + DashboardService._amount(group)
-                )
-
-        return totals
+    # ================================================================
+    # OVERVIEW
+    # ================================================================
 
     def get_overview(
         self,
@@ -1325,120 +1212,488 @@ class DashboardService:
         history_months: int = DEFAULT_HISTORY_MONTHS,
         region: str | None = None,
         latest_scan: dict[str, Any] | None = None,
+        force_refresh: bool = False,
+        **_: Any,
     ) -> dict[str, Any]:
 
         today = today or date.today()
 
-        if history_months < 1:
-            raise ValueError(
-                "history_months must be greater than zero"
+        history_months = max(
+            3,
+            min(
+                history_months,
+                self.MAX_HISTORY_MONTHS,
+            ),
+        )
+
+        current_start = self._month_start(
+            today
+        )
+
+        current_end = today + timedelta(
+            days=1
+        )
+
+        previous_start = self._previous_month(
+            today
+        )
+
+        previous_end = current_start
+
+        current_month_key = current_start.strftime(
+            "%Y-%m"
+        )
+
+        previous_month_key = previous_start.strftime(
+            "%Y-%m"
+        )
+
+        # Anchor the shared fetch window directly from
+        # history_months instead of a separate get_monthly_cost()
+        # call — the SERVICE+REGION dataset below already covers
+        # every month this needs, so the monthly trend, current MTD,
+        # and previous-month total are all derived from it rather
+        # than three more Cost Explorer round trips.
+        fetch_start_date = current_start
+
+        for _ in range(
+            history_months - 1
+        ):
+            fetch_start_date = self._previous_month(
+                fetch_start_date
             )
 
-        current_month = self._month_start(today)
-        previous_month = self._previous_month(today)
+        fetch_end = self._next_month(
+            current_start
+        )
 
-        mtd = self.get_mtd_comparison(
-            today=today,
-            region=region,
+        service_region_raw, service_usage_raw = (
+            self._get_monthly_service_region_usage(
+                fetch_start_date,
+                fetch_end,
+                region=region,
+                force_refresh=force_refresh,
+            )
+        )
+
+        sr_rows = self._flatten_groups(
+            service_region_raw
+        )
+
+        su_rows = self._flatten_groups(
+            service_usage_raw
+        )
+
+        monthly_totals: dict[
+            str,
+            float,
+        ] = {}
+
+        for row in sr_rows:
+
+            monthly_totals[
+                row["month"]
+            ] = (
+                monthly_totals.get(
+                    row["month"],
+                    0.0,
+                )
+                + row["cost"]
+            )
+
+        history = []
+
+        cursor = fetch_start_date
+
+        for _ in range(
+            history_months
+        ):
+
+            month_key = cursor.strftime(
+                "%Y-%m"
+            )
+
+            is_current = (
+                month_key
+                == current_month_key
+            )
+
+            month_end_exclusive = self._next_month(
+                cursor
+            )
+
+            history.append(
+                {
+                    "month": month_key,
+                    "start_date": cursor.isoformat(),
+                    "end_date": (
+                        today
+                        if is_current
+                        else month_end_exclusive
+                        - timedelta(
+                            days=1
+                        )
+                    ).isoformat(),
+                    "amount": round(
+                        monthly_totals.get(
+                            month_key,
+                            0.0,
+                        ),
+                        2,
+                    ),
+                    "estimated": is_current,
+                    "currency": self.CURRENCY,
+                }
+            )
+
+            cursor = self._next_month(
+                cursor
+            )
+
+        current_total = round(
+            monthly_totals.get(
+                current_month_key,
+                0.0,
+            ),
+            2,
+        )
+
+        previous_total = round(
+            monthly_totals.get(
+                previous_month_key,
+                0.0,
+            ),
+            2,
+        )
+
+        current_mtd = {
+            "month": current_month_key,
+            "start_date": current_start.isoformat(),
+            "end_date": today.isoformat(),
+            "amount": current_total,
+            "currency": self.CURRENCY,
+            "estimated": True,
+        }
+
+        previous_month = {
+            "month": previous_month_key,
+            "start_date": previous_start.isoformat(),
+            "end_date": (
+                previous_end
+                - timedelta(days=1)
+            ).isoformat(),
+            "amount": previous_total,
+            "currency": self.CURRENCY,
+        }
+
+        difference = (
+            current_total
+            - previous_total
+        )
+
+        percentage_change = (
+            difference
+            / previous_total
+            * 100
+            if previous_total > 0
+            else None
+        )
+
+        if difference > self.MIN_CHANGE_AMOUNT:
+            direction = "increased"
+        elif difference < -self.MIN_CHANGE_AMOUNT:
+            direction = "decreased"
+        else:
+            direction = "stable"
+
+        current_services = self._totals_between(
+            sr_rows,
+            current_start,
+            current_end,
+            "key1",
+        )
+
+        previous_services = self._totals_between(
+            sr_rows,
+            previous_start,
+            previous_end,
+            "key1",
+        )
+
+        services = self._rank_comparison(
+            current_services,
+            previous_services,
+            dimension="service",
+            limit=15,
+        )
+
+        current_regions = self._totals_between(
+            sr_rows,
+            current_start,
+            current_end,
+            "key2",
+        )
+
+        previous_regions = self._totals_between(
+            sr_rows,
+            previous_start,
+            previous_end,
+            "key2",
+        )
+
+        regions = self._rank_comparison(
+            current_regions,
+            previous_regions,
+            dimension="region",
+            limit=15,
+        )
+
+        current_usage = self._totals_between(
+            su_rows,
+            current_start,
+            current_end,
+            "key2",
+        )
+
+        usage_types = sorted(
+            (
+                {
+                    "usage_type": key,
+                    "cost": round(
+                        value,
+                        2,
+                    ),
+                    "share_pct": (
+                        round(
+                            value
+                            / current_total
+                            * 100,
+                            2,
+                        )
+                        if current_total
+                        else 0.0
+                    ),
+                    "currency": self.CURRENCY,
+                }
+                for key, value
+                in current_usage.items()
+                if value
+                >= self.MIN_VISIBLE_COST
+            ),
+            key=lambda row: row[
+                "cost"
+            ],
+            reverse=True,
+        )[
+            : self.DEFAULT_DIMENSION_LIMIT
+        ]
+
+        service_changes = [
+            row
+            for row in services
+            if abs(
+                row.get(
+                    "change_amount",
+                    0.0,
+                )
+            ) >= self.MIN_CHANGE_AMOUNT
+        ]
+
+        service_changes.sort(
+            key=lambda row: abs(
+                row[
+                    "change_amount"
+                ]
+            ),
+            reverse=True,
+        )
+
+        monthly_service_map: dict[
+            str,
+            dict[str, float],
+        ] = {}
+
+        monthly_region_map: dict[
+            str,
+            dict[str, float],
+        ] = {}
+
+        for row in sr_rows:
+
+            monthly_service_map.setdefault(
+                row["month"],
+                {},
+            )
+
+            monthly_service_map[
+                row["month"]
+            ][
+                row["key1"]
+            ] = (
+                monthly_service_map[
+                    row["month"]
+                ].get(
+                    row["key1"],
+                    0.0,
+                )
+                + row["cost"]
+            )
+
+            monthly_region_map.setdefault(
+                row["month"],
+                {},
+            )
+
+            monthly_region_map[
+                row["month"]
+            ][
+                row["key2"]
+            ] = (
+                monthly_region_map[
+                    row["month"]
+                ].get(
+                    row["key2"],
+                    0.0,
+                )
+                + row["cost"]
+            )
+
+        monthly_service_cost = []
+
+        for month_key in sorted(
+            monthly_service_map
+        ):
+
+            monthly_service_cost.append(
+                {
+                    "month": month_key,
+                    "services": [
+                        {
+                            "service": name,
+                            "amount": round(
+                                amount,
+                                2,
+                            ),
+                        }
+                        for name, amount
+                        in sorted(
+                            monthly_service_map[
+                                month_key
+                            ].items(),
+                            key=lambda item: item[
+                                1
+                            ],
+                            reverse=True,
+                        )
+                    ],
+                }
+            )
+
+        monthly_region_cost = []
+
+        for month_key in sorted(
+            monthly_region_map
+        ):
+
+            monthly_region_cost.append(
+                {
+                    "month": month_key,
+                    "regions": [
+                        {
+                            "region": name,
+                            "amount": round(
+                                amount,
+                                2,
+                            ),
+                        }
+                        for name, amount
+                        in sorted(
+                            monthly_region_map[
+                                month_key
+                            ].items(),
+                            key=lambda item: item[
+                                1
+                            ],
+                            reverse=True,
+                        )
+                    ],
+                }
+            )
+
+        completed_months = [
+            row
+            for row in history
+            if not row.get(
+                "estimated",
+                False,
+            )
+        ]
+
+        completed_total = sum(
+            float(
+                row["amount"]
+            )
+            for row in completed_months
+        )
+
+        completed_average = (
+            completed_total
+            / len(
+                completed_months
+            )
+            if completed_months
+            else 0.0
         )
 
         forecast = self.get_current_month_forecast(
             today=today,
             region=region,
-        )
-
-        monthly = self.get_monthly_cost(
-            months=history_months,
-            today=today,
-            region=region,
-        )
-
-        services = self.get_service_mtd(
-            today=today,
-            region=region,
-        )
-
-        regions = self.get_region_mtd(
-            today=today,
-            region=region,
-        )
-
-        usage_types = self.get_usage_type_cost(
-            today=today,
-            region=region,
-        )
-
-        service_changes = self.get_service_changes(
-            today=today,
-            region=region,
-        )
-
-        monthly_service_cost = (
-            self.get_monthly_service_cost(
-                months=history_months,
-                today=today,
-                region=region,
-            )
-        )
-
-        monthly_region_cost = (
-            self.get_monthly_region_cost(
-                months=history_months,
-                today=today,
-            )
-        )
-
-        # --------------------------------------------------------------
-        # Completed historical months
-        # --------------------------------------------------------------
-        #
-        # The current month is normally estimated/partial.
-        # Do not include it in "completed historical average".
-
-        completed_months = [
-            item
-            for item in monthly
-            if not item.get("estimated", False)
-        ]
-
-        completed_total = sum(
-            float(item["amount"])
-            for item in completed_months
-        )
-
-        completed_average = (
-            completed_total / len(completed_months)
-            if completed_months
-            else 0.0
-        )
-        collected_history_total = sum(
-            float(item["amount"])
-            for item in monthly
+            actual_mtd=current_total,
+            force_refresh=force_refresh,
         )
 
         return {
             "source": "aws_cost_explorer",
             "currency": self.CURRENCY,
-
-            # Dynamic application date.
             "current_date": today.isoformat(),
 
-            # Current/previous calendar period.
             "period": {
-                "current_month": current_month.strftime("%Y-%m"),
-                "current_start": current_month.isoformat(),
-                "previous_month": previous_month.strftime("%Y-%m"),
-                "previous_start": previous_month.isoformat(),
+                "mode": "live",
+                "label": "Live dashboard",
+                "supports_forecast": True,
+                "current_month": current_start.strftime(
+                    "%Y-%m"
+                ),
+                "previous_month": previous_start.strftime(
+                    "%Y-%m"
+                ),
                 "history_months": history_months,
             },
 
             "region_filter": region,
 
-            "mtd": mtd,
+            "mtd": {
+                "current": current_mtd,
+                "previous": previous_month,
+                "difference": round(
+                    difference,
+                    2,
+                ),
+                "percentage_change": (
+                    round(
+                        percentage_change,
+                        2,
+                    )
+                    if percentage_change
+                    is not None
+                    else None
+                ),
+                "direction": direction,
+            },
 
             "forecast": forecast,
 
-            "monthly_cost": monthly,
+            "monthly_cost": history,
 
             "monthly_service_cost": monthly_service_cost,
 
@@ -1450,13 +1705,19 @@ class DashboardService:
 
             "usage_types": usage_types,
 
-            "service_changes": service_changes,
+            "service_changes": service_changes[
+                : self.SERVICE_CHANGE_LIMIT
+            ],
 
             "latest_scan": latest_scan,
 
             "history": {
-                "months": len(monthly),
-                "completed_months": len(completed_months),
+                "months": len(
+                    history
+                ),
+                "completed_months": len(
+                    completed_months
+                ),
                 "completed_total_spend": round(
                     completed_total,
                     2,
@@ -1466,7 +1727,12 @@ class DashboardService:
                     2,
                 ),
                 "collected_total_spend": round(
-                    collected_history_total,
+                    sum(
+                        float(
+                            row["amount"]
+                        )
+                        for row in history
+                    ),
                     2,
                 ),
             },
@@ -1474,4 +1740,542 @@ class DashboardService:
             "retrieved_at": datetime.now(
                 timezone.utc
             ).isoformat(),
+        }
+
+    # ================================================================
+    # COST EXPLORER DATE SCOPE
+    # ================================================================
+
+    def resolve_explorer_scope(
+        self,
+        *,
+        date_type: str = "current",
+        month: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        today: date | None = None,
+    ) -> dict[str, Any]:
+
+        today = today or date.today()
+
+        date_type = (
+            date_type
+            or "current"
+        ).lower()
+
+        if date_type == "current":
+
+            start = self._month_start(
+                today
+            )
+
+            end = today + timedelta(
+                days=1
+            )
+
+            return {
+                "type": "current",
+                "start": start,
+                "end": end,
+                "label": "Current month",
+            }
+
+        if date_type == "previous":
+
+            start = self._previous_month(
+                today
+            )
+
+            end = self._month_start(
+                today
+            )
+
+            return {
+                "type": "previous",
+                "start": start,
+                "end": end,
+                "label": start.strftime(
+                    "%B %Y"
+                ),
+            }
+
+        if date_type == "three_months":
+
+            target = self._previous_month(
+                self._previous_month(
+                    today
+                )
+            )
+
+            start = target
+            end = self._next_month(
+                target
+            )
+
+            return {
+                "type": "three_months",
+                "start": start,
+                "end": end,
+                "label": start.strftime(
+                    "%B %Y"
+                ),
+            }
+
+        if date_type == "six_months":
+
+            target = self._previous_month(
+                self._previous_month(
+                    self._previous_month(
+                        self._previous_month(
+                            self._previous_month(
+                                today
+                            )
+                        )
+                    )
+                )
+            )
+
+            start = target
+            end = self._next_month(
+                target
+            )
+
+            return {
+                "type": "six_months",
+                "start": start,
+                "end": end,
+                "label": start.strftime(
+                    "%B %Y"
+                ),
+            }
+
+        if date_type == "month":
+
+            if not month:
+                raise ValueError(
+                    "month is required"
+                )
+
+            try:
+                year, month_number = (
+                    month.split("-")
+                )
+
+                target = date(
+                    int(year),
+                    int(month_number),
+                    1,
+                )
+
+            except Exception as exc:
+                raise ValueError(
+                    "month must use YYYY-MM"
+                ) from exc
+
+            if target == self._month_start(
+                today
+            ):
+
+                end = today + timedelta(
+                    days=1
+                )
+
+            else:
+
+                end = self._next_month(
+                    target
+                )
+
+            return {
+                "type": "month",
+                "start": target,
+                "end": end,
+                "label": target.strftime(
+                    "%B %Y"
+                ),
+            }
+
+        if date_type == "custom":
+
+            if not start_date or not end_date:
+                raise ValueError(
+                    "start_date and end_date are required"
+                )
+
+            if start_date > end_date:
+                raise ValueError(
+                    "start_date must not be after end_date"
+                )
+
+            return {
+                "type": "custom",
+                "start": start_date,
+                "end": end_date + timedelta(
+                    days=1
+                ),
+                "label": (
+                    f"{start_date.isoformat()} "
+                    f"→ "
+                    f"{end_date.isoformat()}"
+                ),
+            }
+
+        raise ValueError(
+            f"Unknown date_type: {date_type}"
+        )
+
+    # ================================================================
+    # COST EXPLORER MAIN
+    # ================================================================
+
+    def get_cost_explorer(
+        self,
+        *,
+        dimension: str = "SERVICE",
+        region: str | None = None,
+        date_type: str = "current",
+        month: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        limit: int = 12,
+        today: date | None = None,
+    ) -> dict[str, Any]:
+
+        dimension = dimension.upper()
+
+        if dimension not in self.DIMENSIONS:
+            raise ValueError(
+                "dimension must be SERVICE, REGION or USAGE_TYPE"
+            )
+
+        scope = self.resolve_explorer_scope(
+            date_type=date_type,
+            month=month,
+            start_date=start_date,
+            end_date=end_date,
+            today=today,
+        )
+
+        rows = self._monthly_grouped(
+            scope["start"],
+            scope["end"],
+            dimension=dimension,
+            region=region,
+            limit=limit,
+        )
+
+        total = sum(
+            row["cost"]
+            for row in rows
+        )
+
+        return {
+            "source": "aws_cost_explorer",
+            "currency": self.CURRENCY,
+            "dimension": dimension.lower(),
+            "region": region,
+            "date": {
+                "type": scope["type"],
+                "start": scope[
+                    "start"
+                ].isoformat(),
+                "end": (
+                    scope["end"]
+                    - timedelta(
+                        days=1
+                    )
+                ).isoformat(),
+                "label": scope[
+                    "label"
+                ],
+            },
+            "total_cost": round(
+                total,
+                2,
+            ),
+            "items": rows,
+        }
+
+    # ================================================================
+    # SERVICE DRILL-DOWN
+    # ================================================================
+
+    def get_cost_explorer_service(
+        self,
+        *,
+        service: str,
+        region: str | None = None,
+        date_type: str = "current",
+        month: str | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        today: date | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+
+        if not service:
+            raise ValueError(
+                "service is required"
+            )
+
+        scope = self.resolve_explorer_scope(
+            date_type=date_type,
+            month=month,
+            start_date=start_date,
+            end_date=end_date,
+            today=today,
+        )
+
+        usage_results = self._query(
+            scope["start"],
+            scope["end"],
+            granularity="MONTHLY",
+            group_by=[
+                {
+                    "Type": "DIMENSION",
+                    "Key": "SERVICE",
+                },
+                {
+                    "Type": "DIMENSION",
+                    "Key": "USAGE_TYPE",
+                },
+            ],
+            region=region,
+            service=service,
+        )
+
+        region_results = self._query(
+            scope["start"],
+            scope["end"],
+            granularity="MONTHLY",
+            group_by=[
+                {
+                    "Type": "DIMENSION",
+                    "Key": "SERVICE",
+                },
+                {
+                    "Type": "DIMENSION",
+                    "Key": "REGION",
+                },
+            ],
+            region=region,
+            service=service,
+        )
+
+        usage_totals: dict[
+            str,
+            float,
+        ] = {}
+
+        region_totals: dict[
+            str,
+            float,
+        ] = {}
+
+        monthly_totals: dict[
+            str,
+            float,
+        ] = {}
+
+        for block in usage_results:
+
+            period = block.get(
+                "TimePeriod",
+                {},
+            )
+
+            month_key = (
+                period.get(
+                    "Start"
+                )
+                or ""
+            )[:7]
+
+            for group in block.get(
+                "Groups",
+                [],
+            ):
+
+                keys = group.get(
+                    "Keys",
+                    [],
+                )
+
+                if len(keys) < 2:
+                    continue
+
+                amount = self._amount(
+                    group
+                )
+
+                if amount < self.MIN_VISIBLE_COST:
+                    continue
+
+                usage = keys[1]
+
+                usage_totals[
+                    usage
+                ] = (
+                    usage_totals.get(
+                        usage,
+                        0.0,
+                    )
+                    + amount
+                )
+
+                monthly_totals[
+                    month_key
+                ] = (
+                    monthly_totals.get(
+                        month_key,
+                        0.0,
+                    )
+                    + amount
+                )
+
+        for block in region_results:
+
+            for group in block.get(
+                "Groups",
+                [],
+            ):
+
+                keys = group.get(
+                    "Keys",
+                    [],
+                )
+
+                if len(keys) < 2:
+                    continue
+
+                amount = self._amount(
+                    group
+                )
+
+                if amount < self.MIN_VISIBLE_COST:
+                    continue
+
+                region_name = keys[
+                    1
+                ]
+
+                region_totals[
+                    region_name
+                ] = (
+                    region_totals.get(
+                        region_name,
+                        0.0,
+                    )
+                    + amount
+                )
+
+        usage_total = sum(
+            usage_totals.values()
+        )
+
+        region_total = sum(
+            region_totals.values()
+        )
+
+        usage_types = [
+            {
+                "key": key,
+                "cost": round(
+                    amount,
+                    2,
+                ),
+                "share_pct": (
+                    round(
+                        amount
+                        / usage_total
+                        * 100,
+                        2,
+                    )
+                    if usage_total
+                    else 0.0
+                ),
+            }
+            for key, amount
+            in sorted(
+                usage_totals.items(),
+                key=lambda item: item[
+                    1
+                ],
+                reverse=True,
+            )[
+                :limit
+            ]
+        ]
+
+        regions = [
+            {
+                "key": key,
+                "cost": round(
+                    amount,
+                    2,
+                ),
+                "share_pct": (
+                    round(
+                        amount
+                        / region_total
+                        * 100,
+                        2,
+                    )
+                    if region_total
+                    else 0.0
+                ),
+            }
+            for key, amount
+            in sorted(
+                region_totals.items(),
+                key=lambda item: item[
+                    1
+                ],
+                reverse=True,
+            )[
+                :limit
+            ]
+        ]
+
+        monthly = [
+            {
+                "month": month_key,
+                "cost": round(
+                    amount,
+                    2,
+                ),
+            }
+            for month_key, amount
+            in sorted(
+                monthly_totals.items()
+            )
+        ]
+
+        return {
+            "source": "aws_cost_explorer",
+            "currency": self.CURRENCY,
+            "service": service,
+            "region": region,
+            "date": {
+                "type": scope["type"],
+                "start": scope[
+                    "start"
+                ].isoformat(),
+                "end": (
+                    scope["end"]
+                    - timedelta(
+                        days=1
+                    )
+                ).isoformat(),
+                "label": scope[
+                    "label"
+                ],
+            },
+            "total_cost": round(
+                usage_total,
+                2,
+            ),
+            "usage_types": usage_types,
+            "regions": regions,
+            "monthly": monthly,
         }

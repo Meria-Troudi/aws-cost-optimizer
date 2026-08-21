@@ -9,8 +9,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from aws_cost_optimizer.analysis.ranking import (
+    SEVERITY_RANK as SEVERITY_ORDER,
+)
 from backend.database.models.finding import Finding
-from backend.database.utils import json_dumps
+from backend.database.utils import json_dumps, json_loads
 
 
 def save_findings(
@@ -121,7 +124,17 @@ def save_findings(
 
                 category=category,
 
-                aggregation_scope="resource",
+                # The analyzer's real aggregation scope (None means
+                # "use FindingAggregator's default", currently
+                # "region") -- NOT hardcoded, so re-hydrating this
+                # row later and re-aggregating it produces the same
+                # grouping the analyzer/exporter path already does.
+                aggregation_scope=str(
+                    data.get(
+                        "aggregation_scope"
+                    )
+                    or "region"
+                ).strip().lower(),
 
                 analyzer=str(
                     data.get("analyzer")
@@ -232,14 +245,6 @@ def get_findings_by_scan(
     scan_run_id: int,
 ) -> list[Finding]:
 
-    severity_order = {
-        "critical": 4,
-        "high": 3,
-        "medium": 2,
-        "low": 1,
-        "info": 0,
-    }
-
     findings = (
         db.query(Finding)
         .filter(
@@ -251,7 +256,7 @@ def get_findings_by_scan(
 
     findings.sort(
         key=lambda item: (
-            -severity_order.get(
+            -SEVERITY_ORDER.get(
                 item.severity,
                 0,
             ),
@@ -263,16 +268,145 @@ def get_findings_by_scan(
     return findings
 
 
-def get_findings_by_resource(
-    db: Session,
-    resource_id: str,
-) -> list[Finding]:
+def hydrate_findings(
+    rows: list[Finding],
+):
+    """
+    Reconstruct the aws_cost_optimizer.analysis.finding.Finding
+    dataclass (the one FindingAggregator.aggregate() expects) from
+    persisted DB rows -- the inverse of save_findings(). Lets API
+    routes reuse the canonical aggregator instead of re-deriving
+    grouping from scratch on every request.
+    """
 
-    return (
-        db.query(Finding)
-        .filter(
-            Finding.resource_id
-            == str(resource_id)
-        )
-        .all()
+    from aws_cost_optimizer.analysis.condition import (
+        EvidenceStatement,
     )
+    from aws_cost_optimizer.analysis.evidence import Evidence
+    from aws_cost_optimizer.analysis.finding import (
+        Finding as AnalysisFinding,
+        ObservationPeriod,
+    )
+
+    hydrated = []
+
+    for row in rows:
+
+        evidence_data = (
+            json_loads(row.evidence)
+            or {}
+        )
+
+        if not isinstance(
+            evidence_data,
+            dict,
+        ):
+            evidence_data = {}
+
+        conditions_data = (
+            json_loads(row.conditions)
+            or []
+        )
+
+        observation_period_data = (
+            json_loads(
+                row.observation_period
+            )
+        )
+
+        impact_data = (
+            json_loads(row.impact)
+            or {}
+        )
+
+        if not isinstance(
+            impact_data,
+            dict,
+        ):
+            impact_data = {}
+
+        limitations_data = (
+            json_loads(row.limitations)
+            or []
+        )
+
+        evidence_summary_data = (
+            json_loads(
+                row.evidence_summary
+            )
+            or []
+        )
+
+        title = (
+            str(
+                row.finding_type
+                or "finding"
+            )
+            .replace("_", " ")
+            .title()
+        )
+
+        hydrated.append(
+            AnalysisFinding(
+                finding_type=row.finding_type,
+                title=title,
+                resource_type=row.resource_type,
+                resource_id=row.resource_id,
+                analyzer=row.analyzer,
+                analyzer_version=row.analyzer_version,
+                severity=row.severity,
+                confidence=row.confidence,
+                reason=row.reason,
+                conditions=[
+                    EvidenceStatement(
+                        **item
+                    )
+                    for item in conditions_data
+                    if isinstance(
+                        item,
+                        dict,
+                    )
+                ],
+                evidence=Evidence(
+                    **evidence_data
+                ),
+                observation_period=(
+                    ObservationPeriod(
+                        **observation_period_data
+                    )
+                    if isinstance(
+                        observation_period_data,
+                        dict,
+                    )
+                    else None
+                ),
+                limitations=(
+                    limitations_data
+                    if isinstance(
+                        limitations_data,
+                        list,
+                    )
+                    else []
+                ),
+                database_id=row.id,
+                recommendation_eligible=bool(
+                    row.recommendation_eligible
+                ),
+                aggregation_scope=row.aggregation_scope,
+                category=row.category,
+                status=row.status,
+                finding_key=row.finding_key,
+                evidence_summary=(
+                    evidence_summary_data
+                    if isinstance(
+                        evidence_summary_data,
+                        list,
+                    )
+                    else []
+                ),
+                impact=impact_data,
+                account_id=row.account_id,
+            )
+        )
+
+    return hydrated

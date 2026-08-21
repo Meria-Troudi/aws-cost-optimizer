@@ -1,7 +1,7 @@
 """
 Ensure legacy aws_cost_optimizer imports resolve when running via the API.
 
-The optimizer package uses top-level imports like `from collectors.registry import …`
+The optimizer package uses top-level imports like `from collection.registry import …`
 which require `fin/aws_cost_optimizer` on sys.path (same as aws_cost_optimizer/main.py).
 """
 

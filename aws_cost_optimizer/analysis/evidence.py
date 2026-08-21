@@ -10,10 +10,6 @@ Evidence is the authoritative bridge between:
         -> recommendations
         -> reporting
 
-The evidence is structured and machine-readable.
-
-Human-readable summaries are derived from this data and must never
-be treated as the authoritative source.
 """
 
 from __future__ import annotations
@@ -24,74 +20,29 @@ from typing import Any
 
 @dataclass(slots=True)
 class Evidence:
-
-    # --------------------------------------------------------------
-    # CloudWatch / operational metrics
-    # --------------------------------------------------------------
-
     metrics: dict[str, Any] = field(
         default_factory=dict
     )
-
-    # --------------------------------------------------------------
-    # Current AWS resource configuration
-    # --------------------------------------------------------------
-
     configuration: dict[str, Any] = field(
         default_factory=dict
     )
-
-    # --------------------------------------------------------------
-    # Network / resource relationships
-    # --------------------------------------------------------------
-
     topology: dict[str, Any] = field(
         default_factory=dict
     )
-
-    # --------------------------------------------------------------
-    # Stable resource identity
-    # --------------------------------------------------------------
-
     resource: dict[str, Any] = field(
         default_factory=dict
     )
-
-    # --------------------------------------------------------------
-    # Collector-derived values
-    # --------------------------------------------------------------
-
     derived: dict[str, Any] = field(
         default_factory=dict
     )
 
-    # --------------------------------------------------------------
-    # Billing context
-    #
-    # Important:
-    # This may represent billing for a collection plan / usage type,
-    # not necessarily a resource-specific cost.
-    #
-    # Therefore recommendation logic must NOT automatically assume
-    # that this amount belongs exclusively to one resource.
-    # --------------------------------------------------------------
 
     billing: dict[str, Any] = field(
         default_factory=dict
     )
-
-    # --------------------------------------------------------------
-    # Data-quality information
-    # --------------------------------------------------------------
-
     data_quality: dict[str, Any] = field(
         default_factory=dict
     )
-
-    # ==============================================================
-    # SERIALIZATION
-    # ==============================================================
-
     def to_dict(
         self,
     ) -> dict[str, Any]:
@@ -105,28 +56,12 @@ class Evidence:
             "billing": self.billing,
             "data_quality": self.data_quality,
         }
-
-    # ==============================================================
-    # PATH LOOKUP
-    # ==============================================================
-
     def get_path(
         self,
         path: str,
         default: Any = None,
     ) -> Any:
-        """
-        Resolve dotted paths.
-
-        Examples:
-
-            metrics.RequestCount.value
-            configuration.state
-            topology.summary.route_count
-            derived.traffic.total_bytes
-            billing.amount
-        """
-
+        
         if not path:
             return default
 
@@ -148,11 +83,6 @@ class Evidence:
             return default
 
         return current
-
-    # ==============================================================
-    # RECURSIVE LOOKUP
-    # ==============================================================
-
     def find_key(
         self,
         key: str,

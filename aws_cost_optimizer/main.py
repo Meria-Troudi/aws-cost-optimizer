@@ -43,7 +43,7 @@ from backend.database.connection import (
     SessionLocal,
 )
 
-from backend.database.init_db import (
+from backend.database.models_loader import (
     init_db as init_database,
 )
 
@@ -56,11 +56,12 @@ from backend.database.repositories.scan_run_repository import (
     complete_scan_run,
 )
 
-from collectors.cost.collector import (
+
+from collection.cost.collector import (
     CostCollector,
 )
 
-from collectors.manager import (
+from collection.manager import (
     CollectorManager
 )
 
@@ -232,13 +233,22 @@ def main(
 
         for plan in plans:
 
+            # Billing dimensions only. The attribution verdict
+            # (whether this cost is genuinely this resource's own,
+            # or shared/historical/unknown) is decided once, per
+            # resource, by reconciliation -- not guessed here before
+            # any resource has even been matched against the bill.
             cost_context = {
                 "service":
-                    plan.get("service"),
+                    plan.get(
+                        "service",
+                        "",
+                    ),
 
                 "usage_type":
                     plan.get(
-                        "usage_type"
+                        "usage_type",
+                        "",
                     ),
 
                 "region":
@@ -246,9 +256,12 @@ def main(
 
                 "cost": {
                     "value":
-                        plan.get(
-                            "cost_context",
-                            0,
+                        float(
+                            plan.get(
+                                "cost_context",
+                                0.0,
+                            )
+                            or 0.0
                         ),
 
                     "currency":
@@ -256,9 +269,6 @@ def main(
 
                     "scope":
                         "usage_type_region",
-
-                    "resource_level_attribution":
-                        False,
                 },
             }
 

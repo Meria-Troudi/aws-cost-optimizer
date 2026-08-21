@@ -25,23 +25,15 @@ from collections import defaultdict
 from typing import Any
 
 from .finding import Finding
+from .financial import normalize_financial_impact
+from .ranking import CONFIDENCE_RANK, SEVERITY_RANK
 
 
 class FindingAggregator:
 
-    SEVERITY_RANK = {
-        "critical": 4,
-        "high": 3,
-        "medium": 2,
-        "low": 1,
-        "info": 0,
-    }
+    SEVERITY_RANK = SEVERITY_RANK
 
-    CONFIDENCE_RANK = {
-        "high": 3,
-        "medium": 2,
-        "low": 1,
-    }
+    CONFIDENCE_RANK = CONFIDENCE_RANK
 
     VALID_SCOPES = {
         "resource",
@@ -62,11 +54,6 @@ class FindingAggregator:
                 default_scope
             )
         )
-
-    # ==============================================================
-    # PUBLIC
-    # ==============================================================
-
     def aggregate(
         self,
         findings: list[Finding],
@@ -123,11 +110,6 @@ class FindingAggregator:
             result,
             key=self._sort_key,
         )
-
-    # ==============================================================
-    # SCOPE
-    # ==============================================================
-
     def _resolve_scope(
         self,
         finding: Finding,
@@ -163,11 +145,6 @@ class FindingAggregator:
             )
 
         return scope
-
-    # ==============================================================
-    # GROUP KEY
-    # ==============================================================
-
     def _group_key(
         self,
         finding: Finding,
@@ -223,11 +200,6 @@ class FindingAggregator:
             account_id,
             scope_value,
         )
-
-    # ==============================================================
-    # RAW DEDUPLICATION
-    # ==============================================================
-
     @staticmethod
     def _deduplicate_group(
         findings: list[Finding],
@@ -275,11 +247,6 @@ class FindingAggregator:
             )
 
         return result
-
-    # ==============================================================
-    # BUILD GROUP
-    # ==============================================================
-
     def _build_group(
         self,
         findings: list[Finding],
@@ -604,12 +571,12 @@ class FindingAggregator:
                 self._region(
                     first
                 ),
+
+            "service":
+                self._service(
+                    first
+                ),
         }
-
-    # ==============================================================
-    # REASON
-    # ==============================================================
-
     @staticmethod
     def _aggregate_reason(
         findings: list[Finding],
@@ -673,11 +640,6 @@ class FindingAggregator:
             )
 
         return prefix
-
-    # ==============================================================
-    # EVIDENCE
-    # ==============================================================
-
     @classmethod
     def _aggregate_evidence_summary(
         cls,
@@ -741,11 +703,6 @@ class FindingAggregator:
                     )
 
         return result
-
-    # ==============================================================
-    # BILLING
-    # ==============================================================
-
     @staticmethod
     def _aggregate_billing(
         findings: list[Finding],
@@ -855,19 +812,25 @@ class FindingAggregator:
             )
 
         return result
-
-    # ==============================================================
-    # IMPACT
-    # ==============================================================
-
     @staticmethod
     def _aggregate_impact(
         findings: list[Finding],
-    ) -> dict[str, Any]:
+    ) -> dict[str, float | str | None]:
 
-        amounts: list[float] = []
+        # Findings in one group typically share a single collection
+        # plan's billing context (see AnalysisContext.billing() /
+        # collection/manager.py) rather than each carrying its own
+        # individually-attributed cost, so summing would
+        # multiply-count the same account-level total once per
+        # resource in the group. Take the whole financial_impact dict
+        # from whichever finding reports the highest cost, rather
+        # than maxing each field independently -- that keeps the
+        # reported savings/confidence/basis consistent with the cost
+        # they actually came from, instead of e.g. pairing one
+        # finding's cost with a different finding's confidence.
 
-        currency = None
+        best_cost = None
+        best_impact: dict[str, Any] | None = None
 
         for finding in findings:
 
@@ -879,49 +842,27 @@ class FindingAggregator:
             ):
                 continue
 
-            amount = impact.get(
-                "period_cost"
+            finding_cost = impact.get(
+                "observed_monthly_cost"
             )
 
-            if isinstance(
-                amount,
+            if not isinstance(
+                finding_cost,
                 (int, float),
             ):
+                continue
 
-                amounts.append(
-                    float(amount)
-                )
+            if (
+                best_cost is None
+                or finding_cost > best_cost
+            ):
 
-            if currency is None:
+                best_cost = finding_cost
+                best_impact = impact
 
-                currency = impact.get(
-                    "currency"
-                )
-
-        if not amounts:
-
-            return {}
-
-        result = {
-            "period_cost":
-                round(
-                    sum(amounts),
-                    2,
-                )
-        }
-
-        if currency:
-
-            result[
-                "currency"
-            ] = currency
-
-        return result
-
-    # ==============================================================
-    # SCOPE
-    # ==============================================================
-
+        return normalize_financial_impact(
+            best_impact
+        )
     def _scope(
         self,
         finding: Finding,
@@ -966,11 +907,6 @@ class FindingAggregator:
                 or "unknown"
             )
         )
-
-    # ==============================================================
-    # IDENTITY
-    # ==============================================================
-
     @staticmethod
     def _region(
         finding: Finding,
@@ -1016,11 +952,6 @@ class FindingAggregator:
             if value
             else "unknown"
         )
-
-    # ==============================================================
-    # GROUP ID
-    # ==============================================================
-
     def _aggregate_id(
         self,
         findings: list[Finding],
@@ -1064,11 +995,6 @@ class FindingAggregator:
         return (
             f"finding-group-{digest[:20]}"
         )
-
-    # ==============================================================
-    # STATUS
-    # ==============================================================
-
     @staticmethod
     def _aggregate_status(
         findings: list[Finding],
@@ -1088,11 +1014,6 @@ class FindingAggregator:
             return "informational"
 
         return "active"
-
-    # ==============================================================
-    # RANKING
-    # ==============================================================
-
     @classmethod
     def _highest(
         cls,
@@ -1154,11 +1075,6 @@ class FindingAggregator:
                     0,
                 ),
         )
-
-    # ==============================================================
-    # TITLE
-    # ==============================================================
-
     @staticmethod
     def _aggregate_title(
         findings: list[Finding],
@@ -1184,11 +1100,6 @@ class FindingAggregator:
             if findings
             else "Finding"
         )
-
-    # ==============================================================
-    # VERSION
-    # ==============================================================
-
     @staticmethod
     def _version_tuple(
         value: str,
@@ -1234,11 +1145,6 @@ class FindingAggregator:
             key=cls._version_tuple,
             default="1.0",
         )
-
-    # ==============================================================
-    # SORT
-    # ==============================================================
-
     @classmethod
     def _sort_key(
         cls,
@@ -1277,11 +1183,6 @@ class FindingAggregator:
                 )
             ),
         )
-
-    # ==============================================================
-    # UNIQUE
-    # ==============================================================
-
     @staticmethod
     def _unique(
         values,

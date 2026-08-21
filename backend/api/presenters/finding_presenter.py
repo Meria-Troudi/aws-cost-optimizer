@@ -72,6 +72,7 @@ def _extract_cost(
         financial = {}
 
     cost = _first_numeric(
+        impact.get("observed_monthly_cost"),
         billing.get("amount"),
         billing.get("cost"),
         billing.get("period_cost"),
@@ -190,11 +191,7 @@ def present_finding(
         evidence,
     )
 
-    category = (
-        str(finding.category).strip()
-        if finding.category
-        else None
-    )
+    
 
     finding_type = (
         str(finding.finding_type).strip()
@@ -225,7 +222,6 @@ def present_finding(
         "severity": finding.severity,
         "confidence": finding.confidence,
 
-        "category": category,
 
         "title": title,
 

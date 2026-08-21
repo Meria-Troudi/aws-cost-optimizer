@@ -55,6 +55,19 @@ def get_scan_runs(
     )
 
 
+def get_latest_scan_run(
+    db: Session,
+) -> ScanRun | None:
+
+    return (
+        db.query(ScanRun)
+        .order_by(
+            ScanRun.created_at.desc()
+        )
+        .first()
+    )
+
+
 def mark_scan_running(
     db: Session,
     scan_id: int,
@@ -129,6 +142,7 @@ def fail_scan_run(
     db: Session,
     scan_id: int,
     error_message: str,
+    outcome: str | None = None,
 ) -> ScanRun | None:
 
     scan = get_scan_run(db, scan_id)
@@ -139,6 +153,9 @@ def fail_scan_run(
     scan.status = "failed"
     scan.error_message = str(error_message)
     scan.finished_at = datetime.utcnow()
+
+    if outcome is not None:
+        scan.outcome = outcome
 
     db.flush()
 

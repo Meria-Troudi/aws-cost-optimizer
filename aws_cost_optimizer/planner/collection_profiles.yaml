@@ -1,24 +1,29 @@
-
-  # NAT GATEWAY
-  
+#// aws_cost_optimizer/planner/collection_profiles.yaml
 nat_gateway:
+
   identity:
     enabled: true
+
     fields:
       - source: NatGatewayId
         output: nat_gateway_id
+
       - source: State
         output: state
+
       - source: Tags
         output: tags
 
   configuration:
     enabled: true
+
     fields:
       - source: NatGatewayId
         output: nat_gateway_id
+
       - source: VpcId
         output: vpc_id
+
       - source: SubnetId
         output: subnet_id
 
@@ -37,15 +42,14 @@ nat_gateway:
       - source: NatGatewayAddresses
         output: nat_gateway_addresses
 
-
   relationships:
     enabled: true
-
 
   observations:
     enabled: true
 
     cloudwatch:
+      enabled: true
       namespace: AWS/NATGateway
       period: 3600
 
@@ -79,6 +83,30 @@ nat_gateway:
           statistic: Sum
           unit: Count
 
+        - name: PacketsInFromSource
+          statistic: Sum
+          unit: Count
+
+        - name: PacketsOutToDestination
+          statistic: Sum
+          unit: Count
+
+        - name: PacketsInFromDestination
+          statistic: Sum
+          unit: Count
+
+        - name: PacketsOutToSource
+          statistic: Sum
+          unit: Count
+
+        - name: PeakBytesPerSecond
+          statistic: Maximum
+          unit: Bytes/Second
+
+        - name: PeakPacketsPerSecond
+          statistic: Maximum
+          unit: Count/Second
+
         - name: PacketsDropCount
           statistic: Sum
           unit: Count
@@ -91,37 +119,219 @@ nat_gateway:
           statistic: Sum
           unit: Count
 
-
   topology:
     enabled: true
 
+  analyzer_config:
+
+    low_traffic_gib: 1.0
+
+    high_traffic_gib: 100.0
+
+    rules:
+
+      non_operational:
+        enabled: true
+
+      idle:
+        enabled: true
+        severity: medium
+        confidence: high
+        recommendation_eligible: true
+        savings_confidence: medium
+
+      low_traffic:
+        enabled: true
+        severity: low
+        confidence: medium
+        recommendation_eligible: true
+        savings_confidence: low
+        min_material_cost: 1.0
+
+      cross_az:
+        enabled: true
+        severity: medium
+        confidence: medium
+        recommendation_eligible: true
+        min_traffic_gib: 0.1
+        min_observation_seconds: 86400
+
+      packet_drops:
+        enabled: true
+
+      port_allocation_errors:
+        enabled: true
+
+      idle_timeouts:
+        enabled: true
+
+      no_route_dependency:
+        enabled: true
+        severity: medium
+        confidence: high
+        recommendation_eligible: true
+        savings_confidence: medium
+
+      only_blackhole_routes:
+        enabled: true
+        severity: medium
+        confidence: medium
+        recommendation_eligible: true
+        savings_confidence: medium
+
+      endpoint_opportunity:
+        enabled: true
+        severity: medium
+        confidence: medium
+        recommendation_eligible: true
+
+      high_data_processing:
+        enabled: true
+        severity: medium
+        confidence: high
+        recommendation_eligible: true
 
   metric_groups:
+
     traffic:
       - BytesOutToDestination
       - BytesOutToSource
       - BytesInFromSource
       - BytesInFromDestination
+
     connection:
       - ActiveConnectionCount
       - ConnectionAttemptCount
       - ConnectionEstablishedCount
+
     error:
       - PacketsDropCount
       - ErrorPortAllocation
       - IdleTimeoutCount
+
     activity:
       - BytesOutToDestination
       - BytesOutToSource
       - BytesInFromSource
       - BytesInFromDestination
+      - PacketsInFromSource
+      - PacketsOutToDestination
+      - PacketsInFromDestination
+      - PacketsOutToSource
       - ActiveConnectionCount
       - ConnectionAttemptCount
       - ConnectionEstablishedCount
+      - PeakBytesPerSecond
+      - PeakPacketsPerSecond
+
+
+dynamodb_table:
+
+  identity:
+    enabled: true
+
+  configuration:
+    enabled: true
+
+  relationships:
+    enabled: true
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/DynamoDB
+
+      # Five-minute sampling is a good default for capacity
+      # analysis while keeping requests manageable.
+      period: 300
+
+      table_metrics:
+
+        - name: ConsumedReadCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - name: ConsumedWriteCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - name: ProvisionedReadCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - name: ProvisionedWriteCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - name: ReadThrottleEvents
+          statistic: Sum
+          unit: Count
+
+        - name: WriteThrottleEvents
+          statistic: Sum
+          unit: Count
+
+        - name: SystemErrors
+          statistic: Sum
+          unit: Count
+
+      gsi_metrics:
+
+        - name: ConsumedReadCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - name: ConsumedWriteCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - name: ProvisionedReadCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - name: ProvisionedWriteCapacityUnits
+          statistic: Average
+          unit: Count
+
+  topology:
+    enabled: false
+
+  analyzer_config:
+
+    utilization:
+      enabled: true
+      minimum_coverage: 0.80
+      low_read_percent: 20.0
+      low_write_percent: 20.0
+
+    autoscaling:
+      enabled: true
+
+    unused:
+      enabled: true
+      minimum_observation_days: 30
+
+    on_demand:
+      enabled: true
+      minimum_observation_days: 30
+
+    global_table:
+      enabled: true
+
+    gsi:
+      enabled: true
+      minimum_coverage: 0.80
+      low_read_percent: 20.0
+      low_write_percent: 20.0
+
+    throttling:
+      enabled: true
 
 
   # PUBLIC IPV4
-  
+
 public_ipv4:
 
   identity:
@@ -330,43 +540,49 @@ transit_gateway:
 
         - name: BytesIn
           statistic: Sum
+          unit: Bytes
 
         - name: BytesOut
           statistic: Sum
+          unit: Bytes
 
         - name: PacketsIn
           statistic: Sum
+          unit: Count
 
         - name: PacketsOut
           statistic: Sum
+          unit: Count
 
         - name: BytesDropCountBlackhole
           statistic: Sum
+          unit: Bytes
 
         - name: BytesDropCountNoRoute
           statistic: Sum
+          unit: Bytes
 
         - name: PacketDropCountBlackhole
           statistic: Sum
+          unit: Count
 
         - name: PacketDropCountNoRoute
           statistic: Sum
-        - name: PeakBytesPerSecond
+          unit: Count
+
+        - name: PacketDropCountTTLExpired
           statistic: Sum
-        - name: PeakPacketsPerSecond
-          statistic: Sum
+          unit: Count
 
 
   topology:
     enabled: true
 
   # RDS INSTANCE
-  
 rds_instance:
 
   identity:
     enabled: true
-
     fields:
       - source: DBInstanceIdentifier
         output: db_instance_identifier
@@ -386,12 +602,9 @@ rds_instance:
       - source: DBInstanceStatus
         output: status
 
-
   configuration:
     enabled: true
-
     fields:
-
       - source: DBInstanceClass
         output: instance_class
 
@@ -422,12 +635,9 @@ rds_instance:
       - source: PromotionTier
         output: promotion_tier
 
-
   storage:
     enabled: true
-
     fields:
-
       - source: StorageType
         output: storage_type
 
@@ -449,12 +659,9 @@ rds_instance:
       - source: KmsKeyId
         output: kms_key_id
 
-
   availability:
     enabled: true
-
     fields:
-
       - source: MultiAZ
         output: multi_az
 
@@ -464,36 +671,28 @@ rds_instance:
       - source: SecondaryAvailabilityZone
         output: secondary_availability_zone
 
-
   backup:
     enabled: true
-
     fields:
-
       - source: BackupRetentionPeriod
         output: backup_retention_days
 
       - source: PreferredBackupWindow
         output: preferred_backup_window
 
-
   performance:
     enabled: true
 
     fields:
-
       - source: PerformanceInsightsEnabled
         output: performance_insights_enabled
 
       - source: PerformanceInsightsRetentionPeriod
         output: performance_insights_retention_days
 
-
   relationships:
     enabled: true
-
     fields:
-
       - source: DBClusterIdentifier
         output: db_cluster_identifier
 
@@ -509,21 +708,21 @@ rds_instance:
       - source: DBSubnetGroup.VpcId
         output: vpc_id
 
-
   network:
     enabled: true
     mode: minimal
-
 
   observations:
     enabled: true
 
     cloudwatch:
+      enabled: true
       namespace: AWS/RDS
       period: 3600
 
       metrics:
 
+        # CPU / workload pressure
         - name: CPUUtilization
           statistic: Average
           unit: Percent
@@ -532,10 +731,16 @@ rds_instance:
           statistic: Average
           unit: Count
 
+        # Memory pressure
         - name: FreeableMemory
           statistic: Average
           unit: Bytes
 
+        - name: SwapUsage
+          statistic: Maximum
+          unit: Bytes
+
+        # Storage / I/O pressure
         - name: FreeStorageSpace
           statistic: Average
           unit: Bytes
@@ -556,6 +761,11 @@ rds_instance:
           statistic: Average
           unit: Seconds
 
+        - name: DiskQueueDepth
+          statistic: Average
+          unit: Count
+
+        # Network workload
         - name: NetworkReceiveThroughput
           statistic: Average
           unit: Bytes/Second
@@ -564,13 +774,119 @@ rds_instance:
           statistic: Average
           unit: Bytes/Second
 
+        # Storage burst context
+        # Useful mainly for burstable storage classes.
+        - name: BurstBalance
+          statistic: Average
+          unit: Percent
 
   cloudtrail:
     enabled: true
-
+    # CloudTrail lookup is used for historical instance-class changes.
+    event_names:
+      - ModifyDBInstance
+    max_results: 50
 
   topology:
     enabled: true
+
+  analyzer_config:
+    enabled: true
+
+    rightsizing:
+      enabled: true
+
+      # Do not classify a resource from sparse CloudWatch data.
+      minimum_metric_coverage: 0.80
+
+      # Core rightsizing thresholds.
+      average_cpu_max_percent: 15.0
+      maximum_cpu_max_percent: 70.0
+      connections_max: 2.0
+      read_iops_max: 10.0
+      write_iops_max: 10.0
+
+      # CloudTrail is part of the rightsizing decision, not merely
+      # informational evidence.
+      cloudtrail:
+        enabled: true
+        required: true
+
+        # After an instance-class modification, wait for enough stable
+        # workload data before making another rightsizing recommendation.
+        minimum_stable_days: 14
+
+        suppress_if_recent_resize: true
+
+        # Multiple class changes make one aggregate CloudWatch window
+        # unsuitable for a simple rightsizing decision.
+        suppress_if_multiple_resizes: true
+        max_resizes_in_window: 1
+
+        require_class_stability: true
+    idle:
+      enabled: true
+      minimum_metric_coverage: 0.80
+      average_cpu_max_percent: 5.0
+      maximum_cpu_max_percent: 25.0
+      connections_max: 0.0
+      read_iops_max: 1.0
+      write_iops_max: 1.0
+    multi_az:
+      enabled: true
+    backup_retention:
+      enabled: true
+      minimum_days: 14
+    performance_insights:
+      enabled: true
+    old_generation:
+      enabled: true
+
+    aurora:
+      enabled: true
+
+    read_replica:
+      enabled: true
+      minimum_metric_coverage: 0.80
+      connections_max: 2.0
+      network_bytes_per_second_max: 1024.0
+    public_accessibility:
+      enabled: true
+
+  metric_groups:
+    rightsizing:
+      - CPUUtilization
+      - DatabaseConnections
+      - FreeableMemory
+      - SwapUsage
+      - ReadIOPS
+      - WriteIOPS
+      - ReadLatency
+      - WriteLatency
+      - DiskQueueDepth
+      - NetworkReceiveThroughput
+      - NetworkTransmitThroughput
+    memory:
+      - FreeableMemory
+      - SwapUsage
+    storage:
+      - FreeStorageSpace
+      - ReadIOPS
+      - WriteIOPS
+      - ReadLatency
+      - WriteLatency
+      - DiskQueueDepth
+      - BurstBalance
+    network:
+      - NetworkReceiveThroughput
+      - NetworkTransmitThroughput
+    activity:
+      - CPUUtilization
+      - DatabaseConnections
+      - ReadIOPS
+      - WriteIOPS
+      - NetworkReceiveThroughput
+      - NetworkTransmitThroughput
 
 
   # LOAD BALANCER
@@ -682,6 +998,22 @@ load_balancer:
           key: elb_5xx
           dimensions:
             - LoadBalancer
+
+        - name: RuleEvaluations
+          statistic: Sum
+          unit: Count
+          key: rule_evaluations
+          dimensions:
+            - LoadBalancer
+
+        # ------------------------------------------------------------
+        # NLB / GWLB flow-count metrics (new_flow_count, active_flow_count
+        # in analysis/analyzers/load_balancer.py) are NOT declared here:
+        # they live in the AWS/NetworkELB namespace, not AWS/ApplicationELB,
+        # and this profile only supports one namespace per resource type.
+        # Requires a per-metric or per-LB-type namespace before they can
+        # be added -- not just a metrics-list entry.
+        # ------------------------------------------------------------
 
         # ------------------------------------------------------------
         # Target-group-level metrics
@@ -1103,3 +1435,996 @@ quicksight:
     account:
       - SPICECapacityLimitInMB
       - SPICECapacityConsumedInMB
+
+# ================================================================
+# EC2 INSTANCE
+# ================================================================
+
+ec2_instance:
+
+  identity:
+    enabled: true
+
+  configuration:
+    enabled: true
+
+  relationships:
+    enabled: true
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/EC2
+      period: 3600
+
+      metrics:
+
+        - name: CPUUtilization
+          statistic: Average
+          unit: Percent
+          key: CPUUtilization
+
+        - name: CPUUtilization
+          statistic: Maximum
+          unit: Percent
+          key: CPUUtilization_max
+
+        - name: NetworkIn
+          statistic: Sum
+          unit: Bytes
+          key: NetworkIn
+
+        - name: NetworkOut
+          statistic: Sum
+          unit: Bytes
+          key: NetworkOut
+
+        - name: EBSReadOps
+          statistic: Sum
+          unit: Count
+          key: EBSReadOps
+
+        - name: EBSWriteOps
+          statistic: Sum
+          unit: Count
+          key: EBSWriteOps
+
+        - name: StatusCheckFailed
+          statistic: Maximum
+          unit: Count
+          key: StatusCheckFailed
+
+        - name: StatusCheckFailed_Instance
+          statistic: Maximum
+          unit: Count
+          key: StatusCheckFailed_Instance
+
+        - name: StatusCheckFailed_System
+          statistic: Maximum
+          unit: Count
+          key: StatusCheckFailed_System
+
+    # Guest-OS memory is not a standard EC2 metric -- it only exists
+    # when the CloudWatch agent is installed and configured on the
+    # instance. Disabled by default so absence legitimately produces
+    # "unavailable" evidence rather than a fabricated reading; enable
+    # only for accounts known to run the agent fleet-wide.
+    cloudwatch_agent:
+      enabled: false
+
+      metrics:
+
+        - name: mem_used_percent
+          statistic: Average
+          unit: Percent
+          key: mem_used_percent
+
+        - name: mem_used_percent
+          statistic: Maximum
+          unit: Percent
+          key: mem_used_percent_max
+
+        - name: mem_available_percent
+          statistic: Average
+          unit: Percent
+          key: mem_available_percent
+
+  topology:
+    enabled: true
+
+
+# ================================================================
+# EKS CLUSTER
+# ================================================================
+
+eks_cluster:
+
+  identity:
+    enabled: true
+
+    fields:
+      - source: name
+        output: name
+
+      - source: arn
+        output: arn
+
+      - source: id
+        output: cluster_id
+
+      - source: status
+        output: status
+
+      - source: version
+        output: version
+
+      - source: platformVersion
+        output: platform_version
+
+      - source: createdAt
+        output: created_at
+
+      - source: tags
+        output: tags
+
+
+  configuration:
+    enabled: true
+
+    fields:
+      - source: name
+        output: name
+
+      - source: arn
+        output: arn
+
+      - source: id
+        output: cluster_id
+
+      - source: status
+        output: status
+
+      - source: version
+        output: version
+
+      - source: platformVersion
+        output: platform_version
+
+      - source: endpoint
+        output: endpoint
+
+      - source: roleArn
+        output: role_arn
+
+      - source: deletionProtection
+        output: deletion_protection
+
+      - source: resourcesVpcConfig
+        output: network
+
+      - source: kubernetesNetworkConfig
+        output: kubernetes_network
+
+      - source: accessConfig
+        output: access
+
+      - source: encryptionConfig
+        output: encryption
+
+      - source: logging
+        output: logging
+
+
+  relationships:
+    enabled: true
+
+    collect:
+      - vpc
+      - subnets
+      - security_groups
+      - cluster_security_group
+      - managed_nodegroups
+      - ec2_workers
+      - ebs_volumes
+      - network_interfaces
+      - fargate_profiles
+
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+
+      namespace: ContainerInsights
+
+      period: 3600
+
+      # ------------------------------------------------------------
+      # CLUSTER
+      # ------------------------------------------------------------
+
+      cluster_metrics:
+
+        - name: cluster_node_count
+          statistic: Average
+          unit: Count
+          key: cluster_node_count
+
+        - name: cluster_failed_node_count
+          statistic: Average
+          unit: Count
+          key: cluster_failed_node_count
+
+
+      # ------------------------------------------------------------
+      # NODE
+      #
+      # The collector discovers:
+      #
+      # ClusterName + InstanceId + NodeName
+      #
+      # using CloudWatch ListMetrics.
+      # ------------------------------------------------------------
+
+      node_metrics:
+
+        - name: node_cpu_utilization
+          statistic: Average
+          unit: Percent
+          key: node_cpu_utilization
+
+        - name: node_cpu_limit
+          statistic: Average
+          unit: Count
+          key: node_cpu_limit
+
+        - name: node_cpu_usage_total
+          statistic: Average
+          unit: Count
+          key: node_cpu_usage_total
+
+        - name: node_cpu_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: node_cpu_reserved_capacity
+
+        - name: node_memory_utilization
+          statistic: Average
+          unit: Percent
+          key: node_memory_utilization
+
+        - name: node_memory_limit
+          statistic: Average
+          unit: Bytes
+          key: node_memory_limit
+
+        - name: node_memory_working_set
+          statistic: Average
+          unit: Bytes
+          key: node_memory_working_set
+
+        - name: node_memory_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: node_memory_reserved_capacity
+
+        - name: node_filesystem_utilization
+          statistic: Average
+          unit: Percent
+          key: node_filesystem_utilization
+
+        - name: node_network_total_bytes
+          statistic: Average
+          unit: Bytes/Second
+          key: node_network_total_bytes
+
+        - name: node_number_of_running_pods
+          statistic: Average
+          unit: Count
+          key: node_number_of_running_pods
+
+        - name: node_number_of_running_containers
+          statistic: Average
+          unit: Count
+          key: node_number_of_running_containers
+
+        # GPU evidence
+        - name: node_gpu_limit
+          statistic: Average
+          unit: Count
+          key: node_gpu_limit
+
+        - name: node_gpu_usage_total
+          statistic: Average
+          unit: Count
+          key: node_gpu_usage_total
+
+        - name: node_gpu_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: node_gpu_reserved_capacity
+
+        - name: node_gpu_utilization
+          statistic: Average
+          unit: Percent
+          key: node_gpu_utilization
+
+
+      # ------------------------------------------------------------
+      # POD
+      #
+      # The collector discovers:
+      #
+      # ClusterName + Namespace + PodName
+      #
+      # using CloudWatch ListMetrics.
+      # ------------------------------------------------------------
+
+      pod_metrics:
+
+        - name: pod_cpu_utilization
+          statistic: Average
+          unit: Percent
+          key: pod_cpu_utilization
+
+        - name: pod_cpu_utilization_over_pod_limit
+          statistic: Average
+          unit: Percent
+          key: pod_cpu_utilization_over_pod_limit
+
+        - name: pod_cpu_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: pod_cpu_reserved_capacity
+
+        - name: pod_memory_utilization
+          statistic: Average
+          unit: Percent
+          key: pod_memory_utilization
+
+        - name: pod_memory_utilization_over_pod_limit
+          statistic: Average
+          unit: Percent
+          key: pod_memory_utilization_over_pod_limit
+
+        - name: pod_memory_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: pod_memory_reserved_capacity
+
+        - name: pod_memory_working_set
+          statistic: Average
+          unit: Bytes
+          key: pod_memory_working_set
+
+        # GPU
+        - name: pod_gpu_limit
+          statistic: Average
+          unit: Count
+          key: pod_gpu_limit
+
+        - name: pod_gpu_usage_total
+          statistic: Average
+          unit: Count
+          key: pod_gpu_usage_total
+
+        - name: pod_gpu_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: pod_gpu_reserved_capacity
+
+        - name: pod_gpu_utilization
+          statistic: Average
+          unit: Percent
+          key: pod_gpu_utilization
+
+
+  # --------------------------------------------------------------
+  # TOPOLOGY
+  #
+  # Kept enabled because the EKS cluster's non-EKS costs can be
+  # driven by NAT, VPC endpoints, load balancers, public IPv4,
+  # routing and cross-AZ architecture.
+  # --------------------------------------------------------------
+
+  topology:
+    enabled: true
+
+
+  # --------------------------------------------------------------
+  # ANALYZER CONFIGURATION
+  # --------------------------------------------------------------
+
+  analyzer_config:
+
+    enabled: true
+
+    # IMPORTANT:
+    #
+    # Populate this list from your maintained EKS pricing/version
+    # catalog. The analyzer does not guess support status.
+    #
+    # Example:
+    #
+    # extended_support_versions:
+    #   - "1.28"
+    #
+    extended_support_versions: []
+
+
+    low_cpu_average_percent: 20.0
+
+    low_cpu_maximum_percent: 50.0
+
+    low_memory_average_percent: 30.0
+
+    low_memory_maximum_percent: 60.0
+
+
+    high_node_cpu_reserved_percent: 70.0
+
+    high_node_memory_reserved_percent: 70.0
+
+
+    high_pod_cpu_reserved_percent: 70.0
+
+    high_pod_memory_reserved_percent: 70.0
+
+
+    low_gpu_utilization_percent: 20.0
+
+
+    min_coverage_percent: 80.0
+
+    min_observation_days: 14.0
+
+    min_nodegroup_instances: 1
+
+
+    rules:
+
+      extended_support_review:
+        enabled: true
+
+      no_observed_worker_capacity:
+        enabled: true
+
+      cluster_worker_underutilization:
+        enabled: true
+
+      nodegroup_underutilization:
+        enabled: true
+
+      minimum_capacity_review:
+        enabled: true
+
+      pod_cpu_request_overprovisioning:
+        enabled: true
+
+      pod_memory_request_overprovisioning:
+        enabled: true
+
+      gpu_underutilization:
+        enabled: true
+
+
+  # --------------------------------------------------------------
+  # METRIC GROUPS
+  # --------------------------------------------------------------
+
+  metric_groups:
+
+    cluster:
+      - cluster_node_count
+      - cluster_failed_node_count
+
+
+    node_cpu:
+      - node_cpu_utilization
+      - node_cpu_limit
+      - node_cpu_usage_total
+      - node_cpu_reserved_capacity
+
+
+    node_memory:
+      - node_memory_utilization
+      - node_memory_limit
+      - node_memory_working_set
+      - node_memory_reserved_capacity
+
+
+    node_network:
+      - node_network_total_bytes
+
+
+    node_activity:
+      - node_number_of_running_pods
+      - node_number_of_running_containers
+
+
+    node_gpu:
+      - node_gpu_limit
+      - node_gpu_usage_total
+      - node_gpu_reserved_capacity
+      - node_gpu_utilization
+
+
+    pod_cpu:
+      - pod_cpu_utilization
+      - pod_cpu_utilization_over_pod_limit
+      - pod_cpu_reserved_capacity
+
+
+    pod_memory:
+      - pod_memory_utilization
+      - pod_memory_utilization_over_pod_limit
+      - pod_memory_reserved_capacity
+      - pod_memory_working_set
+
+
+    pod_gpu:
+      - pod_gpu_limit
+      - pod_gpu_usage_total
+      - pod_gpu_reserved_capacity
+      - pod_gpu_utilization
+# Add this as a new resource profile.
+aurora_cluster:
+  identity:
+    enabled: true
+  configuration:
+    enabled: true
+  relationships:
+    enabled: true
+  observations:
+    enabled: true
+    cloudwatch:
+      enabled: true
+      namespace: AWS/RDS
+      period: 3600
+
+      # DBClusterIdentifier dimension.
+      cluster_metrics:
+        - {name: CPUUtilization, statistic: Average, unit: Percent}
+        - {name: DatabaseConnections, statistic: Average, unit: Count}
+        - {name: FreeableMemory, statistic: Average, unit: Bytes}
+        - {name: VolumeReadIOPs, statistic: Sum, unit: Count}
+        - {name: VolumeWriteIOPs, statistic: Sum, unit: Count}
+        - {name: VolumeBytesUsed, statistic: Average, unit: Bytes}
+        - {name: ServerlessDatabaseCapacity, statistic: Average, unit: Count}
+        - {name: TotalBackupStorageBilled, statistic: Average, unit: Bytes}
+        - {name: BackupRetentionPeriodStorageUsed, statistic: Average, unit: Bytes}
+        - {name: SnapshotStorageUsed, statistic: Average, unit: Bytes}
+
+      # DBClusterIdentifier + Role dimension.
+      role_metrics:
+        - {name: CPUUtilization, statistic: Average, unit: Percent}
+        - {name: DatabaseConnections, statistic: Average, unit: Count}
+        - {name: ServerlessDatabaseCapacity, statistic: Average, unit: Count}
+        - {name: ACUUtilization, statistic: Average, unit: Percent}
+
+      # DBInstanceIdentifier dimension.
+      instance_metrics:
+        - {name: CPUUtilization, statistic: Average, unit: Percent}
+        - {name: DatabaseConnections, statistic: Average, unit: Count}
+        - {name: FreeableMemory, statistic: Average, unit: Bytes}
+        - {name: ServerlessDatabaseCapacity, statistic: Average, unit: Count}
+        - {name: ACUUtilization, statistic: Average, unit: Percent}
+        - {name: ReadIOPS, statistic: Average, unit: Count/Second}
+        - {name: WriteIOPS, statistic: Average, unit: Count/Second}
+        - {name: ReadLatency, statistic: Average, unit: Seconds}
+        - {name: WriteLatency, statistic: Average, unit: Seconds}
+        - {name: NetworkReceiveThroughput, statistic: Average, unit: Bytes/Second}
+        - {name: NetworkTransmitThroughput, statistic: Average, unit: Bytes/Second}
+
+  cloudtrail:
+    enabled: true
+    event_names:
+      - ModifyDBCluster
+      - ModifyDBInstance
+      - CreateDBCluster
+      - DeleteDBCluster
+
+  topology:
+    enabled: true
+
+  analyzer_config:
+    serverless_v2:
+      enabled: true
+      minimum_metric_coverage: 0.80
+      average_acu_utilization_max_percent: 40.0
+      maximum_acu_utilization_max_percent: 85.0
+    reader_scaling:
+      enabled: true
+      minimum_metric_coverage: 0.80
+      average_cpu_max_percent: 20.0
+      average_connections_max: 2.0
+    io:
+      enabled: true
+      minimum_metric_coverage: 0.80
+    backup:
+      enabled: true
+      minimum_days: 14
+ebs_volume:
+
+  identity:
+    enabled: true
+
+    fields:
+      - source: VolumeId
+        output: volume_id
+
+  configuration:
+    enabled: true
+
+    fields:
+      - source: VolumeId
+        output: volume_id
+
+      - source: Size
+        output: size_gib
+
+      - source: VolumeType
+        output: volume_type
+
+      - source: Iops
+        output: iops
+
+      - source: Throughput
+        output: throughput_mibps
+
+      - source: State
+        output: state
+
+      - source: Encrypted
+        output: encrypted
+
+      - source: KmsKeyId
+        output: kms_key_id
+
+      - source: AvailabilityZone
+        output: availability_zone
+
+      - source: SnapshotId
+        output: snapshot_id
+
+      - source: CreateTime
+        output: create_time
+
+      - source: Attachments
+        output: attachments
+
+  relationships:
+    enabled: true
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/EBS
+      period: 3600
+
+      metrics:
+
+        - name: VolumeReadOps
+          statistic: Sum
+          unit: Count
+
+        - name: VolumeWriteOps
+          statistic: Sum
+          unit: Count
+
+        - name: VolumeReadBytes
+          statistic: Sum
+          unit: Bytes
+
+        - name: VolumeWriteBytes
+          statistic: Sum
+          unit: Bytes
+
+        - name: VolumeQueueLength
+          statistic: Average
+          unit: Count
+
+  topology:
+    enabled: false
+# ============================================================
+# AWS WAF
+# ============================================================
+
+waf_web_acl:
+
+  scope:
+    value: REGIONAL
+
+  identity:
+    enabled: true
+
+  configuration:
+    enabled: true
+
+  relationships:
+    enabled: true
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+
+      enabled: true
+
+      namespace: AWS/WAFV2
+
+      period: 3600
+
+      metrics:
+
+        - name: AllowedRequests
+          statistic: Sum
+          unit: Count
+
+        - name: BlockedRequests
+          statistic: Sum
+          unit: Count
+
+        - name: CountedRequests
+          statistic: Sum
+          unit: Count
+
+        - name: CaptchaRequests
+          statistic: Sum
+          unit: Count
+
+        - name: RequestsWithValidCaptchaToken
+          statistic: Sum
+          unit: Count
+
+        - name: CaptchasAttempted
+          statistic: Sum
+          unit: Count
+
+        - name: CaptchasSolved
+          statistic: Sum
+          unit: Count
+
+        - name: ChallengeRequests
+          statistic: Sum
+          unit: Count
+
+        - name: RequestsWithValidChallengeToken
+          statistic: Sum
+          unit: Count
+
+  topology:
+    enabled: false
+
+  analyzer_config:
+
+    enabled: true
+
+    high_request_threshold: 10000000
+
+    max_rule_count: 20
+
+    wcu_threshold: 1500
+
+    managed_rule_group_threshold: 3
+
+    captcha_request_threshold: 1000
+
+    challenge_request_threshold: 1000
+
+    body_inspection:
+
+      enabled: false
+      max_bytes: 16384
+
+  metric_groups:
+
+    requests:
+      - AllowedRequests
+      - BlockedRequests
+      - CountedRequests
+
+    captcha:
+      - CaptchaRequests
+      - RequestsWithValidCaptchaToken
+      - CaptchasAttempted
+      - CaptchasSolved
+
+    challenge:
+      - ChallengeRequests
+      - RequestsWithValidChallengeToken
+dynamodb:
+
+  identity:
+    enabled: true
+
+    fields:
+      - source: TableName
+        output: table_name
+
+      - source: TableArn
+        output: table_arn
+
+      - source: TableId
+        output: table_id
+
+      - source: TableStatus
+        output: status
+
+      - source: BillingModeSummary
+        output: billing_mode
+
+  configuration:
+    enabled: true
+
+    fields:
+      - source: BillingModeSummary
+        output: billing_mode
+
+      - source: ProvisionedThroughput
+        output: provisioned_throughput
+
+      - source: TableSizeBytes
+        output: table_size_bytes
+
+      - source: ItemCount
+        output: item_count
+
+      - source: GlobalSecondaryIndexes
+        output: global_secondary_indexes
+
+      - source: Replicas
+        output: replicas
+
+      - source: DeletionProtectionEnabled
+        output: deletion_protection
+
+  relationships:
+    enabled: true
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+
+      enabled: true
+
+      namespace: AWS/DynamoDB
+
+      # Five-minute sampling is a good default for
+      # capacity analysis while keeping requests manageable.
+      period: 300
+
+      table_metrics:
+
+        - key: consumed_read_capacity
+          name: ConsumedReadCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - key: consumed_write_capacity
+          name: ConsumedWriteCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - key: provisioned_read_capacity
+          name: ProvisionedReadCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - key: provisioned_write_capacity
+          name: ProvisionedWriteCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - key: read_throttle_events
+          name: ReadThrottleEvents
+          statistic: Sum
+          unit: Count
+
+        - key: write_throttle_events
+          name: WriteThrottleEvents
+          statistic: Sum
+          unit: Count
+
+        - key: system_errors
+          name: SystemErrors
+          statistic: Sum
+          unit: Count
+
+      gsi_metrics:
+
+        - key: consumed_read_capacity
+          name: ConsumedReadCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - key: consumed_write_capacity
+          name: ConsumedWriteCapacityUnits
+          statistic: Sum
+          unit: Count
+
+        - key: provisioned_read_capacity
+          name: ProvisionedReadCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - key: provisioned_write_capacity
+          name: ProvisionedWriteCapacityUnits
+          statistic: Average
+          unit: Count
+
+        - key: read_throttle_events
+          name: ReadThrottleEvents
+          statistic: Sum
+          unit: Count
+
+        - key: write_throttle_events
+          name: WriteThrottleEvents
+          statistic: Sum
+          unit: Count
+
+  analyzer_config:
+
+    utilization:
+
+      enabled: true
+
+      minimum_coverage: 0.80
+
+      low_read_percent: 20.0
+
+      low_write_percent: 20.0
+
+      recommendation_eligible: true
+
+    autoscaling:
+
+      enabled: true
+
+      recommendation_eligible: true
+
+    unused:
+
+      enabled: true
+
+      minimum_observation_days: 30
+
+      recommendation_eligible: true
+
+    on_demand:
+
+      enabled: true
+
+      minimum_observation_days: 30
+
+      recommendation_eligible: true
+
+    global_table:
+
+      enabled: true
+
+      recommendation_eligible: true
+
+    gsi:
+
+      enabled: true
+
+      minimum_coverage: 0.80
+
+      low_read_percent: 20.0
+
+      low_write_percent: 20.0
+
+      recommendation_eligible: true
+
+    throttling:
+
+      enabled: true
+
+      recommendation_eligible: false

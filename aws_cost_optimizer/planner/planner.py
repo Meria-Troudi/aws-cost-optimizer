@@ -58,10 +58,19 @@ class CollectionPlanner:
                 continue
             resolved = self.resolver.resolve(service, usage_type)
             if not resolved:
+                save_collection_plan(db, {
+                    "scan_run_id": scan.id,
+                    "service": service,
+                    "region": region,
+                    "usage_type": usage_type,
+                    "resource_type": "unmatched",
+                    "collector_name": "none",
+                    "priority": _priority_for(total_cost),
+                    "cost_context": total_cost,
+                    "status": "unmatched",
+                })
                 continue
 
-            # One plan per (collector, region, resource_type)
-            # keep the highest cost when multiple usage types map to the same collector
             plan_key = (resolved["collector"], region, resolved["resource_type"])
 
             if plan_key in plan_map:

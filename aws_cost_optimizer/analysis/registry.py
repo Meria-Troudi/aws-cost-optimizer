@@ -1,8 +1,6 @@
 """
 Analyzer registry.
 
-Registration is idempotent so importing analyzer modules more than
-once does not create duplicate analyzer execution.
 """
 
 from __future__ import annotations
@@ -19,6 +17,7 @@ def register(
     analyzer_class: type[Analyzer],
 ) -> type[Analyzer]:
 
+    
     if analyzer_class not in _ANALYZERS:
 
         _ANALYZERS.append(

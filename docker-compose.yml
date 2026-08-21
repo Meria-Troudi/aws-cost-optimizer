@@ -1,0 +1,30 @@
+# Local LLM runtime for the recommendation-explanation layer.
+#
+# One-time setup:
+#   docker compose up -d
+#   docker compose exec ollama ollama pull qwen2.5:3b
+#
+# Adjust the pulled model / OLLAMA_MODEL env var to whatever fits
+# your available RAM -- qwen2.5:3b / llama3.2:3b are reasonable
+# defaults for a local dev box, not a hard requirement.
+
+services:
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    # Uncomment if you have an NVIDIA GPU + the container toolkit
+    # installed -- CPU-only works fine for small models otherwise.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  ollama_models:

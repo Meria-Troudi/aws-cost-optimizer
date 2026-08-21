@@ -1,8 +1,30 @@
+# ============================================================
+# AWS COST OPTIMIZER
+# RESOURCE CATALOG
+#
+# The catalog maps:
+#
+#   AWS billing service + usage type
+#              ↓
+#        resource type
+#              ↓
+#          collector
+#
+# domain/subdomain are organizational metadata.
+# They do NOT control execution.
+#
+# Execution is determined by the planner.
+# ============================================================
 
- # NAT GATEWAY
- 
+
+# ============================================================
+# NETWORK / VPC
+# ============================================================
+
 nat_gateway:
-  category: ec2_other
+
+  domain: network
+  subdomain: vpc
 
   billing:
     services:
@@ -12,6 +34,13 @@ nat_gateway:
     usage_patterns:
       - "*NatGateway*"
 
+    # EC2 - Other is also billed by ebs_volume (EBS), so this
+    # is no longer a unique claim -- fallback only fires when
+    # exactly one enabled entry claims the service, so it stays
+    # inert (and unmatched usage stays unmatched) whenever both
+    # entries are enabled.
+    service_fallback: true
+
   collector:
     key: nat_gateway
     resource_type: nat_gateway
@@ -20,10 +49,10 @@ nat_gateway:
     enabled: true
 
 
- # PUBLIC IPV4 / ELASTIC IP
- 
 public_ipv4:
-  category: networking
+
+  domain: network
+  subdomain: vpc
 
   billing:
     services:
@@ -33,6 +62,10 @@ public_ipv4:
       - "*PublicIPv4*"
       - "*PublicIpv4*"
 
+    # VPC billing is shared by multiple resource types.
+    # Never guess from the service alone.
+    service_fallback: false
+
   collector:
     key: public_ipv4
     resource_type: public_ipv4
@@ -41,30 +74,10 @@ public_ipv4:
     enabled: true
 
 
- # TRANSIT GATEWAY
- 
-transit_gateway:
-  category: networking
-
-  billing:
-    services:
-      - Amazon Virtual Private Cloud
-
-    usage_patterns:
-      - "*TransitGateway*"
-
-  collector:
-    key: transit_gateway
-    resource_type: transit_gateway
-
-  rules:
-    enabled: true
-
-
- # VPC ENDPOINT
- 
 vpc_endpoint:
-  category: networking
+
+  domain: network
+  subdomain: vpc
 
   billing:
     services:
@@ -75,6 +88,8 @@ vpc_endpoint:
       - "*VPCEndpoint*"
       - "*Vpcendpoint*"
 
+    service_fallback: false
+
   collector:
     key: vpc_endpoint
     resource_type: vpc_endpoint
@@ -83,10 +98,129 @@ vpc_endpoint:
     enabled: true
 
 
- # RDS INSTANCE
- 
+transit_gateway:
+
+  domain: network
+  subdomain: vpc
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*TransitGateway*"
+
+    service_fallback: false
+
+  collector:
+    key: transit_gateway
+    resource_type: transit_gateway
+
+  rules:
+    enabled: true
+
+
+# ============================================================
+# NETWORK / VPC — CURRENTLY DISABLED
+# ============================================================
+
+vpc_peering:
+
+  domain: network
+  subdomain: vpc
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*VpcPeering*"
+      - "*VPCPeering*"
+
+    service_fallback: false
+
+  collector:
+    key: vpc_peering
+    resource_type: vpc_peering
+
+  rules:
+    enabled: false
+
+
+carrier_gateway:
+
+  domain: network
+  subdomain: vpc
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*CarrierGateway*"
+
+    service_fallback: false
+
+  collector:
+    key: carrier_gateway
+    resource_type: carrier_gateway
+
+  rules:
+    enabled: false
+
+
+internet_gateway:
+
+  domain: network
+  subdomain: vpc
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*InternetGateway*"
+
+    service_fallback: false
+
+  collector:
+    key: internet_gateway
+    resource_type: internet_gateway
+
+  rules:
+    enabled: false
+
+
+egress_only_internet_gateway:
+
+  domain: network
+  subdomain: vpc
+
+  billing:
+    services:
+      - Amazon Virtual Private Cloud
+
+    usage_patterns:
+      - "*EgressOnlyInternetGateway*"
+
+    service_fallback: false
+
+  collector:
+    key: egress_only_internet_gateway
+    resource_type: egress_only_internet_gateway
+
+  rules:
+    enabled: false
+
+
+# ============================================================
+# DATABASE / RDS
+# ============================================================
+
 rds_instance:
-  category: database
+
+  domain: database
+  subdomain: null
 
   billing:
     services:
@@ -97,6 +231,10 @@ rds_instance:
       - "*RDS:ChargedBackupUsage*"
       - "*RDS*"
 
+    # RDS is currently uniquely represented by this
+    # catalog entry.
+    service_fallback: true
+
   collector:
     key: rds
     resource_type: rds_instance
@@ -105,10 +243,72 @@ rds_instance:
     enabled: true
 
 
- # EKS CLUSTER
- 
+dynamodb_table:
+
+  domain: database
+  subdomain: null
+
+  billing:
+    services:
+      - Amazon DynamoDB
+
+    usage_patterns:
+      - "*ReadCapacityUnit*"
+      - "*WriteCapacityUnit*"
+      - "*PayPerRequestThroughput*"
+      - "*CommittedThroughput*"
+
+    # "Amazon DynamoDB" also carries storage/stream/backup usage
+    # types under some account billing layouts -- never guess from
+    # the service alone.
+    service_fallback: false
+
+  collector:
+    key: dynamodb
+    resource_type: dynamodb_table
+
+  rules:
+    enabled: true
+
+
+# ============================================================
+# COMPUTE / EC2
+# ============================================================
+
+ec2_instance:
+
+  domain: compute
+  subdomain: null
+
+  billing:
+    services:
+      - Amazon Elastic Compute Cloud - Compute
+
+    usage_patterns:
+      - "*BoxUsage*"
+      - "*SpotUsage*"
+
+    # "Amazon Elastic Compute Cloud - Compute" also carries EBS/other
+    # usage types under some account billing layouts -- never guess
+    # from the service alone.
+    service_fallback: false
+
+  collector:
+    key: ec2
+    resource_type: ec2_instance
+
+  rules:
+    enabled: true
+
+
+# ============================================================
+# COMPUTE / EKS
+# ============================================================
+
 eks_cluster:
-  category: compute
+
+  domain: compute
+  subdomain: eks
 
   billing:
     services:
@@ -118,6 +318,8 @@ eks_cluster:
       - "*AmazonEKS*"
       - "*EKS*"
 
+    service_fallback: true
+
   collector:
     key: eks
     resource_type: eks_cluster
@@ -126,10 +328,14 @@ eks_cluster:
     enabled: true
 
 
- # ELB / LOAD BALANCER
- 
+# ============================================================
+# LOAD BALANCING
+# ============================================================
+
 load_balancer:
-  category: networking
+
+  domain: load_balancing
+  subdomain: null
 
   billing:
     services:
@@ -139,6 +345,8 @@ load_balancer:
       - "*LoadBalancer*"
       - "*ELB*"
 
+    service_fallback: true
+
   collector:
     key: elb
     resource_type: load_balancer
@@ -147,86 +355,113 @@ load_balancer:
     enabled: true
 
 
- # FUTURE: VPC PEERING
-#
-# Disabled until a collector exists.
-# Keeping the catalog entry allows future expansion without causing
-# the planner to schedule a non-existent collector.
- 
-vpc_peering:
-  category: networking
+# ============================================================
+# ANALYTICS / QUICKSIGHT
+# ============================================================
+
+quicksight:
+
+  domain: analytics
+  subdomain: quicksight
 
   billing:
     services:
-      - Amazon Virtual Private Cloud
+      - Amazon QuickSight
 
     usage_patterns:
-      - "*VpcPeering*"
-      - "*VPCPeering*"
+      - "*QuickSight*"
+      - "*QS*"
+      - "*Reader*"
+      - "*QuickSuite*"
+
+    service_fallback: true
 
   collector:
-    key: vpc_peering
-    resource_type: vpc_peering
+    key: quicksight
+    resource_type: quicksight
 
   rules:
-    enabled: false
+    enabled: true
 
 
- # FUTURE: CARRIER GATEWAY
- 
-carrier_gateway:
-  category: networking
+# ============================================================
+# STORAGE / EBS
+# ============================================================
+
+ebs_volume:
+
+  domain: storage
+  subdomain: null
 
   billing:
     services:
-      - Amazon Virtual Private Cloud
+      - EC2 - Other
 
     usage_patterns:
-      - "*CarrierGateway*"
+      - "*EBS:VolumeUsage*"
+
+    # EC2 - Other is shared with nat_gateway; a distinct usage
+    # pattern is matched first, so fallback is never needed here.
+    service_fallback: false
 
   collector:
-    key: carrier_gateway
-    resource_type: carrier_gateway
+    key: ebs
+    resource_type: ebs_volume
 
   rules:
-    enabled: false
+    enabled: true
 
+# ============================================================
+# SECURITY / AWS WAF
+# ============================================================
+aurora_cluster:
 
- # FUTURE: INTERNET GATEWAY
- 
-internet_gateway:
-  category: networking
+  domain: database
+  subdomain: null
 
   billing:
     services:
-      - Amazon Virtual Private Cloud
+      - Amazon Relational Database Service
 
     usage_patterns:
-      - "*InternetGateway*"
+      - "*Aurora*"
+      - "*Serverless*"
+
+    service_fallback: false
 
   collector:
-    key: internet_gateway
-    resource_type: internet_gateway
+    key: aurora_cluster
+    resource_type: aurora_cluster
 
   rules:
-    enabled: false
+    enabled: true
+waf_web_acl:
 
-
- # FUTURE: NAT / OTHER NETWORK TARGETS
- 
-egress_only_internet_gateway:
-  category: networking
+  domain: security
+  subdomain: null
 
   billing:
     services:
-      - Amazon Virtual Private Cloud
+      - AWS WAF
+      - AWS WAFV2
 
     usage_patterns:
-      - "*EgressOnlyInternetGateway*"
+      - "*WAF*"
+      - "*WebACL*"
+      - "*WebAcl*"
+      - "*Request*"
+      - "*Captcha*"
+      - "*Challenge*"
+      - "*BotControl*"
+      - "*FraudControl*"
+
+    # AWS WAF is currently the only enabled catalog entry claiming
+    # the AWS WAF service in this project.
+    service_fallback: true
 
   collector:
-    key: egress_only_internet_gateway
-    resource_type: egress_only_internet_gateway
+    key: waf
+    resource_type: waf_web_acl
 
   rules:
-    enabled: false
+    enabled: true

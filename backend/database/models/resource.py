@@ -1,10 +1,5 @@
 """
 Stable AWS resource model.
-
-Resource represents the long-lived identity of an AWS resource.
-It is NOT tied to a scan.
-
-Scan-specific state belongs to ResourceSnapshot.
 """
 
 from __future__ import annotations

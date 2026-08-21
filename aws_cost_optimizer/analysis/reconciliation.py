@@ -29,25 +29,109 @@ HISTORICAL_ONLY = HISTORICAL
 NO_COST = "no_cost"
 UNKNOWN_STATUS = "unknown"
 
-_UNRELIABLE_RESOURCE_USAGE = {
-    "EU-NatGateway-Hours",
-    "APN1-NatGateway-Hours",
-    "APN3-NatGateway-Hours",
-    "NatGateway-Hours",
-    "EU-TransitGateway-Hours",
-    "EU-VpcEndpoint-Hours",
-    "EU-PublicIPv4:InUseAddress",
-    "EU-LoadBalancerUsage",
-}
-
 _INSTANCE_USAGE_RE = re.compile(
     r"InstanceUsage:(?P<instance_class>[A-Za-z0-9._-]+)$"
 )
 
 
+def _resource_scope_attribution(
+    *,
+    billing: dict[str, Any],
+    cost: float,
+    matched_ids: list[str],
+    collection_complete: bool,
+) -> tuple[dict[str, Any], str, bool, float | None]:
+    """Decide attribution from match count + collection completeness.
+
+    resource iff exactly one resource matched this billing line AND
+    collection for it was not partial (a partial run could be hiding
+    an undiscovered sibling that shares the same bill). Otherwise the
+    amount is collection-plan (shared) or unknown evidence -- never a
+    single resource's claimed cost.
+    """
+
+    if (
+        len(matched_ids) == 1
+        and collection_complete
+    ):
+        attribution_scope = RESOURCE
+
+    elif cost > 0:
+        attribution_scope = COLLECTION_PLAN
+
+    else:
+        attribution_scope = UNKNOWN
+
+    resource_cost_attributed = (
+        attribution_scope == RESOURCE
+    )
+
+    claimable_resource_cost = (
+        cost
+        if (
+            resource_cost_attributed
+            and len(matched_ids) == 1
+        )
+        else None
+    )
+
+    normalized_billing = dict(billing)
+
+    normalized_billing[
+        "attribution_scope"
+    ] = attribution_scope
+
+    normalized_billing[
+        "resource_cost_attributed"
+    ] = resource_cost_attributed
+
+    normalized_billing[
+        "claimable_resource_cost"
+    ] = claimable_resource_cost
+
+    return (
+        normalized_billing,
+        attribution_scope,
+        resource_cost_attributed,
+        claimable_resource_cost,
+    )
+
+
+def _fixed_scope_attribution(
+    *,
+    billing: dict[str, Any],
+    scope: str,
+) -> tuple[dict[str, Any], str, bool, float | None]:
+    """Force a scope that is never eligible for resource attribution.
+
+    Used for historical/mismatched billing: no matter how many
+    resources exist today, this amount describes a configuration
+    that is not the current resource, so it may never be claimed as
+    that resource's cost.
+    """
+
+    normalized_billing = dict(billing)
+
+    normalized_billing[
+        "attribution_scope"
+    ] = scope
+
+    normalized_billing[
+        "resource_cost_attributed"
+    ] = False
+
+    normalized_billing[
+        "claimable_resource_cost"
+    ] = None
+
+    return normalized_billing, scope, False, None
+
+
 def reconcile_collection_plan(
     plan: dict[str, Any] | None,
     discovered_resources: list[dict[str, Any]] | None,
+    *,
+    collection_complete: bool = True,
 ) -> dict[str, Any]:
 
     if not isinstance(
@@ -112,46 +196,13 @@ def reconcile_collection_plan(
         if resource_id(resource) != "unknown"
     ]
 
-    # --------------------------------------------------------------
-    # CRITICAL:
-    #
-    # Most AWS usage types in this project identify a collection
-    # class, not an individual resource.
-    # --------------------------------------------------------------
-
-    direct_resource_attribution = bool(
-        expected_identity
-    )
-
-    if usage_type in _UNRELIABLE_RESOURCE_USAGE:
-        direct_resource_attribution = False
-
-    if direct_resource_attribution:
-
-        attribution_scope = RESOURCE
-
-    elif cost > 0:
-
-        attribution_scope = COLLECTION_PLAN
-
-    else:
-
-        attribution_scope = UNKNOWN
-
-    normalized_billing = dict(
-        billing
-    )
-
-    normalized_billing[
-        "attribution_scope"
-    ] = attribution_scope
-
-    normalized_billing[
-        "resource_cost_attributed"
-    ] = (
-        attribution_scope
-        == RESOURCE
-    )
+    # NOTE: usage-type reliability no longer gates attribution --
+    # that decision now belongs entirely to _resource_scope_attribution's
+    # match-count + collection-completeness check, computed per branch
+    # below, after matching. Deciding it here (before any matching had
+    # even happened) was the bug: every branch inherited whatever
+    # scope this produced, including CURRENT_MISMATCH and HISTORICAL,
+    # which must never be resource-scoped regardless of match count.
 
     billing_identity = {
         key: value
@@ -167,22 +218,6 @@ def reconcile_collection_plan(
     }
 
     base = {
-        "billing":
-            normalized_billing,
-
-        # This remains available as collection-plan evidence.
-        "cost":
-            cost,
-
-        "cost_attribution":
-            attribution_scope,
-
-        "resource_cost_attributed":
-            (
-                attribution_scope
-                == RESOURCE
-            ),
-
         "resource_type":
             resource_type,
 
@@ -207,8 +242,29 @@ def reconcile_collection_plan(
 
     if cost <= 0:
 
+        (
+            normalized_billing,
+            attribution_scope,
+            resource_cost_attributed,
+            claimable_resource_cost,
+        ) = _fixed_scope_attribution(
+            billing=billing,
+            scope=UNKNOWN,
+        )
+
         return {
             **base,
+
+            "billing":
+                normalized_billing,
+            "cost":
+                cost,
+            "cost_attribution":
+                attribution_scope,
+            "resource_cost_attributed":
+                resource_cost_attributed,
+            "claimable_resource_cost":
+                claimable_resource_cost,
 
             "status":
                 NO_COST,
@@ -270,8 +326,34 @@ def reconcile_collection_plan(
 
             if not matched_resources:
 
+                (
+                    normalized_billing,
+                    attribution_scope,
+                    resource_cost_attributed,
+                    claimable_resource_cost,
+                ) = _fixed_scope_attribution(
+                    billing=billing,
+                    # This billing amount describes a resource
+                    # configuration that does not match anything
+                    # discovered today -- it must never be read as
+                    # the current resource's cost, no matter how
+                    # many (or how few) current resources exist.
+                    scope=HISTORICAL,
+                )
+
                 return {
                     **base,
+
+                    "billing":
+                        normalized_billing,
+                    "cost":
+                        cost,
+                    "cost_attribution":
+                        attribution_scope,
+                    "resource_cost_attributed":
+                        resource_cost_attributed,
+                    "claimable_resource_cost":
+                        claimable_resource_cost,
 
                     "status":
                         CURRENT_MISMATCH,
@@ -326,8 +408,31 @@ def reconcile_collection_plan(
                         "medium",
                 }
 
+            (
+                normalized_billing,
+                attribution_scope,
+                resource_cost_attributed,
+                claimable_resource_cost,
+            ) = _resource_scope_attribution(
+                billing=billing,
+                cost=cost,
+                matched_ids=matched_ids,
+                collection_complete=collection_complete,
+            )
+
             return {
                 **base,
+
+                "billing":
+                    normalized_billing,
+                "cost":
+                    cost,
+                "cost_attribution":
+                    attribution_scope,
+                "resource_cost_attributed":
+                    resource_cost_attributed,
+                "claimable_resource_cost":
+                    claimable_resource_cost,
 
                 "status":
                     CURRENT,
@@ -372,15 +477,36 @@ def reconcile_collection_plan(
                     "high",
             }
 
-        # ----------------------------------------------------------
-        # No resource identity.
-        #
-        # Current resources are analyzable, but the billing amount
-        # belongs to the collection plan, not to a specific resource.
-        # ----------------------------------------------------------
+        # No inferable billing identity to filter by, so every
+        # discovered resource is a candidate match for this plan --
+        # if that's exactly one resource (and collection was not
+        # partial), it genuinely is that resource's cost; if several
+        # share this collector run, none may individually claim it.
+        (
+            normalized_billing,
+            attribution_scope,
+            resource_cost_attributed,
+            claimable_resource_cost,
+        ) = _resource_scope_attribution(
+            billing=billing,
+            cost=cost,
+            matched_ids=resource_ids,
+            collection_complete=collection_complete,
+        )
 
         return {
             **base,
+
+            "billing":
+                normalized_billing,
+            "cost":
+                cost,
+            "cost_attribution":
+                attribution_scope,
+            "resource_cost_attributed":
+                resource_cost_attributed,
+            "claimable_resource_cost":
+                claimable_resource_cost,
 
             "status":
                 CURRENT,
@@ -421,8 +547,29 @@ def reconcile_collection_plan(
                 "high",
         }
 
+    (
+        normalized_billing,
+        attribution_scope,
+        resource_cost_attributed,
+        claimable_resource_cost,
+    ) = _fixed_scope_attribution(
+        billing=billing,
+        scope=HISTORICAL,
+    )
+
     return {
         **base,
+
+        "billing":
+            normalized_billing,
+        "cost":
+            cost,
+        "cost_attribution":
+            attribution_scope,
+        "resource_cost_attributed":
+            resource_cost_attributed,
+        "claimable_resource_cost":
+            claimable_resource_cost,
 
         "status":
             HISTORICAL,
@@ -772,6 +919,9 @@ def _empty_result(
 
         "resource_cost_attributed":
             False,
+
+        "claimable_resource_cost":
+            None,
 
         "resource_type":
             "unknown",

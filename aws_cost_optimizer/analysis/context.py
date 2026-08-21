@@ -331,7 +331,7 @@ class AnalysisContext:
         Collector-reported data quality for this resource.
 
         BaseCollector writes data_quality at the TOP level of the
-        resource document (see collectors/base.py), so that is the
+        resource document (see collection/base.py), so that is the
         canonical location and is checked first. Some collectors --
         NAT Gateway in particular -- additionally publish a richer
         block inside observations, so the two are merged with the

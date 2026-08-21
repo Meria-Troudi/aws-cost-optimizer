@@ -10,6 +10,7 @@ import { useScan } from './hooks/useScan'
 import { useScanResults } from './hooks/useScanResults'
 import { useDashboardScan } from './hooks/useDashboardScan'
 import { getScans } from './api/client'
+import { isDoneStatus } from './utils/scanStatus'
 
 export default function App() {
 
@@ -65,6 +66,7 @@ export default function App() {
     loading: resultsLoading,
     error: resultsError,
     loadResults,
+    hasResults,
   } = useScanResults(
     selectedScanId,
   )
@@ -74,7 +76,7 @@ export default function App() {
     getScans()
       .then((scans) => {
         const latest = (Array.isArray(scans) ? scans : []).find((scan) =>
-          ['completed', 'completed_with_errors'].includes(String(scan.status).toLowerCase()),
+          isDoneStatus(scan.status),
         )
         if (active && latest?.id) setSelectedScanId(latest.id)
       })
@@ -90,20 +92,11 @@ export default function App() {
   useEffect(() => {
     if (!scanData) return
 
-    const status = String(
-      scanData.status || ''
-    ).toLowerCase()
-
     const scanId =
       scanData.scan_id ??
       scanData.id
 
-    if (
-      [
-        'completed',
-        'completed_with_errors',
-      ].includes(status)
-    ) {
+    if (isDoneStatus(scanData.status)) {
       if (scanId) {
         setSelectedScanId(scanId)
       }
@@ -222,8 +215,12 @@ export default function App() {
             collectionSummaryLoading={collectionSummaryLoading}
             collectionSummaryError={collectionSummaryError}
             onLoadCollectionSummary={loadCollectionSummary}
+            hasResults={hasResults}
             loading={resultsLoading}
             error={resultsError}
+            onRefresh={() =>
+              loadResults(selectedScanId)
+            }
             onBack={() =>
               handleTabChange('overview')
             }

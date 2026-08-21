@@ -10,6 +10,7 @@ from __future__ import annotations
 import analysis.analyzers  # noqa: F401
 from analysis.context import AnalysisContext
 from analysis.engine import AnalysisEngine
+from analysis.financial import calculate_savings
 
 
 def _rds_resource(**overrides) -> dict:
@@ -124,7 +125,17 @@ class TestFinancialImpactContract:
             == "cost_not_resource_attributed"
         )
 
-    def test_resource_attributed_cost_may_be_quantified(self):
+    def test_resource_attributed_cost_without_elimination_stays_unquantified(self):
+        """
+        Resource-attributed cost alone is not enough to claim full
+        savings: a stopped RDS instance can still carry storage/backup
+        cost, so "high confidence this instance is stopped" must not
+        become "100% of its cost is saved". Only findings the analyzer
+        has explicitly marked cost_optimization_type="elimination" may
+        claim the full resource-attributed cost -- rds_stopped_instance
+        is not one of them.
+        """
+
         resource = _rds_resource()
         resource["cost_context"] = {
             **resource["cost_context"],
@@ -133,8 +144,53 @@ class TestFinancialImpactContract:
 
         finding = self._stopped_finding(resource)
 
-        assert finding.impact["estimated_monthly_savings"] == 302.28
-        assert finding.impact["savings_basis"] == "resource_attributed"
+        assert finding.impact["estimated_monthly_savings"] is None
+        assert (
+            finding.impact["savings_basis"]
+            == "target_cost_required"
+        )
+
+    def test_full_elimination_may_claim_the_whole_resource_cost(self):
+        """
+        The one case where 100% of resource-attributed cost may be
+        claimed as savings: the finding itself asserts the resource
+        can be fully eliminated (e.g. elb_idle_with_cost), not merely
+        that confidence in the detection is high.
+        """
+
+        result = calculate_savings(
+            38.10,
+            confidence="high",
+            attribution_scope="resource",
+            full_elimination=True,
+        )
+
+        assert result["estimated_monthly_savings"] == 38.10
+        assert (
+            result["savings_basis"]
+            == "full_resource_elimination"
+        )
+
+    def test_high_confidence_alone_no_longer_implies_full_savings(self):
+        """
+        Regression guard for the bug this fix removes: high
+        confidence in a finding used to be treated as proof the
+        resource's entire cost would be saved. It is not -- e.g. a
+        stopped RDS instance can still carry storage/backup cost.
+        """
+
+        result = calculate_savings(
+            302.28,
+            confidence="high",
+            attribution_scope="resource",
+            full_elimination=False,
+        )
+
+        assert result["estimated_monthly_savings"] is None
+        assert (
+            result["savings_basis"]
+            == "target_cost_required"
+        )
 
 
 class TestBillingServiceContract:
