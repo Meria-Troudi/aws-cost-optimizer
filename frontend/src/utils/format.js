@@ -22,6 +22,23 @@ export function formatMoneyOrDash(
   ).format(Number(value))
 }
 
+export function formatMoneyOrUnavailable(
+  value,
+) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === '' ||
+    !Number.isFinite(
+      Number(value),
+    )
+  ) {
+    return 'Cost unavailable'
+  }
+
+  return formatMoneyOrDash(value)
+}
+
 export function formatCompact(
   value,
 ) {
@@ -232,6 +249,18 @@ export function statusLabel(
     .charAt(0)
     .toUpperCase() +
     value.slice(1)
+}
+
+export function pluralize(
+  count,
+  singular,
+  plural = `${singular}s`,
+) {
+  const number = Number(count) || 0
+
+  return `${number} ${
+    number === 1 ? singular : plural
+  }`
 }
 
 export function truncateId(

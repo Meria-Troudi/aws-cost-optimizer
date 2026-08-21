@@ -75,6 +75,11 @@ class ScanRun(Base):
         nullable=True,
     )
 
+    cost_validation_json: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,

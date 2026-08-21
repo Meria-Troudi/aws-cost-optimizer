@@ -1,14 +1,13 @@
 import {
   useCallback,
-  useEffect,
-  useRef,
   useState,
 } from 'react'
 
 import {
-  getScan,
   startScan,
 } from '../api/client'
+import { isFailedStatus } from '../utils/scanStatus'
+import { usePollScanUntilTerminal } from './usePollScanUntilTerminal'
 
 
 function formatLocalDate(date) {
@@ -38,21 +37,6 @@ function getCurrentMonthDates() {
   }
 }
 
-const POLL_INTERVAL_MS = 3000
-
-const TERMINAL_STATUSES = [
-  'completed',
-  'completed_with_errors',
-  'failed',
-  'cancelled',
-]
-
-function isTerminal(status) {
-  return TERMINAL_STATUSES.includes(
-    String(status || '').toLowerCase(),
-  )
-}
-
 /**
  * Orchestrates a one-click "Scan Current Month" from the dashboard.
  *
@@ -73,92 +57,8 @@ export function useDashboardScan({
   const [error, setError] =
     useState(null)
 
-  const pollRef =
-    useRef(null)
-
-  const mountedRef =
-    useRef(true)
-
-  const stopPolling =
-    useCallback(() => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }, [])
-
-  useEffect(() => {
-    mountedRef.current = true
-
-    return () => {
-      mountedRef.current = false
-      stopPolling()
-    }
-  }, [stopPolling])
-
-  const pollScan =
-    useCallback(
-      (scanId) => {
-        stopPolling()
-
-        const tick = async () => {
-          try {
-            const data =
-              await getScan(scanId)
-
-            if (!mountedRef.current) {
-              return
-            }
-
-            setScanData(data)
-
-            const status = String(
-              data?.status || '',
-            ).toLowerCase()
-
-            if (
-              isTerminal(status)
-            ) {
-              stopPolling()
-              setScanning(false)
-
-              if (
-                status === 'failed' ||
-                status === 'cancelled'
-              ) {
-                setError(
-                  data?.error ||
-                    'Scan failed. Check backend logs.',
-                )
-              } else {
-                setError(null)
-                onCompleted?.(data)
-              }
-            }
-          } catch (err) {
-            if (!mountedRef.current) {
-              return
-            }
-
-            stopPolling()
-            setScanning(false)
-            setError(
-              err instanceof Error
-                ? err.message
-                : String(err),
-            )
-          }
-        }
-
-        tick()
-        pollRef.current =
-          setInterval(
-            tick,
-            POLL_INTERVAL_MS,
-          )
-      },
-      [onCompleted, stopPolling],
-    )
+  const { pollUntilTerminal, stopPolling } =
+    usePollScanUntilTerminal()
 
   const scanCurrentMonth =
     useCallback(async () => {
@@ -176,7 +76,7 @@ export function useDashboardScan({
           await startScan({
             ...dates,
             region: '',
-            cost_threshold: 100,
+            cost_threshold: 0,
           })
 
         const scanId =
@@ -197,7 +97,36 @@ export function useDashboardScan({
           status: 'running',
         })
 
-        pollScan(scanId)
+        const data = await pollUntilTerminal(
+          scanId,
+          {
+            onTick: (tickData, meta) => {
+              if (tickData) {
+                setScanData(tickData)
+              }
+
+              if (meta?.warning) {
+                setError(meta.warning)
+              }
+            },
+          },
+        )
+
+        setScanning(false)
+
+        if (
+          isFailedStatus(
+            data?.status,
+          )
+        ) {
+          setError(
+            data?.error ||
+              'Scan failed. Check backend logs.',
+          )
+        } else {
+          setError(null)
+          onCompleted?.(data)
+        }
 
         return scanId
       } catch (err) {
@@ -209,7 +138,7 @@ export function useDashboardScan({
         )
         throw err
       }
-    }, [pollScan, stopPolling])
+    }, [onCompleted, pollUntilTerminal, stopPolling])
 
   return {
     scanning,

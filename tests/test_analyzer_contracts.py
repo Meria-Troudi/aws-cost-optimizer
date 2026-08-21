@@ -22,7 +22,6 @@ from analysis.metrics import metric_summary
 from analysis.registry import get_analyzers
 
 ROOT = Path(__file__).resolve().parent.parent
-ANALYZER_DIR = ROOT / "aws_cost_optimizer" / "analysis" / "analyzers"
 RULES_PATH = (
     ROOT
     / "aws_cost_optimizer"
@@ -36,8 +35,11 @@ FINDING_TYPE_RE = re.compile(
 
 # Analyzers that set recommendation_eligible once in a shared finding
 # builder rather than per detector call.
+#
+# Keys are the analyzer module basename (the analyzers now live in
+# domain/subdomain folders, so discovery walks the whole tree).
 CENTRAL_ELIGIBILITY = {
-    "ipv4.py": True,
+    "public_ipv4.py": True,
     "vpc_endpoint.py": False,
     "load_balancer.py": True,
     "nat_gateway.py": True,
@@ -49,12 +51,36 @@ def _rules() -> dict:
         return yaml.safe_load(handle)
 
 
+def _registered_analyzer_files() -> list[Path]:
+    """Source files backing currently-registered analyzers.
+
+    Scanning the whole analyzers/ tree would also pick up scaffolding
+    that exists on disk but is never imported/registered (e.g. a
+    collector-side resource type not yet wired into the catalog) --
+    files that can never emit a finding at runtime. Deriving the file
+    set from the live registry keeps this test about what actually
+    runs.
+    """
+
+    seen: set[Path] = set()
+    files: list[Path] = []
+
+    for analyzer in get_analyzers():
+        path = Path(inspect.getfile(type(analyzer)))
+
+        if path not in seen:
+            seen.add(path)
+            files.append(path)
+
+    return sorted(files)
+
+
 def _emitted_finding_types() -> dict[str, bool | None]:
     """Map finding_type -> recommendation_eligible, parsed from source."""
 
     emitted: dict[str, bool | None] = {}
 
-    for path in sorted(ANALYZER_DIR.glob("*.py")):
+    for path in _registered_analyzer_files():
         source = path.read_text(encoding="utf-8")
 
         for match in FINDING_TYPE_RE.finditer(source):

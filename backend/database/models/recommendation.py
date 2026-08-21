@@ -129,6 +129,13 @@ class Recommendation(Base):
         index=True,
     )
 
+    service: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+        default="Unknown service",
+        index=True,
+    )
+
     title: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -181,6 +188,35 @@ class Recommendation(Base):
         nullable=False,
         default="requires_validation",
         index=True,
+    )
+
+    # AI explanation layer (Phase D): a cached, JSON-encoded
+    # RecommendationExplanation (summary/why/action/confidence_note/
+    # risk). Generated on demand, never during a scan -- absence is
+    # normal, not an error.
+    ai_explanation: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    ai_provider: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    ai_model: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    ai_prompt_version: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
+    ai_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

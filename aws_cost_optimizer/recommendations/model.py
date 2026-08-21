@@ -52,6 +52,8 @@ class Recommendation:
     resource_type: str | None
     scope: str
 
+    service: str = "Unknown service"
+
     affected_resources: list[str] = field(
         default_factory=list
     )
@@ -99,6 +101,11 @@ class Recommendation:
         self.category = str(
             self.category
             or "cost_optimization"
+        ).strip()
+
+        self.service = str(
+            self.service
+            or "Unknown service"
         ).strip()
 
         self.priority = str(
@@ -180,6 +187,9 @@ class Recommendation:
             "category":
                 self.category,
 
+            "service":
+                self.service,
+
             "priority":
                 self.priority,
 
@@ -257,6 +267,14 @@ class Recommendation:
                     "category",
                     "cost_optimization",
                 )
+            ),
+
+            service=str(
+                value.get(
+                    "service",
+                    "Unknown service",
+                )
+                or "Unknown service"
             ),
 
             priority=str(

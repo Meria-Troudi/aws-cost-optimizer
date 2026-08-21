@@ -47,25 +47,15 @@ class EvidenceStatement:
 
 @dataclass(slots=True)
 class Condition:
-    """
-    Machine-oriented condition.
-
-    This is separate from EvidenceStatement because it describes
-    the comparison that caused a finding.
-    """
-
     name: str
     operator: str
     expected: Any
     actual: Any
     passed: bool
-
     description: str | None = None
-
     evidence_keys: list[str] = field(
         default_factory=list
     )
-
     @property
     def result(
         self,
@@ -76,7 +66,6 @@ class Condition:
             if self.passed
             else "failed"
         )
-
     def to_dict(
         self,
     ) -> dict[str, Any]:

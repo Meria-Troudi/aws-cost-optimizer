@@ -93,6 +93,31 @@ class Finding:
 
     account_id: str | None = None
 
+    # What kind of cost optimization this finding represents.
+    #
+    #   review        default -- no elimination claim.
+    #   rightsizing   resource stays, capacity may shrink.
+    #   elimination   resource can be fully removed -- the only
+    #                 type where financial.py may claim 100% of
+    #                 the resource-attributed cost as savings.
+    #   configuration / commitment / architecture -- other
+    #                 non-cost-eliminating optimization shapes.
+    #
+    # Defaulting to "review" keeps this additive: existing
+    # analyzers that never set it get the conservative behavior.
+    cost_optimization_type: str = "review"
+
+    VALID_COST_OPTIMIZATION_TYPES = frozenset(
+        {
+            "review",
+            "rightsizing",
+            "elimination",
+            "configuration",
+            "commitment",
+            "architecture",
+        }
+    )
+
     def __post_init__(self) -> None:
 
         self.severity = str(
@@ -110,6 +135,20 @@ class Finding:
         self.status = str(
             self.status or "active"
         ).lower()
+
+        normalized_cost_optimization_type = str(
+            self.cost_optimization_type or "review"
+        ).strip().lower()
+
+        if (
+            normalized_cost_optimization_type
+            not in self.VALID_COST_OPTIMIZATION_TYPES
+        ):
+            normalized_cost_optimization_type = "review"
+
+        self.cost_optimization_type = (
+            normalized_cost_optimization_type
+        )
 
         if self.aggregation_scope is not None:
 
@@ -522,6 +561,27 @@ class Finding:
 
             "region":
                 self._region(),
+
+            "service":
+                self._service(),
+
+            "cost_optimization_type":
+                self.cost_optimization_type,
+
             "database_id":
-    self.database_id,
+                self.database_id,
         }
+
+    def _service(
+        self,
+    ) -> str | None:
+
+        value = self.metadata.get(
+            "service"
+        )
+
+        return (
+            str(value)
+            if value
+            else None
+        )

@@ -4,24 +4,18 @@ Recommendation persistence.
 
 from __future__ import annotations
 
-import json
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import case
 from sqlalchemy.orm import Session, selectinload
 
+from aws_cost_optimizer.analysis.ranking import (
+    SEVERITY_RANK as PRIORITY_RANK,
+)
 from backend.database.models.finding import Finding
 from backend.database.models.recommendation import Recommendation
 from backend.database.utils import json_dumps
-
-
-PRIORITY_RANK = {
-    "critical": 4,
-    "high": 3,
-    "medium": 2,
-    "low": 1,
-    "info": 0,
-}
 
 
 def _int_list(values: Any) -> list[int]:
@@ -134,6 +128,11 @@ def save_recommendations(
         category = str(
             data.get("category")
             or "cost_optimization"
+        ).strip()
+
+        service = str(
+            data.get("service")
+            or "Unknown service"
         ).strip()
 
         priority = str(
@@ -265,6 +264,8 @@ def save_recommendations(
 
                 category=category,
 
+                service=service,
+
                 title=str(
                     data.get("title")
                     or "Review resource"
@@ -319,6 +320,7 @@ def save_recommendations(
             )
 
             recommendation.category = category
+            recommendation.service = service
 
             recommendation.title = str(
                 data.get("title")
@@ -382,6 +384,63 @@ def save_recommendations(
     return saved
 
 
+def get_recommendation_by_id(
+    db: Session,
+    recommendation_id: int,
+) -> Recommendation | None:
+
+    return (
+        db.query(Recommendation)
+        .options(
+            selectinload(
+                Recommendation.primary_finding
+            ),
+        )
+        .filter(
+            Recommendation.id
+            == recommendation_id
+        )
+        .one_or_none()
+    )
+
+
+def save_recommendation_explanation(
+    db: Session,
+    recommendation_id: int,
+    explanation: dict[str, Any],
+    *,
+    provider: str,
+    model: str,
+    prompt_version: str,
+) -> Recommendation | None:
+
+    recommendation = get_recommendation_by_id(
+        db,
+        recommendation_id,
+    )
+
+    if recommendation is None:
+        return None
+
+    recommendation.ai_explanation = (
+        _json_value(explanation)
+    )
+
+    recommendation.ai_provider = provider
+    recommendation.ai_model = model
+    recommendation.ai_prompt_version = (
+        prompt_version
+    )
+
+    recommendation.ai_generated_at = (
+        datetime.utcnow()
+    )
+
+    db.flush()
+
+    return recommendation
+
+
 def get_recommendations_by_scan(
     db: Session,
     scan_run_id: int,
@@ -415,151 +474,3 @@ def get_recommendations_by_scan(
     )
 
 
-def _load_json(
-    value: str | None,
-    default: Any,
-) -> Any:
-
-    if not value:
-        return default
-
-    try:
-        parsed = json.loads(value)
-    except (
-        TypeError,
-        ValueError,
-    ):
-        return default
-
-    return parsed
-
-
-def recommendation_to_dict(
-    recommendation: Recommendation,
-) -> dict[str, Any]:
-
-    affected_resources = _load_json(
-        recommendation.affected_resources,
-        [],
-    )
-
-    limitations = _load_json(
-        recommendation.limitations,
-        [],
-    )
-
-    evidence = _load_json(
-        recommendation.evidence,
-        [],
-    )
-
-    financial_impact = _load_json(
-        recommendation.financial_impact,
-        {},
-    )
-
-    source_findings = (
-        recommendation.findings
-        or []
-    )
-
-    source_finding_ids = [
-        finding.id
-        for finding in source_findings
-        if finding.id is not None
-    ]
-
-    source_finding_types = [
-        finding.finding_type
-        for finding in source_findings
-        if finding.finding_type
-    ]
-
-    return {
-        "id":
-            recommendation.id,
-
-        "scan_run_id":
-            recommendation.scan_run_id,
-
-        "recommendation_key":
-            recommendation.recommendation_key,
-
-        "recommendation_variant":
-            recommendation.recommendation_variant
-            or None,
-
-        "recommendation_scope":
-            recommendation.recommendation_scope,
-
-        "resource_type":
-            recommendation.resource_type,
-
-        "scope":
-            recommendation.scope,
-
-        "category":
-            recommendation.category,
-
-        "title":
-            recommendation.title,
-
-        "reason":
-            recommendation.reason,
-
-        "action":
-            recommendation.action,
-
-        "priority":
-            recommendation.priority,
-
-        "confidence":
-            recommendation.confidence,
-
-        "affected_resources":
-            affected_resources
-            if isinstance(
-                affected_resources,
-                list,
-            )
-            else [],
-
-        "source_finding_ids":
-            source_finding_ids,
-
-        "source_finding_types":
-            source_finding_types,
-
-        "source_finding_count":
-            len(source_finding_ids),
-
-        "limitations":
-            limitations
-            if isinstance(
-                limitations,
-                list,
-            )
-            else [],
-
-        "evidence":
-            evidence
-            if isinstance(
-                evidence,
-                list,
-            )
-            else [],
-
-        "financial_impact":
-            financial_impact
-            if isinstance(
-                financial_impact,
-                dict,
-            )
-            else {},
-
-        "status":
-            recommendation.status,
-
-        "created_at":
-            recommendation.created_at,
-    }

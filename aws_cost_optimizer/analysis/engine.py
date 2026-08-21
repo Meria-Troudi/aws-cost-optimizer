@@ -1,22 +1,7 @@
 """
 Analysis engine.
 
-Responsibilities
-----------------
-- execute analyzers
-- normalize raw findings
-- ensure stable resource identity
-- perform deterministic raw deduplication
 
-Important
----------
-This engine NEVER decides aggregation scope.
-
-Each Finding produced here remains a raw resource-level fact,
-but `aggregation_scope` is left unset.
-
-FindingAggregator is responsible for deciding whether raw findings
-are reported per resource, region, account, or service.
 """
 
 from __future__ import annotations
@@ -55,12 +40,6 @@ class AnalysisEngine:
     ) -> list[Finding]:
 
         findings: list[Finding] = []
-
-        # Per-analyzer health, used after the loop to turn a silent
-        # total failure into a loud one. An analyzer that raises on
-        # EVERY resource is a broken contract (wrong signature, missing
-        # attribute, bad constructor kwarg), not bad data -- and it
-        # would otherwise produce zero findings with no visible error.
         stats: dict[str, dict[str, Any]] = {}
 
         for resource in resources:
@@ -186,19 +165,7 @@ class AnalysisEngine:
     def _report_analyzer_health(
         stats: dict[str, dict[str, Any]],
     ) -> None:
-        """
-        Surface analyzers that failed silently.
 
-        The per-resource handlers above deliberately swallow errors so
-        one bad resource cannot abort a scan. That same behaviour hides
-        a broken analyzer contract completely: it raises on every
-        resource, contributes nothing, and the scan still reports
-        success. Two signals are checked here:
-
-        * raised on EVERY resource it saw   -> fatal, raise
-        * supported resources but found none -> warn (legitimately
-          possible, so never fatal)
-        """
 
         broken: list[str] = []
 
@@ -277,14 +244,7 @@ class AnalysisEngine:
                 str(account_id),
             )
 
-        # ----------------------------------------------------------
-        # Billing service is a different axis than the AWS resource
-        # type: a NAT Gateway is collected because of the
-        # EU-NatGateway-Hours usage type, but bills under
-        # "EC2 - Other". Recommendations are presented by billing
-        # service, not by usage type, so preserve it here.
-        # ----------------------------------------------------------
-
+ 
         billing = context.billing()
 
         billing_service = billing.get(
@@ -314,25 +274,6 @@ class AnalysisEngine:
                 str(usage_type),
             )
 
-        # ----------------------------------------------------------
-        # Financial impact.
-        #
-        # No analyzer populated Finding.impact, so calculate_savings()
-        # was never called and every financial block came out as all
-        # None -- the platform could not report an observed cost, let
-        # alone explain why a savings figure was absent.
-        #
-        # It is filled in centrally here rather than in each analyzer
-        # because the inputs (billing amount, attribution scope) come
-        # from the collection plan, not from analyzer logic. An
-        # analyzer that sets its own impact still wins.
-        #
-        # This deliberately does NOT invent savings: with
-        # attribution_scope="collection_plan", calculate_savings
-        # returns the observed cost plus the basis
-        # "cost_not_resource_attributed", which is the honest answer
-        # when service-level spend cannot be pinned to one resource.
-        # ----------------------------------------------------------
 
         if not finding.impact:
 
@@ -341,6 +282,10 @@ class AnalysisEngine:
                 confidence=finding.confidence,
                 attribution_scope=billing.get(
                     "attribution_scope"
+                ),
+                full_elimination=(
+                    finding.cost_optimization_type
+                    == "elimination"
                 ),
             )
 
@@ -353,19 +298,6 @@ class AnalysisEngine:
                 impact
             )
 
-        # ----------------------------------------------------------
-        # IMPORTANT
-        #
-        # DO NOT set aggregation_scope here.
-        #
-        # None means:
-        #     "the analyzer did not select report scope"
-        #
-        # The aggregator decides the report scope.
-        # Finding identity
-        #
-        # Raw finding identity always includes resource_id.
-        # ----------------------------------------------------------
 
         finding.finding_key = (
             finding.finding_key

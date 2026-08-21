@@ -4,8 +4,10 @@ import {
   getRecommendations,
   getScan,
   getScanCostSummary,
+  getScanCostDrivers,
+  getScanCollectionSummary,
 } from '../api/client'
-import { mapApiFindings, mapApiRecommendations } from '../data/findings'
+import { mapApiFindings, mapApiRecommendations } from '../mappers/findings'
 
 function isDisplayableScan(data) {
   if (!data) return false
@@ -27,6 +29,10 @@ export function useScanResults(lastScanId = null) {
   const [findings, setFindings] = useState({})
   const [recommendations, setRecommendations] = useState([])
   const [costSummary, setCostSummary] = useState(null)
+  const [costDrivers, setCostDrivers] = useState([])
+  const [collectionSummary, setCollectionSummary] = useState(null)
+  const [collectionSummaryLoading, setCollectionSummaryLoading] = useState(false)
+  const [collectionSummaryError, setCollectionSummaryError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -38,6 +44,8 @@ export function useScanResults(lastScanId = null) {
       setFindings({})
       setRecommendations([])
       setCostSummary(null)
+      setCostDrivers([])
+      setCollectionSummary(null)
       setError(null)
       return null
     }
@@ -52,10 +60,6 @@ export function useScanResults(lastScanId = null) {
         throw new Error('Scan not found.')
       }
 
-      /*
-       * A running scan is not a results page yet.
-       * Keep the scan metadata so the UI can display its status.
-       */
       if (!isDisplayableScan(scan)) {
         setResultsScan(scan)
         setFindings({})
@@ -63,10 +67,11 @@ export function useScanResults(lastScanId = null) {
         return scan
       }
 
-      const [apiFindings, apiRecommendations, summary] = await Promise.all([
+      const [apiFindings, apiRecommendations, summary, drivers] = await Promise.all([
         getFindings(id),
         getRecommendations(id),
         getScanCostSummary(id),
+        getScanCostDrivers(id),
       ])
 
       const safeFindings = normalizeArray(apiFindings)
@@ -86,6 +91,7 @@ export function useScanResults(lastScanId = null) {
       setFindings(mappedFindings)
       setRecommendations(mappedRecommendations)
       setCostSummary(summary)
+      setCostDrivers(normalizeArray(drivers?.drivers))
 
       return scan
     } catch (err) {
@@ -96,14 +102,34 @@ export function useScanResults(lastScanId = null) {
 
       setError(message)
 
-      /*
-       * Do not destroy already-loaded results if a refresh fails.
-       * This prevents the page from becoming blank because of one
-       * failed API request.
-       */
       return null
     } finally {
       setLoading(false)
+    }
+  }, [lastScanId])
+
+  const loadCollectionSummary = useCallback(async (scanId = null) => {
+    const id = scanId ?? lastScanId
+
+    if (!id) return null
+
+    setCollectionSummaryLoading(true)
+    setCollectionSummaryError(null)
+
+    try {
+      const data = await getScanCollectionSummary(id)
+      setCollectionSummary(data)
+      return data
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to load collection summary.'
+
+      setCollectionSummaryError(message)
+      return null
+    } finally {
+      setCollectionSummaryLoading(false)
     }
   }, [lastScanId])
 
@@ -113,6 +139,8 @@ export function useScanResults(lastScanId = null) {
       setFindings({})
       setRecommendations([])
       setCostSummary(null)
+      setCostDrivers([])
+      setCollectionSummary(null)
       setError(null)
       return
     }
@@ -125,6 +153,8 @@ export function useScanResults(lastScanId = null) {
     setFindings({})
     setRecommendations([])
     setCostSummary(null)
+    setCostDrivers([])
+    setCollectionSummary(null)
     setError(null)
   }, [])
 
@@ -133,6 +163,11 @@ export function useScanResults(lastScanId = null) {
     findings,
     recommendations,
     costSummary,
+    costDrivers,
+    collectionSummary,
+    collectionSummaryLoading,
+    collectionSummaryError,
+    loadCollectionSummary,
     loading,
     error,
     loadResults,

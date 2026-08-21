@@ -119,8 +119,3 @@ def latest_scan_with_costs(db: Session) -> ScanRun | None:
         .order_by(ScanRun.id.desc())
         .first()
     )
-
-
-def month_expression(start_date_column):
-    """SQLite-safe YYYY-MM grouping for date columns."""
-    return func.strftime("%Y-%m", start_date_column)

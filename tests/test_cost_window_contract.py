@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from collectors.cost import cost_explorer as ce
+from collection.cost import cost_explorer as ce
 
 
 @pytest.fixture(autouse=True)

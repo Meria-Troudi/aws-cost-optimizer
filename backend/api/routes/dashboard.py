@@ -13,10 +13,11 @@ from backend.api.services.dashboard_service import (
     DashboardService,
 )
 
-from backend.database.models.scan_run import ScanRun
 from backend.database.repositories.scan_run_repository import (
+    get_latest_scan_run,
     get_scan_summary,
 )
+
 
 router = APIRouter(
     prefix="/api/dashboard",
@@ -24,25 +25,38 @@ router = APIRouter(
 )
 
 
+def _clean_region(
+    value: str | None,
+) -> str | None:
+
+    if value in (
+        None,
+        "",
+        "all",
+    ):
+        return None
+
+    return value
+
+
 @router.get("/overview")
 def dashboard_overview(
     history_months: int = Query(
         default=6,
-        ge=1,
-        le=24,
+        ge=3,
+        le=12,
     ),
-    region: str | None = None,
-    service: str | None = None,
-    db: Session = Depends(get_db),
+    force_refresh: bool = Query(
+        default=False,
+    ),
+    db: Session = Depends(
+        get_db
+    ),
 ):
+
     try:
-        latest_scan = (
-            db.query(ScanRun)
-            .order_by(
-                ScanRun.created_at.desc()
-            )
-            .first()
-        )
+
+        latest_scan = get_latest_scan_run(db)
 
         latest_scan_summary = (
             get_scan_summary(
@@ -56,13 +70,12 @@ def dashboard_overview(
 
         return dashboard.get_overview(
             history_months=history_months,
-            # DashboardService currently aggregates all services itself.
-            # Do not forward the UI service filter as an unsupported keyword.
-            region=None if region in (None, "", "all") else region,
             latest_scan=latest_scan_summary,
+            force_refresh=force_refresh,
         )
 
     except Exception as exc:
+
         raise HTTPException(
             status_code=502,
             detail="Unable to load dashboard.",

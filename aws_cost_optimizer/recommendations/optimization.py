@@ -65,7 +65,7 @@ class OptimizationPipeline:
 
         try:
 
-            findings = (
+            finding_result = (
                 self.finding_engine.evaluate_and_persist(
                     db=db,
                     scan=scan,
@@ -75,9 +75,22 @@ class OptimizationPipeline:
                 )
             )
 
+            raw_findings = finding_result[
+                "raw_findings"
+            ]
+
+            aggregated_findings = finding_result[
+                "aggregated_findings"
+            ]
+
+            # Recommendations are built from raw (one-resource) findings
+            # only -- aggregated_findings is a reporting view and must
+            # never be fed back into recommendation generation, or
+            # e.g. 3 idle NAT gateways would collapse into 1
+            # recommendation instead of 3.
             recommendations = (
                 self.recommendation_engine.generate(
-                    findings
+                    raw_findings
                 )
             )
 
@@ -107,10 +120,10 @@ class OptimizationPipeline:
                     scan.id,
 
                 "findings":
-                    findings,
+                    aggregated_findings,
 
                 "finding_count":
-                    len(findings),
+                    len(aggregated_findings),
 
                 "recommendations":
                     recommendations,

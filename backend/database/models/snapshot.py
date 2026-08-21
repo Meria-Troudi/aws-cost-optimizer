@@ -1,8 +1,6 @@
 """
 Resource snapshot model.
 
-A ResourceSnapshot represents the state/evidence of a stable AWS
-resource during one specific scan.
 """
 
 from __future__ import annotations

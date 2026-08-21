@@ -1,7 +1,7 @@
 """
 Test bootstrap.
 
-The engine uses bare top-level imports (`from collectors.registry ...`),
+The engine uses bare top-level imports (`from collection.registry ...`),
 so both the repo root and aws_cost_optimizer/ must be on sys.path --
 the same thing backend/bootstrap.py::ensure_project_paths() does for the
 application.

@@ -37,7 +37,11 @@ async function request(path, options = {}) {
 
   if (response.status !== 204) {
     try {
-      if (contentType.includes('application/json')) {
+      if (
+        contentType.includes(
+          'application/json',
+        )
+      ) {
         body = await response.json()
       } else {
         const text = await response.text()
@@ -65,7 +69,7 @@ async function request(path, options = {}) {
     if (Array.isArray(detail)) {
       detail = detail
         .map(
-          (item) =>
+          item =>
             item?.msg ||
             JSON.stringify(item),
         )
@@ -82,9 +86,20 @@ async function request(path, options = {}) {
   return body
 }
 
-/* -------------------------------------------------------------------------- */
-/* Health / account                                                          */
-/* -------------------------------------------------------------------------- */
+function buildQuery(params = {}) {
+  const clean = Object.fromEntries(
+    Object.entries(params).filter(
+      ([, value]) =>
+        value !== undefined &&
+        value !== null &&
+        value !== '',
+    ),
+  )
+
+  return new URLSearchParams(
+    clean,
+  ).toString()
+}
 
 export function checkApi() {
   return request('/health')
@@ -94,117 +109,200 @@ export function getAccount() {
   return request('/api/account')
 }
 
-/* -------------------------------------------------------------------------- */
-/* Live cost dashboard                                                       */
-/* -------------------------------------------------------------------------- */
-
-export function refreshCostData(payload = {}) {
-  return request('/api/cost/refresh', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
 export function getCostRegions() {
   return request('/api/cost/regions')
 }
 
-export function getDashboard(params = {}) {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(
-      ([, value]) =>
-        value !== undefined &&
-        value !== null &&
-        value !== '',
-    ),
+export function getDashboard(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
   )
 
-  const query =
-    new URLSearchParams(cleanParams).toString()
-
   return request(
-    `/api/dashboard/overview${query ? `?${query}` : ''}`,
+    `/api/dashboard/overview${
+      query ? `?${query}` : ''
+    }`,
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/* Scans                                                                     */
-/* -------------------------------------------------------------------------- */
+export function getCostExplorer(
+  params = {},
+) {
 
-export function startScan(payload = {}) {
-  return request('/api/scans', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
-export function getScans(params = {}) {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(
-      ([, value]) =>
-        value !== undefined &&
-        value !== null &&
-        value !== '',
-    ),
+  const query = buildQuery(
+    params,
   )
 
-  const query =
-    new URLSearchParams(cleanParams).toString()
+  return request(
+    `/api/cost/explorer${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export function getCostExplorerService(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
+  )
 
   return request(
-    `/api/scans${query ? `?${query}` : ''}`,
+    `/api/cost/explorer/service${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export function startScan(
+  payload = {},
+) {
+
+  return request(
+    '/api/scans',
+    {
+      method: 'POST',
+      body: JSON.stringify(
+        payload,
+      ),
+    },
+  )
+}
+
+export function getScans(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
+  )
+
+  return request(
+    `/api/scans${
+      query ? `?${query}` : ''
+    }`,
   )
 }
 
 export function getScan(scanId) {
+
   if (!scanId) {
-    throw new Error('Scan ID is required.')
+    throw new Error(
+      'Scan ID is required.',
+    )
   }
 
   return request(
-    `/api/scans/${encodeURIComponent(scanId)}`,
-  ).then((response) => response?.scan ?? response)
+    `/api/scans/${encodeURIComponent(
+      scanId,
+    )}`,
+  ).then(
+    response =>
+      response?.scan ??
+      response,
+  )
 }
 
-export function getScanCostSummary(scanId) {
-  if (!scanId) throw new Error('Scan ID is required.')
-  return request(`/api/scans/${encodeURIComponent(scanId)}/cost-summary`)
-}
+export function getScanCostSummary(
+  scanId,
+) {
 
-export function getRegions() {
-  return getCostRegions()
-}
-
-export function deleteScan(scanId) {
   if (!scanId) {
-    throw new Error('Scan ID is required.')
+    throw new Error(
+      'Scan ID is required.',
+    )
   }
 
   return request(
-    `/api/scans/${encodeURIComponent(scanId)}`,
+    `/api/scans/${encodeURIComponent(
+      scanId,
+    )}/cost-summary`,
+  )
+}
+
+export function getScanCostDrivers(
+  scanId,
+) {
+
+  if (!scanId) {
+    throw new Error(
+      'Scan ID is required.',
+    )
+  }
+
+  return request(
+    `/api/scans/${encodeURIComponent(
+      scanId,
+    )}/cost-drivers`,
+  )
+}
+
+export function getScanCollectionSummary(
+  scanId,
+) {
+
+  if (!scanId) {
+    throw new Error(
+      'Scan ID is required.',
+    )
+  }
+
+  return request(
+    `/api/scans/${encodeURIComponent(
+      scanId,
+    )}/collection-summary`,
+  )
+}
+
+export function deleteScan(
+  scanId,
+) {
+
+  if (!scanId) {
+    throw new Error(
+      'Scan ID is required.',
+    )
+  }
+
+  return request(
+    `/api/scans/${encodeURIComponent(
+      scanId,
+    )}`,
     {
       method: 'DELETE',
     },
   )
 }
 
-/* -------------------------------------------------------------------------- */
-/* Scan results                                                               */
-/* -------------------------------------------------------------------------- */
+export function getFindings(
+  scanId,
+) {
 
-export function getFindings(scanId) {
   if (!scanId) {
-    throw new Error('Scan ID is required.')
+    throw new Error(
+      'Scan ID is required.',
+    )
   }
 
   return request(
-    `/api/scans/${encodeURIComponent(scanId)}/findings`,
+    `/api/scans/${encodeURIComponent(
+      scanId,
+    )}/findings`,
   )
 }
 
-export function getRecommendations(scanId) {
+export function getRecommendations(
+  scanId,
+) {
+
   if (!scanId) {
-    throw new Error('Scan ID is required.')
+    throw new Error(
+      'Scan ID is required.',
+    )
   }
 
   return request(
@@ -214,14 +312,63 @@ export function getRecommendations(scanId) {
   )
 }
 
-export function getCostTrend(scanId) {
+export function getCostTrend(
+  scanId,
+) {
+
   if (!scanId) {
-    throw new Error('Scan ID is required.')
+    throw new Error(
+      'Scan ID is required.',
+    )
   }
 
   return request(
     `/api/scans/${encodeURIComponent(
       scanId,
     )}/cost-trend`,
+  )
+}
+
+export function getRecommendation(
+  recommendationId,
+) {
+
+  if (!recommendationId) {
+    throw new Error(
+      'Recommendation ID is required.',
+    )
+  }
+
+  return request(
+    `/api/recommendations/${encodeURIComponent(
+      recommendationId,
+    )}`,
+  )
+}
+
+export function explainRecommendation(
+  recommendationId,
+  { force = false } = {},
+) {
+
+  if (!recommendationId) {
+    throw new Error(
+      'Recommendation ID is required.',
+    )
+  }
+
+  const query = buildQuery({
+    force: force ? 'true' : undefined,
+  })
+
+  return request(
+    `/api/recommendations/${encodeURIComponent(
+      recommendationId,
+    )}/explain${
+      query ? `?${query}` : ''
+    }`,
+    {
+      method: 'POST',
+    },
   )
 }

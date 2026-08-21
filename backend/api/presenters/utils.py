@@ -17,12 +17,7 @@ def parse_json_field(
     value: Any,
     default: Any = None,
 ) -> Any:
-    """
-    Safely decode a JSON database field.
 
-    Supports both serialized JSON strings and already-decoded
-    Python values.
-    """
 
     if value is None:
         return default

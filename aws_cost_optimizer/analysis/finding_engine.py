@@ -1,30 +1,8 @@
 """
 Finding evaluation engine.
 
-Pipeline:
 
-resources
-    -> analyzers
-    -> raw resource findings
-    -> persist raw findings
-    -> aggregation
-    -> reportable findings
-    -> recommendation source IDs resolved to persisted findings
 
-Important
----------
-A database Finding row represents ONE raw resource-level finding.
-
-Aggregation is a reporting concern only.
-
-Therefore:
-
-    nat-1 + nat-2 + nat-3
-        -> 3 persisted Finding rows
-        -> 1 aggregated/reportable finding
-
-This preserves resource-level traceability while still allowing
-regional/account/service aggregation for the UI and reporting.
 """
 
 from __future__ import annotations
@@ -51,11 +29,6 @@ class FindingEngine:
         self.aggregator = (
             FindingAggregator()
         )
-
-    # ==============================================================
-    # EVALUATE
-    # ==============================================================
-
     def evaluate(
         self,
         resources,
@@ -84,12 +57,6 @@ class FindingEngine:
 
         result: list[Any] = []
 
-        # ----------------------------------------------------------
-        # Data-quality findings generated upstream.
-        #
-        # These are already dictionaries and are not part of the
-        # analyzer raw Finding lifecycle.
-        # ----------------------------------------------------------
 
         for finding in (
             pre_findings or []
@@ -128,21 +95,11 @@ class FindingEngine:
             result.append(
                 normalized
             )
-
-        # ----------------------------------------------------------
-        # Aggregated optimization findings.
-        # ----------------------------------------------------------
-
         result.extend(
             aggregated
         )
 
         return result
-
-    # ==============================================================
-    # EVALUATE + PERSIST
-    # ==============================================================
-
     def evaluate_and_persist(
         self,
         db,
@@ -158,11 +115,6 @@ class FindingEngine:
             raise ValueError(
                 "scan is required."
             )
-
-        # ----------------------------------------------------------
-        # 1. Analyze resources into RAW resource-level findings.
-        # ----------------------------------------------------------
-
         raw_findings = (
             self.analysis_engine.analyze(
                 resources,
@@ -175,17 +127,6 @@ class FindingEngine:
             )
         )
 
-        # ----------------------------------------------------------
-        # 2. Persist RAW findings.
-        #
-        # This is the authoritative DB representation.
-        #
-        # Example:
-        #
-        #   NAT-1 -> Finding.id = 101
-        #   NAT-2 -> Finding.id = 102
-        #   NAT-3 -> Finding.id = 103
-        # ----------------------------------------------------------
 
         saved_raw = self._persist_raw_findings(
             db=db,
@@ -220,37 +161,38 @@ class FindingEngine:
             )
         }
 
-        # ----------------------------------------------------------
-        # 3. Aggregate raw findings for reporting.
-        #
-        # The aggregator still works entirely on raw Finding objects.
-        # ----------------------------------------------------------
-
+      
         aggregated = (
             self.aggregator.aggregate(
                 raw_findings
             )
         )
 
-        # ----------------------------------------------------------
-        # 4. Attach persisted DB finding IDs to each aggregated
-        #    finding so RecommendationEngine can reference the
-        #    actual raw rows.
-        # ----------------------------------------------------------
+
 
         self._attach_source_database_ids(
             aggregated,
             raw_database_id_by_stable_id,
         )
 
+        # Raw findings are one-resource-plus-one-condition facts, each
+        # already carrying its own database_id -- this is what the
+        # recommendation engine consumes so it can emit exactly one
+        # recommendation per eligible finding. Aggregated findings
+        # (built above) stay a separate, reporting-only view: they
+        # collapse many resources into one summary row and must never
+        # be fed back into recommendation generation.
+        raw_finding_dicts = [
+            finding.to_dict()
+            for finding in raw_findings
+        ]
+
         result: list[Any] = []
 
-        # ----------------------------------------------------------
-        # 5. Add upstream data-quality findings.
-        #
-        # These are not recommendation-eligible and therefore do not
-        # need raw analyzer Finding persistence.
-        # ----------------------------------------------------------
+      
+        normalized_pre_findings: list[
+            dict[str, Any]
+        ] = []
 
         for finding in (
             pre_findings or []
@@ -286,24 +228,36 @@ class FindingEngine:
                 [],
             )
 
-            result.append(
+            normalized_pre_findings.append(
                 normalized
             )
 
-        # ----------------------------------------------------------
-        # 6. Add aggregated optimization findings.
-        # ----------------------------------------------------------
+        if normalized_pre_findings:
 
+            from backend.database.repositories.finding_repository import (
+                save_findings,
+            )
+
+            save_findings(
+                db=db,
+                scan_run_id=scan.id,
+                findings=normalized_pre_findings,
+            )
+
+        result.extend(
+            normalized_pre_findings
+        )
         result.extend(
             aggregated
         )
 
-        return result
+        return {
+            "raw_findings":
+                raw_finding_dicts,
 
-    # ==============================================================
-    # RAW FINDING PERSISTENCE
-    # ==============================================================
-
+            "aggregated_findings":
+                result,
+        }
     @staticmethod
     def _persist_raw_findings(
         db,
@@ -353,11 +307,6 @@ class FindingEngine:
             )
 
         return saved
-
-    # ==============================================================
-    # DATABASE IDS -> RAW FINDINGS
-    # ==============================================================
-
     @staticmethod
     def _attach_database_ids_to_raw_findings(
          findings: list[Finding],
@@ -390,11 +339,6 @@ class FindingEngine:
             finding.database_id = int(
                 database_id
             )
-
-    # ==============================================================
-    # RAW DATABASE IDS -> AGGREGATED FINDINGS
-    # ==============================================================
-
     @staticmethod
     def _attach_source_database_ids(
         aggregated: list[dict[str, Any]],
@@ -453,25 +397,13 @@ class FindingEngine:
             finding[
                 "source_finding_ids"
             ] = database_ids
-
-    # ==============================================================
-    # LEGACY COMPATIBILITY
-    # ==============================================================
-
     @staticmethod
     def _persist(
         db,
         scan,
         findings,
     ):
-        """
-        Compatibility wrapper.
 
-        New code must persist RAW findings through
-        _persist_raw_findings().
-
-        This method remains available so older callers do not fail.
-        """
 
         raw_findings = [
             finding

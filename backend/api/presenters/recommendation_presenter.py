@@ -34,24 +34,6 @@ def _dict(value: Any) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _extract_number(
-    data: dict[str, Any],
-    *keys: str,
-) -> float | None:
-    for key in keys:
-        value = data.get(key)
-
-        if value is None:
-            continue
-
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            continue
-
-    return None
-
-
 def present_recommendation(
     rec: Recommendation,
 ) -> dict[str, Any]:
@@ -93,7 +75,8 @@ def present_recommendation(
 
         "scope": rec.scope,
 
-        "category": rec.category,
+        "service": rec.service,
+
 
         "title": rec.title,
 
@@ -119,25 +102,32 @@ def present_recommendation(
 
         "financial_impact": financial_impact,
 
+        # Kept under this key too (in addition to financial_impact)
+        # since ResultsPage's summary totals already read it. 0 (not
+        # None) when the evidence's savings_confidence is "low" --
+        # see aws_cost_optimizer/analysis/financial.py.
         "estimated_monthly_savings": (
-            _extract_number(
-                financial_impact,
-                "monthly_savings",
-                "estimated_monthly_savings",
-                "estimatedMonthlySavings",
-            )
-        ),
-
-        "estimated_annual_savings": (
-            _extract_number(
-                financial_impact,
-                "annual_savings",
-                "estimated_annual_savings",
-                "estimatedAnnualSavings",
+            financial_impact.get(
+                "estimated_monthly_savings"
             )
         ),
 
         "status": rec.status,
+
+        "ai_explanation": parse_json_field(
+            rec.ai_explanation,
+            default=None,
+        ),
+
+        "ai_provider": rec.ai_provider,
+
+        "ai_model": rec.ai_model,
+
+        "ai_generated_at": (
+            rec.ai_generated_at.isoformat()
+            if rec.ai_generated_at
+            else None
+        ),
 
         "created_at": (
             rec.created_at.isoformat()

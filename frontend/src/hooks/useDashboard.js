@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useRef,
   useState,
 } from 'react'
 
@@ -9,92 +8,135 @@ import {
   getDashboard,
 } from '../api/client'
 
+
 export function useDashboard() {
-  const [dashboardData, setDashboardData] =
-    useState(null)
 
-  const [loading, setLoading] =
-    useState(false)
+  const [
+    dashboardData,
+    setDashboardData,
+  ] = useState(null)
 
-  const [refreshing, setRefreshing] =
-    useState(false)
+  const [
+    loading,
+    setLoading,
+  ] = useState(false)
 
-  const [error, setError] =
-    useState(null)
+  const [
+    refreshing,
+    setRefreshing,
+  ] = useState(false)
 
-  const autoRefreshAttempted =
-    useRef(false)
+  const [
+    error,
+    setError,
+  ] = useState(null)
+
 
   const loadDashboard =
-    useCallback(async (filterParams = {}) => {
-      setLoading(true)
-      setError(null)
+    useCallback(
+      async (
+        params = {},
+      ) => {
 
-      try {
-        const data = await getDashboard(filterParams)
-
-        setDashboardData(data)
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : String(err)
+        setLoading(
+          true,
         )
-      } finally {
-        setLoading(false)
-      }
-    }, [])
+
+        setError(
+          null,
+        )
+
+        try {
+
+          const data =
+            await getDashboard(
+              {
+                history_months: 6,
+                ...params,
+              },
+            )
+
+          setDashboardData(
+            data,
+          )
+
+        } catch (err) {
+
+          setError(
+            err instanceof Error
+              ? err.message
+              : String(err),
+          )
+
+        } finally {
+
+          setLoading(
+            false,
+          )
+        }
+      },
+      [],
+    )
+
 
   const refreshCosts =
-    useCallback(async (filterParams = {}) => {
-      setRefreshing(true)
-      setError(null)
+    useCallback(
+      async (
+        params = {},
+      ) => {
 
-      try {
-        // The dashboard reads current Cost Explorer data directly; there is
-        // no separate local cache to refresh before loading it again.
-        await loadDashboard(filterParams)
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : String(err)
+        setRefreshing(
+          true,
         )
-      } finally {
-        setRefreshing(false)
-      }
-    }, [loadDashboard])
+
+        setError(
+          null,
+        )
+
+        try {
+
+          const data =
+            await getDashboard(
+              {
+                history_months: 6,
+                force_refresh: true,
+                ...params,
+              },
+            )
+
+          setDashboardData(
+            data,
+          )
+
+        } catch (err) {
+
+          setError(
+            err instanceof Error
+              ? err.message
+              : String(err),
+          )
+
+        } finally {
+
+          setRefreshing(
+            false,
+          )
+        }
+      },
+      [],
+    )
+
 
   useEffect(() => {
-    loadDashboard({ history_months: 6 })
-  }, [loadDashboard])
 
-  /*
-   * If the dashboard has no cost data,
-   * attempt one backend refresh.
-   */
-  useEffect(() => {
-    if (autoRefreshAttempted.current) {
-      return
-    }
+    loadDashboard({
+      history_months: 6,
+    })
 
-    if (loading || refreshing) {
-      return
-    }
-
-    if (dashboardData?.cost_available) {
-      return
-    }
-
-    autoRefreshAttempted.current = true
-
-    refreshCosts({ history_months: 6 })
   }, [
-    loading,
-    refreshing,
-    dashboardData?.cost_available,
-    refreshCosts,
+    loadDashboard,
   ])
+
 
   return {
     dashboardData,
@@ -105,5 +147,6 @@ export function useDashboard() {
     refreshCosts,
   }
 }
+
 
 export default useDashboard

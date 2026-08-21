@@ -17,6 +17,9 @@ from backend.api.routes.scan_results import (
     router as scan_results_router,
 )
 from backend.api.routes.cost import router as cost_router
+from backend.api.routes.recommendations import (
+    router as recommendations_router,
+)
 
 
 app = FastAPI(
@@ -70,6 +73,7 @@ app.include_router(dashboard_router)
 app.include_router(scans_router)
 app.include_router(scan_results_router)
 app.include_router(cost_router)
+app.include_router(recommendations_router)
 
 
 @app.get("/health")

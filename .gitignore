@@ -40,3 +40,6 @@ Thumbs.db
 
 # Test artifacts
 .pytest_cache/
+
+tests/__pycache__/
+CLAUDE.md

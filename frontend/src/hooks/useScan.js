@@ -1,33 +1,8 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
+import { useCallback, useState } from 'react'
 
-import {
-  getScan,
-  startScan,
-} from '../api/client'
-
-const POLL_INTERVAL_MS = 3000
-const MAX_POLLS = 600
-
-// Consecutive failed status checks tolerated before giving up. The scan
-// runs server-side, so a dropped request or a backend restart must not
-// be reported to the user as a failed scan.
-const MAX_CONSECUTIVE_POLL_ERRORS = 5
-
-function isTerminalStatus(status) {
-  return [
-    'completed',
-    'completed_with_errors',
-    'failed',
-    'cancelled',
-  ].includes(
-    String(status || '').toLowerCase(),
-  )
-}
+import { startScan } from '../api/client'
+import { isFailedStatus } from '../utils/scanStatus'
+import { usePollScanUntilTerminal } from './usePollScanUntilTerminal'
 
 export function useScan() {
   const [scanData, setScanData] =
@@ -45,192 +20,8 @@ export function useScan() {
   const [lastScanTime, setLastScanTime] =
     useState('—')
 
-  const pollRef =
-    useRef(null)
-
-  const mountedRef =
-    useRef(true)
-
-  useEffect(() => {
-    mountedRef.current = true
-
-    return () => {
-      mountedRef.current = false
-
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }
-  }, [])
-
-  const stopPolling =
-    useCallback(() => {
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }, [])
-
-  const pollScan =
-    useCallback(
-      (scanId) =>
-        new Promise((resolve, reject) => {
-          let attempts = 0
-          let consecutiveErrors = 0
-          let finished = false
-
-          const finish = (callback, value) => {
-            if (finished) return
-
-            finished = true
-
-            stopPolling()
-
-            callback(value)
-          }
-
-          const poll = async () => {
-            attempts += 1
-
-            try {
-              const data =
-                await getScan(scanId)
-
-              if (!mountedRef.current) {
-                finish(resolve, scanId)
-                return
-              }
-
-              // A poll succeeded, so any earlier blip was transient.
-              consecutiveErrors = 0
-
-              setScanData(data)
-
-              const currentStatus =
-                String(
-                  data?.status || '',
-                ).toLowerCase()
-
-              if (
-                isTerminalStatus(
-                  currentStatus,
-                )
-              ) {
-                setLoading(false)
-
-                setLastScanTime(
-                  new Date().toLocaleString(
-                    'en-GB',
-                  ),
-                )
-
-                if (
-                  currentStatus ===
-                    'failed' ||
-                  currentStatus ===
-                    'cancelled'
-                ) {
-                  setStatus('idle')
-
-                  const message =
-                    data?.error ||
-                    data?.error_message ||
-                    'Analysis failed. Check backend logs.'
-
-                  setError(message)
-
-                  finish(
-                    reject,
-                    new Error(message),
-                  )
-
-                  return
-                }
-
-                setStatus('done')
-
-                setError(null)
-
-                finish(
-                  resolve,
-                  scanId,
-                )
-
-                return
-              }
-
-              if (
-                attempts >= MAX_POLLS
-              ) {
-                setLoading(false)
-
-                setStatus('idle')
-
-                const message =
-                  'Analysis is taking longer than expected. Check the scan status or backend logs.'
-
-                setError(message)
-
-                finish(
-                  reject,
-                  new Error(message),
-                )
-              }
-            } catch (err) {
-              if (!mountedRef.current) {
-                finish(resolve, scanId)
-                return
-              }
-
-              consecutiveErrors += 1
-
-              const message =
-                err instanceof Error
-                  ? err.message
-                  : String(err)
-
-              // The scan runs server-side and keeps going regardless of
-              // whether we can reach the API. Giving up on the first
-              // dropped request or backend restart reported a healthy
-              // scan as failed, so tolerate a short outage and only
-              // surface a soft warning while retrying.
-              if (
-                consecutiveErrors <
-                MAX_CONSECUTIVE_POLL_ERRORS
-              ) {
-                setError(
-                  `Lost contact with the backend (attempt ${consecutiveErrors} of ${MAX_CONSECUTIVE_POLL_ERRORS}). Retrying — the scan is still running.`,
-                )
-
-                return
-              }
-
-              setLoading(false)
-
-              setStatus('idle')
-
-              setError(
-                `${message} — gave up after ${consecutiveErrors} consecutive failed status checks. The scan may still be running; reopen it from the results page.`,
-              )
-
-              finish(
-                reject,
-                err,
-              )
-            }
-          }
-
-          poll()
-
-          pollRef.current =
-            setInterval(
-              poll,
-              POLL_INTERVAL_MS,
-            )
-        }),
-      [stopPolling],
-    )
+  const { pollUntilTerminal, stopPolling } =
+    usePollScanUntilTerminal()
 
   const runScan =
     useCallback(
@@ -276,9 +67,51 @@ export function useScan() {
             )
           }
 
-          return await pollScan(
+          const data = await pollUntilTerminal(
             scanId,
+            {
+              onTick: (tickData, meta) => {
+                if (tickData) {
+                  setScanData(tickData)
+                }
+
+                if (meta?.warning) {
+                  setError(meta.warning)
+                }
+              },
+            },
           )
+
+          setLoading(false)
+
+          setLastScanTime(
+            new Date().toLocaleString(
+              'en-GB',
+            ),
+          )
+
+          if (
+            isFailedStatus(
+              data?.status,
+            )
+          ) {
+            setStatus('idle')
+
+            const message =
+              data?.error ||
+              data?.error_message ||
+              'Analysis failed. Check backend logs.'
+
+            setError(message)
+
+            throw new Error(message)
+          }
+
+          setStatus('done')
+
+          setError(null)
+
+          return scanId
         } catch (err) {
           stopPolling()
 
@@ -296,7 +129,7 @@ export function useScan() {
           throw err
         }
       },
-      [pollScan, stopPolling],
+      [pollUntilTerminal, stopPolling],
     )
 
   return {
@@ -315,3 +148,5 @@ export function useScan() {
     stopPolling,
   }
 }
+
+export default useScan
