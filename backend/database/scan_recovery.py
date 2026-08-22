@@ -13,7 +13,6 @@ from backend.database.models.cost_record import CostRecord
 from backend.database.models.finding import Finding
 from backend.database.models.scan_run import ScanRun
 
-
 #: Scan states that only a live worker thread can legitimately hold.
 INTERRUPTED_STATES = ("pending", "running")
 

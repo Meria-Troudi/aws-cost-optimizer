@@ -53,17 +53,25 @@ def build_service_costs_with_changes(
                 trend = "decreased"
 
         period_cost = sum(months.values())
-        results.append({
-            "service": service,
-            "service_short": _short_service(service),
-            "cost": round(period_cost, 2),
-            "current_cost": round(current_cost, 2),
-            "previous_cost": round(previous_cost, 2) if previous_cost is not None else None,
-            "change_amount": round(change_amount, 2) if change_amount is not None else None,
-            "change_pct": change_pct,
-            "share_pct": round(period_cost / period_total * 100, 1) if period_total else 0,
-            "trend": trend,
-        })
+        results.append(
+            {
+                "service": service,
+                "service_short": _short_service(service),
+                "cost": round(period_cost, 2),
+                "current_cost": round(current_cost, 2),
+                "previous_cost": (
+                    round(previous_cost, 2) if previous_cost is not None else None
+                ),
+                "change_amount": (
+                    round(change_amount, 2) if change_amount is not None else None
+                ),
+                "change_pct": change_pct,
+                "share_pct": (
+                    round(period_cost / period_total * 100, 1) if period_total else 0
+                ),
+                "trend": trend,
+            }
+        )
 
     results.sort(key=lambda r: r["cost"], reverse=True)
     for rank, item in enumerate(results[:limit], 1):

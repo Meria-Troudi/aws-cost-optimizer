@@ -29,9 +29,7 @@ def _nat_finding(index: int) -> dict:
         "service": "EC2 - Other",
         "severity": "medium",
         "confidence": "medium",
-        "reason": (
-            "No NAT traffic or connections were observed."
-        ),
+        "reason": ("No NAT traffic or connections were observed."),
         "recommendation_eligible": True,
         "database_id": 100 + index,
         "limitations": [],
@@ -124,18 +122,9 @@ def test_three_same_region_nat_findings_produce_three_recommendations():
     }
 
     for recommendation in recommendations:
-        assert (
-            recommendation["financial_impact"][
-                "estimated_monthly_savings"
-            ]
-            is None
-        )
-        assert (
-            recommendation["source_finding_count"] == 1
-        )
-        assert (
-            len(recommendation["affected_resources"]) == 1
-        )
+        assert recommendation["financial_impact"]["estimated_monthly_savings"] is None
+        assert recommendation["source_finding_count"] == 1
+        assert len(recommendation["affected_resources"]) == 1
 
 
 def test_elb_idle_with_cost_produces_one_recommendation_with_full_elimination_savings():
@@ -146,20 +135,13 @@ def test_elb_idle_with_cost_produces_one_recommendation_with_full_elimination_sa
     -- not a null/zero savings figure, and not silently dropped.
     """
 
-    recommendations = RecommendationEngine().generate(
-        [_elb_idle_with_cost_finding()]
-    )
+    recommendations = RecommendationEngine().generate([_elb_idle_with_cost_finding()])
 
     assert len(recommendations) == 1
 
     recommendation = recommendations[0]
 
-    assert (
-        recommendation["financial_impact"][
-            "estimated_monthly_savings"
-        ]
-        == 38.10
-    )
+    assert recommendation["financial_impact"]["estimated_monthly_savings"] == 38.10
     assert (
         recommendation["financial_impact"]["savings_basis"]
         == "full_resource_elimination"
@@ -178,9 +160,7 @@ def test_malformed_finding_does_not_abort_the_rest_of_the_batch():
     broken = _nat_finding(2)
     broken["resource_id"] = None
 
-    recommendations = RecommendationEngine().generate(
-        [broken, good]
-    )
+    recommendations = RecommendationEngine().generate([broken, good])
 
     assert len(recommendations) == 1
     assert recommendations[0]["scope"] == "resource:nat-1"
@@ -190,8 +170,6 @@ def test_finding_without_persisted_database_id_is_skipped():
     finding = _nat_finding(1)
     finding["database_id"] = None
 
-    recommendations = RecommendationEngine().generate(
-        [finding]
-    )
+    recommendations = RecommendationEngine().generate([finding])
 
     assert recommendations == []

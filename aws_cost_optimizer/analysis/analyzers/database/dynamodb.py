@@ -31,7 +31,6 @@ from ...evidence import Evidence
 from ...finding import Finding, ObservationPeriod
 from ...registry import register
 
-
 DEFAULT_POLICY = {
     "utilization": {
         "enabled": True,
@@ -95,17 +94,11 @@ class _H:
 
     @staticmethod
     def billing_mode(context: AnalysisContext) -> str:
-        return str(
-            _H.capacity(context).get("billing_mode") or "UNKNOWN"
-        ).upper()
+        return str(_H.capacity(context).get("billing_mode") or "UNKNOWN").upper()
 
     @staticmethod
     def global_table(context: AnalysisContext) -> dict[str, Any]:
-        return _dict(
-            _dict(context.resource.get("relationships")).get(
-                "global_table"
-            )
-        )
+        return _dict(_dict(context.resource.get("relationships")).get("global_table"))
 
     @staticmethod
     def cloudwatch(context: AnalysisContext) -> dict[str, Any]:
@@ -117,11 +110,7 @@ class _H:
 
     @staticmethod
     def table_metrics(context: AnalysisContext) -> dict[str, Any]:
-        return _dict(
-            _dict(_H.cloudwatch(context).get("table")).get(
-                "metrics"
-            )
-        )
+        return _dict(_dict(_H.cloudwatch(context).get("table")).get("metrics"))
 
     @staticmethod
     def metric(
@@ -197,17 +186,13 @@ class _H:
             start_dt = (
                 start
                 if isinstance(start, datetime)
-                else datetime.fromisoformat(
-                    str(start).replace("Z", "+00:00")
-                )
+                else datetime.fromisoformat(str(start).replace("Z", "+00:00"))
             )
 
             end_dt = (
                 end
                 if isinstance(end, datetime)
-                else datetime.fromisoformat(
-                    str(end).replace("Z", "+00:00")
-                )
+                else datetime.fromisoformat(str(end).replace("Z", "+00:00"))
             )
 
             return (end_dt - start_dt).total_seconds() / 86400.0
@@ -318,18 +303,10 @@ class DynamoDBAnalyzer(Analyzer):
 
         minimum = float(policy.get("minimum_coverage", 0.80))
 
-        consumed_read = _H.metric(
-            context, "ConsumedReadCapacityUnits"
-        )
-        consumed_write = _H.metric(
-            context, "ConsumedWriteCapacityUnits"
-        )
-        provisioned_read = _H.metric(
-            context, "ProvisionedReadCapacityUnits"
-        )
-        provisioned_write = _H.metric(
-            context, "ProvisionedWriteCapacityUnits"
-        )
+        consumed_read = _H.metric(context, "ConsumedReadCapacityUnits")
+        consumed_write = _H.metric(context, "ConsumedWriteCapacityUnits")
+        provisioned_read = _H.metric(context, "ProvisionedReadCapacityUnits")
+        provisioned_write = _H.metric(context, "ProvisionedWriteCapacityUnits")
 
         required = (
             consumed_read,
@@ -343,12 +320,8 @@ class DynamoDBAnalyzer(Analyzer):
 
         table_derived = _dict(_H.derived(context).get("table"))
 
-        read_utilization = _number(
-            table_derived.get("read_utilization_percent")
-        )
-        write_utilization = _number(
-            table_derived.get("write_utilization_percent")
-        )
+        read_utilization = _number(table_derived.get("read_utilization_percent"))
+        write_utilization = _number(table_derived.get("write_utilization_percent"))
 
         if read_utilization is None or write_utilization is None:
             return None
@@ -356,19 +329,13 @@ class DynamoDBAnalyzer(Analyzer):
         read_limit = float(policy.get("low_read_percent", 20.0))
         write_limit = float(policy.get("low_write_percent", 20.0))
 
-        if (
-            read_utilization > read_limit
-            or write_utilization > write_limit
-        ):
+        if read_utilization > read_limit or write_utilization > write_limit:
             return None
 
         return self._finding(
             context=context,
             finding_type="dynamodb_provisioned_capacity_underutilized",
-            title=(
-                "DynamoDB provisioned capacity is strongly "
-                "underutilized"
-            ),
+            title=("DynamoDB provisioned capacity is strongly " "underutilized"),
             severity="medium",
             confidence="high",
             reason=(
@@ -377,18 +344,10 @@ class DynamoDBAnalyzer(Analyzer):
                 "analysis period."
             ),
             statements=[
-                self._metric_statement(
-                    context, "ConsumedReadCapacityUnits"
-                ),
-                self._metric_statement(
-                    context, "ProvisionedReadCapacityUnits"
-                ),
-                self._metric_statement(
-                    context, "ConsumedWriteCapacityUnits"
-                ),
-                self._metric_statement(
-                    context, "ProvisionedWriteCapacityUnits"
-                ),
+                self._metric_statement(context, "ConsumedReadCapacityUnits"),
+                self._metric_statement(context, "ProvisionedReadCapacityUnits"),
+                self._metric_statement(context, "ConsumedWriteCapacityUnits"),
+                self._metric_statement(context, "ProvisionedWriteCapacityUnits"),
             ],
             metadata={
                 "category": "capacity_optimization",
@@ -399,14 +358,8 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=True,
             limitations=[
                 "Average utilization can hide short traffic spikes.",
-                (
-                    "Capacity must not be reduced below workload "
-                    "requirements."
-                ),
-                (
-                    "The analyzer does not prescribe a new RCU or "
-                    "WCU value."
-                ),
+                ("Capacity must not be reduced below workload " "requirements."),
+                ("The analyzer does not prescribe a new RCU or " "WCU value."),
             ],
         )
 
@@ -493,9 +446,7 @@ class DynamoDBAnalyzer(Analyzer):
         if not policy.get("enabled", True):
             return None
 
-        required_days = float(
-            policy.get("minimum_observation_days", 30.0)
-        )
+        required_days = float(policy.get("minimum_observation_days", 30.0))
         observed_days = _H.observation_days(context)
 
         if observed_days is None or observed_days < required_days:
@@ -506,19 +457,13 @@ class DynamoDBAnalyzer(Analyzer):
 
         minimum = 0.80
 
-        if not (
-            _H.ready(read, minimum) and _H.ready(write, minimum)
-        ):
+        if not (_H.ready(read, minimum) and _H.ready(write, minimum)):
             return None
 
         table_derived = _dict(_H.derived(context).get("table"))
 
-        read_rate = _number(
-            table_derived.get("consumed_read_units_per_second")
-        )
-        write_rate = _number(
-            table_derived.get("consumed_write_units_per_second")
-        )
+        read_rate = _number(table_derived.get("consumed_read_units_per_second"))
+        write_rate = _number(table_derived.get("consumed_write_units_per_second"))
 
         if read_rate is None or write_rate is None:
             return None
@@ -538,12 +483,8 @@ class DynamoDBAnalyzer(Analyzer):
                 "complete capacity observations."
             ),
             statements=[
-                self._metric_statement(
-                    context, "ConsumedReadCapacityUnits"
-                ),
-                self._metric_statement(
-                    context, "ConsumedWriteCapacityUnits"
-                ),
+                self._metric_statement(context, "ConsumedReadCapacityUnits"),
+                self._metric_statement(context, "ConsumedWriteCapacityUnits"),
                 self._statement(
                     name="observation_days",
                     value=observed_days,
@@ -588,9 +529,7 @@ class DynamoDBAnalyzer(Analyzer):
         if _H.billing_mode(context) != "PAY_PER_REQUEST":
             return None
 
-        minimum_days = float(
-            policy.get("minimum_observation_days", 30.0)
-        )
+        minimum_days = float(policy.get("minimum_observation_days", 30.0))
         observed_days = _H.observation_days(context)
 
         if observed_days is None or observed_days < minimum_days:
@@ -601,9 +540,7 @@ class DynamoDBAnalyzer(Analyzer):
 
         minimum = 0.80
 
-        if not (
-            _H.ready(read, minimum) and _H.ready(write, minimum)
-        ):
+        if not (_H.ready(read, minimum) and _H.ready(write, minimum)):
             return None
 
         # On-demand mode has no provisioned baseline to compute a
@@ -624,12 +561,8 @@ class DynamoDBAnalyzer(Analyzer):
                 "autoscaled configuration."
             ),
             statements=[
-                self._metric_statement(
-                    context, "ConsumedReadCapacityUnits"
-                ),
-                self._metric_statement(
-                    context, "ConsumedWriteCapacityUnits"
-                ),
+                self._metric_statement(context, "ConsumedReadCapacityUnits"),
+                self._metric_statement(context, "ConsumedWriteCapacityUnits"),
             ],
             metadata={
                 "category": "billing_mode_review",
@@ -642,10 +575,7 @@ class DynamoDBAnalyzer(Analyzer):
                     "On-demand vs provisioned economics require "
                     "current pricing and workload shape."
                 ),
-                (
-                    "This analyzer does not calculate the "
-                    "alternative billing cost."
-                ),
+                ("This analyzer does not calculate the " "alternative billing cost."),
             ],
         )
 
@@ -684,8 +614,7 @@ class DynamoDBAnalyzer(Analyzer):
                     name="global_table",
                     value=global_table,
                     description=(
-                        "Global Table replica configuration "
-                        "collected from DynamoDB."
+                        "Global Table replica configuration " "collected from DynamoDB."
                     ),
                     source=["DynamoDB.DescribeTable"],
                     observed=True,
@@ -694,9 +623,7 @@ class DynamoDBAnalyzer(Analyzer):
             metadata={
                 "category": "global_table",
                 "replica_count": global_table.get("replica_count"),
-                "replica_regions": global_table.get(
-                    "replica_regions"
-                ),
+                "replica_regions": global_table.get("replica_regions"),
             },
             recommendation_eligible=True,
             limitations=[
@@ -704,10 +631,7 @@ class DynamoDBAnalyzer(Analyzer):
                     "Replicas may be required for disaster "
                     "recovery, latency, or regional availability."
                 ),
-                (
-                    "Replica utilization is not proven by replica "
-                    "inventory alone."
-                ),
+                ("Replica utilization is not proven by replica " "inventory alone."),
             ],
         )
 
@@ -770,28 +694,20 @@ class DynamoDBAnalyzer(Analyzer):
             )
 
             if not all(
-                isinstance(metric, dict)
-                and _H.ready(metric, minimum)
+                isinstance(metric, dict) and _H.ready(metric, minimum)
                 for metric in required
             ):
                 continue
 
             derived = _dict(gsi_derived.get(str(index_name)))
 
-            read_utilization = _number(
-                derived.get("read_utilization_percent")
-            )
-            write_utilization = _number(
-                derived.get("write_utilization_percent")
-            )
+            read_utilization = _number(derived.get("read_utilization_percent"))
+            write_utilization = _number(derived.get("write_utilization_percent"))
 
             if read_utilization is None or write_utilization is None:
                 continue
 
-            if (
-                read_utilization > read_limit
-                or write_utilization > write_limit
-            ):
+            if read_utilization > read_limit or write_utilization > write_limit:
                 continue
 
             candidates.append(
@@ -809,8 +725,7 @@ class DynamoDBAnalyzer(Analyzer):
             context=context,
             finding_type="dynamodb_gsi_underutilized",
             title=(
-                "DynamoDB global secondary index capacity is "
-                "strongly underutilized"
+                "DynamoDB global secondary index capacity is " "strongly underutilized"
             ),
             severity="medium",
             confidence="high",
@@ -890,12 +805,8 @@ class DynamoDBAnalyzer(Analyzer):
                 "condition is understood."
             ),
             statements=[
-                self._metric_statement(
-                    context, "ReadThrottleEvents"
-                ),
-                self._metric_statement(
-                    context, "WriteThrottleEvents"
-                ),
+                self._metric_statement(context, "ReadThrottleEvents"),
+                self._metric_statement(context, "WriteThrottleEvents"),
             ],
             metadata={
                 "category": "operational_capacity",
@@ -940,9 +851,7 @@ class DynamoDBAnalyzer(Analyzer):
         return Finding(
             finding_type=finding_type,
             title=title,
-            resource_type=(
-                context.resource_type or "dynamodb_table"
-            ),
+            resource_type=(context.resource_type or "dynamodb_table"),
             resource_id=context.resource_id or "unknown",
             analyzer=self.name,
             analyzer_version=self.version,
@@ -1001,9 +910,7 @@ class DynamoDBAnalyzer(Analyzer):
             value=metric,
             description=f"Observed DynamoDB {name} metric.",
             source=["CloudWatch.AWS/DynamoDB"],
-            evidence_keys=[
-                f"observations.cloudwatch.table.metrics.{name}"
-            ],
+            evidence_keys=[f"observations.cloudwatch.table.metrics.{name}"],
             observed=metric.get("has_data") is True,
         )
 
@@ -1039,9 +946,7 @@ class DynamoDBAnalyzer(Analyzer):
             return ObservationPeriod(
                 start=observation.get("start"),
                 end=observation.get("end"),
-                duration_seconds=observation.get(
-                    "duration_seconds"
-                ),
+                duration_seconds=observation.get("duration_seconds"),
             )
 
         cloudwatch = _H.cloudwatch(context)

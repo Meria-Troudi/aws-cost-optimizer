@@ -36,7 +36,6 @@ from ....evidence import Evidence
 from ....finding import Finding, ObservationPeriod
 from ....registry import register
 
-
 # ======================================================================
 # DEFAULT POLICY
 # ======================================================================
@@ -45,83 +44,56 @@ DEFAULT_POLICY = {
     "serverless_v2": {
         "enabled": True,
         "minimum_metric_coverage": 0.80,
-
         "minimum_observation_days": 14.0,
-
         "low_cpu_average_percent": 20.0,
         "low_cpu_maximum_percent": 60.0,
-
         "low_connections_average": 5.0,
-
         "minimum_reader_count": 0,
-
         "recommendation_eligible": True,
     },
-
     "reader_utilization": {
         "enabled": True,
         "minimum_metric_coverage": 0.80,
-
         "connections_max": 2.0,
-
         "cpu_average_max_percent": 15.0,
         "cpu_maximum_max_percent": 50.0,
-
         "network_receive_bytes_per_second_max": 1024.0,
         "network_transmit_bytes_per_second_max": 1024.0,
-
         "recommendation_eligible": True,
     },
-
     "reader_count": {
         "enabled": True,
         "minimum_metric_coverage": 0.80,
-
         "minimum_readers": 1,
-
         "recommendation_eligible": True,
     },
-
     "idle": {
         "enabled": True,
         "minimum_metric_coverage": 0.80,
-
         "cpu_average_max_percent": 5.0,
         "cpu_maximum_max_percent": 25.0,
-
         "connections_max": 0.0,
         "read_iops_max": 1.0,
         "write_iops_max": 1.0,
-
         "recommendation_eligible": True,
     },
-
     "serverless_capacity": {
         "enabled": True,
-
         "minimum_metric_coverage": 0.80,
-
         "high_capacity_utilization_percent": 80.0,
-
         "recommendation_eligible": False,
     },
-
     "backup_retention": {
         "enabled": True,
         "review_threshold_days": 14,
-
         "recommendation_eligible": False,
     },
-
     "global_database": {
         "enabled": True,
-
         "recommendation_eligible": False,
     },
-
     "serverless_v1": {
         "enabled": True,
-
         "recommendation_eligible": False,
     },
 }
@@ -147,10 +119,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        return (
-            context.resource_type
-            in self.SUPPORTED_RESOURCE_TYPES
-        )
+        return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
     # ==================================================================
     # ANALYZE
@@ -200,12 +169,8 @@ class AuroraAnalyzer(Analyzer):
     ) -> dict[str, Any]:
 
         policy = {
-            category:
-                dict(values)
-                if isinstance(values, dict)
-                else values
-            for category, values
-            in DEFAULT_POLICY.items()
+            category: dict(values) if isinstance(values, dict) else values
+            for category, values in DEFAULT_POLICY.items()
         }
 
         for root_name in (
@@ -216,16 +181,12 @@ class AuroraAnalyzer(Analyzer):
             "analysis_profile",
         ):
 
-            root = context.resource.get(
-                root_name
-            )
+            root = context.resource.get(root_name)
 
             if not isinstance(root, dict):
                 continue
 
-            configured = root.get(
-                "aurora"
-            )
+            configured = root.get("aurora")
 
             if not isinstance(configured, dict):
                 continue
@@ -264,22 +225,14 @@ class AuroraAnalyzer(Analyzer):
         value: Any,
     ) -> dict[str, Any]:
 
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
-        )
+        return value if isinstance(value, dict) else {}
 
     @staticmethod
     def _list(
         value: Any,
     ) -> list[Any]:
 
-        return (
-            value
-            if isinstance(value, list)
-            else []
-        )
+        return value if isinstance(value, list) else []
 
     @staticmethod
     def _number(
@@ -306,9 +259,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            context.configuration()
-        )
+        return cls._dict(context.configuration())
 
     @classmethod
     def _cluster(
@@ -316,11 +267,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._configuration(context).get(
-                "cluster"
-            )
-        )
+        return cls._dict(cls._configuration(context).get("cluster"))
 
     @classmethod
     def _storage(
@@ -328,11 +275,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._configuration(context).get(
-                "storage"
-            )
-        )
+        return cls._dict(cls._configuration(context).get("storage"))
 
     @classmethod
     def _backup(
@@ -340,11 +283,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._configuration(context).get(
-                "backup"
-            )
-        )
+        return cls._dict(cls._configuration(context).get("backup"))
 
     @classmethod
     def _serverless_v2(
@@ -352,11 +291,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._configuration(context).get(
-                "serverless_v2"
-            )
-        )
+        return cls._dict(cls._configuration(context).get("serverless_v2"))
 
     @classmethod
     def _serverless_v1(
@@ -364,11 +299,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._configuration(context).get(
-                "serverless_v1"
-            )
-        )
+        return cls._dict(cls._configuration(context).get("serverless_v1"))
 
     @classmethod
     def _relationships(
@@ -376,11 +307,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            context.resource.get(
-                "relationships"
-            )
-        )
+        return cls._dict(context.resource.get("relationships"))
 
     @classmethod
     def _members(
@@ -390,11 +317,7 @@ class AuroraAnalyzer(Analyzer):
 
         return [
             value
-            for value in cls._list(
-                cls._relationships(context).get(
-                    "members"
-                )
-            )
+            for value in cls._list(cls._relationships(context).get("members"))
             if isinstance(value, dict)
         ]
 
@@ -406,11 +329,7 @@ class AuroraAnalyzer(Analyzer):
 
         return [
             str(value)
-            for value in cls._list(
-                cls._relationships(context).get(
-                    "reader_instances"
-                )
-            )
+            for value in cls._list(cls._relationships(context).get("reader_instances"))
             if value
         ]
 
@@ -420,18 +339,14 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> int:
 
-        explicit = cls._relationships(
-            context
-        ).get("reader_count")
+        explicit = cls._relationships(context).get("reader_count")
 
         parsed = cls._number(explicit)
 
         if parsed is not None:
             return int(parsed)
 
-        return len(
-            cls._reader_instances(context)
-        )
+        return len(cls._reader_instances(context))
 
     @classmethod
     def _writer_count(
@@ -439,21 +354,14 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> int:
 
-        explicit = cls._relationships(
-            context
-        ).get("writer_count")
+        explicit = cls._relationships(context).get("writer_count")
 
         parsed = cls._number(explicit)
 
         if parsed is not None:
             return int(parsed)
 
-        return sum(
-            1
-            for member
-            in cls._members(context)
-            if member.get("is_writer")
-        )
+        return sum(1 for member in cls._members(context) if member.get("is_writer"))
 
     # ==================================================================
     # CLOUDWATCH
@@ -465,9 +373,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            context.cloudwatch()
-        )
+        return cls._dict(context.cloudwatch())
 
     @classmethod
     def _cloudwatch_group(
@@ -476,11 +382,7 @@ class AuroraAnalyzer(Analyzer):
         group: str,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._cloudwatch(context).get(
-                group
-            )
-        )
+        return cls._dict(cls._cloudwatch(context).get(group))
 
     @classmethod
     def _metrics(
@@ -493,9 +395,7 @@ class AuroraAnalyzer(Analyzer):
             cls._cloudwatch_group(
                 context,
                 group,
-            ).get(
-                "metrics"
-            )
+            ).get("metrics")
         )
 
     @classmethod
@@ -511,11 +411,7 @@ class AuroraAnalyzer(Analyzer):
             group,
         ).get(name)
 
-        return (
-            metric
-            if isinstance(metric, dict)
-            else {}
-        )
+        return metric if isinstance(metric, dict) else {}
 
     @classmethod
     def _metric_observed(
@@ -523,13 +419,8 @@ class AuroraAnalyzer(Analyzer):
         metric: dict[str, Any],
     ) -> bool:
 
-        return (
-            metric.get("has_data") is True
-            and
-            (
-                metric.get("status")
-                in {"ok", "partial", None}
-            )
+        return metric.get("has_data") is True and (
+            metric.get("status") in {"ok", "partial", None}
         )
 
     @classmethod
@@ -542,9 +433,7 @@ class AuroraAnalyzer(Analyzer):
         if not cls._metric_observed(metric):
             return None
 
-        return cls._number(
-            metric.get(field)
-        )
+        return cls._number(metric.get(field))
 
     @classmethod
     def _coverage(
@@ -552,11 +441,7 @@ class AuroraAnalyzer(Analyzer):
         metric: dict[str, Any],
     ) -> float:
 
-        value = cls._number(
-            metric.get(
-                "coverage_ratio"
-            )
-        )
+        value = cls._number(metric.get("coverage_ratio"))
 
         if value is not None:
 
@@ -565,11 +450,7 @@ class AuroraAnalyzer(Analyzer):
 
             return value
 
-        value = cls._number(
-            metric.get(
-                "coverage_percent"
-            )
-        )
+        value = cls._number(metric.get("coverage_percent"))
 
         if value is not None:
             return value / 100.0
@@ -596,26 +477,26 @@ class AuroraAnalyzer(Analyzer):
         if not cls._metric_observed(metric):
             return False
 
-        if cls._metric_value(
-            metric,
-            "average",
-        ) is None:
+        if (
+            cls._metric_value(
+                metric,
+                "average",
+            )
+            is None
+        ):
             return False
 
         if (
             require_maximum
-            and
-            cls._metric_value(
+            and cls._metric_value(
                 metric,
                 "maximum",
-            ) is None
+            )
+            is None
         ):
             return False
 
-        return (
-            cls._coverage(metric)
-            >= minimum_coverage
-        )
+        return cls._coverage(metric) >= minimum_coverage
 
     # ==================================================================
     # OBSERVATION PERIOD
@@ -633,26 +514,11 @@ class AuroraAnalyzer(Analyzer):
             observation,
             dict,
         ):
-            cloudwatch = cls._cloudwatch(
-                context
-            )
+            cloudwatch = cls._cloudwatch(context)
 
             observation = {
-                "start":
-                    cloudwatch.get(
-                        "analysis_start"
-                    )
-                    or cloudwatch.get(
-                        "start"
-                    ),
-
-                "end":
-                    cloudwatch.get(
-                        "analysis_end"
-                    )
-                    or cloudwatch.get(
-                        "end"
-                    ),
+                "start": cloudwatch.get("analysis_start") or cloudwatch.get("start"),
+                "end": cloudwatch.get("analysis_end") or cloudwatch.get("end"),
             }
 
         start = observation.get("start")
@@ -687,9 +553,7 @@ class AuroraAnalyzer(Analyzer):
                 )
             )
 
-            return (
-                end_dt - start_dt
-            ).total_seconds() / 86400.0
+            return (end_dt - start_dt).total_seconds() / 86400.0
 
         except (
             TypeError,
@@ -707,12 +571,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        status = str(
-            cls._cluster(context).get(
-                "status"
-            )
-            or ""
-        ).lower()
+        status = str(cls._cluster(context).get("status") or "").lower()
 
         return status in {
             "available",
@@ -732,15 +591,9 @@ class AuroraAnalyzer(Analyzer):
             )
         )
 
-        observed = cls._observation_days(
-            context
-        )
+        observed = cls._observation_days(context)
 
-        return (
-            observed is not None
-            and
-            observed >= required
-        )
+        return observed is not None and observed >= required
 
     # ==================================================================
     # RULE 1 — SERVERLESS V2 SUITABILITY
@@ -751,9 +604,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "serverless_v2",
             {},
         )
@@ -764,13 +615,9 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        serverless = self._serverless_v2(
-            context
-        )
+        serverless = self._serverless_v2(context)
 
-        if serverless.get(
-            "enabled"
-        ):
+        if serverless.get("enabled"):
             return None
 
         if not self._minimum_observation_met(
@@ -806,8 +653,7 @@ class AuroraAnalyzer(Analyzer):
                 minimum_coverage,
                 require_maximum=True,
             )
-            and
-            self._metric_ready(
+            and self._metric_ready(
                 context,
                 "cluster",
                 "DatabaseConnections",
@@ -826,65 +672,42 @@ class AuroraAnalyzer(Analyzer):
             "maximum",
         )
 
-        connections_average = (
-            self._metric_value(
-                connections,
-                "average",
-            )
+        connections_average = self._metric_value(
+            connections,
+            "average",
         )
 
-        if (
-            cpu_average is None
-            or cpu_maximum is None
-            or connections_average is None
-        ):
+        if cpu_average is None or cpu_maximum is None or connections_average is None:
             return None
 
-        if (
-            cpu_average
-            >
-            float(
-                policy.get(
-                    "low_cpu_average_percent",
-                    20.0,
-                )
+        if cpu_average > float(
+            policy.get(
+                "low_cpu_average_percent",
+                20.0,
             )
         ):
             return None
 
-        if (
-            cpu_maximum
-            >
-            float(
-                policy.get(
-                    "low_cpu_maximum_percent",
-                    60.0,
-                )
+        if cpu_maximum > float(
+            policy.get(
+                "low_cpu_maximum_percent",
+                60.0,
             )
         ):
             return None
 
-        if (
-            connections_average
-            >
-            float(
-                policy.get(
-                    "low_connections_average",
-                    5.0,
-                )
+        if connections_average > float(
+            policy.get(
+                "low_connections_average",
+                5.0,
             )
         ):
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_serverless_v2_suitability_review"
-            ),
-            title=(
-                "Aurora provisioned cluster may suit "
-                "a Serverless v2 review"
-            ),
+            finding_type=("aurora_serverless_v2_suitability_review"),
+            title=("Aurora provisioned cluster may suit " "a Serverless v2 review"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -910,38 +733,20 @@ class AuroraAnalyzer(Analyzer):
                     name="serverless_v2_currently_enabled",
                     value=False,
                     description=(
-                        "Serverless v2 is not currently "
-                        "configured for the cluster."
+                        "Serverless v2 is not currently " "configured for the cluster."
                     ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 ),
             ],
             metadata={
-                "category":
-                    "architecture_review",
-
-                "current_model":
-                    "provisioned",
-
-                "candidate_model":
-                    "aurora_serverless_v2",
-
-                "cpu_average_percent":
-                    cpu_average,
-
-                "cpu_maximum_percent":
-                    cpu_maximum,
-
-                "connections_average":
-                    connections_average,
-
-                "reader_count":
-                    self._reader_count(
-                        context
-                    ),
+                "category": "architecture_review",
+                "current_model": "provisioned",
+                "candidate_model": "aurora_serverless_v2",
+                "cpu_average_percent": cpu_average,
+                "cpu_maximum_percent": cpu_maximum,
+                "connections_average": connections_average,
+                "reader_count": self._reader_count(context),
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -959,9 +764,7 @@ class AuroraAnalyzer(Analyzer):
                     "reader count, workload latency, and pricing "
                     "must be evaluated."
                 ),
-                (
-                    "The analyzer does not select ACU limits."
-                ),
+                ("The analyzer does not select ACU limits."),
             ],
         )
 
@@ -974,9 +777,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "reader_utilization",
             {},
         )
@@ -987,9 +788,7 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        readers = self._reader_instances(
-            context
-        )
+        readers = self._reader_instances(context)
 
         if not readers:
             return None
@@ -1044,40 +843,27 @@ class AuroraAnalyzer(Analyzer):
                     minimum_coverage,
                     require_maximum=True,
                 )
-                and
-                self._metric_ready_instance(
+                and self._metric_ready_instance(
                     connections,
                     minimum_coverage,
                 )
             ):
                 continue
 
-            cpu_average = self._metric_value(
-                cpu
-            )
+            cpu_average = self._metric_value(cpu)
 
             cpu_maximum = self._metric_value(
                 cpu,
                 "maximum",
             )
 
-            connection_average = self._metric_value(
-                connections
-            )
+            connection_average = self._metric_value(connections)
 
-            rx_average = self._metric_value(
-                rx
-            )
+            rx_average = self._metric_value(rx)
 
-            tx_average = self._metric_value(
-                tx
-            )
+            tx_average = self._metric_value(tx)
 
-            if (
-                cpu_average is None
-                or cpu_maximum is None
-                or connection_average is None
-            ):
+            if cpu_average is None or cpu_maximum is None or connection_average is None:
                 continue
 
             if cpu_average > float(
@@ -1104,53 +890,30 @@ class AuroraAnalyzer(Analyzer):
             ):
                 continue
 
-            if (
-                rx_average is not None
-                and
-                rx_average
-                >
-                float(
-                    policy.get(
-                        "network_receive_bytes_per_second_max",
-                        1024.0,
-                    )
+            if rx_average is not None and rx_average > float(
+                policy.get(
+                    "network_receive_bytes_per_second_max",
+                    1024.0,
                 )
             ):
                 continue
 
-            if (
-                tx_average is not None
-                and
-                tx_average
-                >
-                float(
-                    policy.get(
-                        "network_transmit_bytes_per_second_max",
-                        1024.0,
-                    )
+            if tx_average is not None and tx_average > float(
+                policy.get(
+                    "network_transmit_bytes_per_second_max",
+                    1024.0,
                 )
             ):
                 continue
 
             candidates.append(
                 {
-                    "reader_instance":
-                        reader_id,
-
-                    "cpu_average_percent":
-                        cpu_average,
-
-                    "cpu_maximum_percent":
-                        cpu_maximum,
-
-                    "connections_average":
-                        connection_average,
-
-                    "network_receive_bytes_per_second":
-                        rx_average,
-
-                    "network_transmit_bytes_per_second":
-                        tx_average,
+                    "reader_instance": reader_id,
+                    "cpu_average_percent": cpu_average,
+                    "cpu_maximum_percent": cpu_maximum,
+                    "connections_average": connection_average,
+                    "network_receive_bytes_per_second": rx_average,
+                    "network_transmit_bytes_per_second": tx_average,
                 }
             )
 
@@ -1159,12 +922,8 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_reader_underutilized"
-            ),
-            title=(
-                "Aurora reader is lightly utilized"
-            ),
+            finding_type=("aurora_reader_underutilized"),
+            title=("Aurora reader is lightly utilized"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -1177,25 +936,16 @@ class AuroraAnalyzer(Analyzer):
                     name="underutilized_readers",
                     value=candidates,
                     description=(
-                        "Aurora reader instances with "
-                        "low observed workload."
+                        "Aurora reader instances with " "low observed workload."
                     ),
-                    source=[
-                        "RDS",
-                        "CloudWatch"
-                    ],
+                    source=["RDS", "CloudWatch"],
                     observed=True,
                 )
             ],
             metadata={
-                "category":
-                    "reader_utilization",
-
-                "candidate_count":
-                    len(candidates),
-
-                "readers":
-                    candidates,
+                "category": "reader_utilization",
+                "candidate_count": len(candidates),
+                "readers": candidates,
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1209,10 +959,7 @@ class AuroraAnalyzer(Analyzer):
                     "for failover, reporting, latency, or "
                     "future workload growth."
                 ),
-                (
-                    "The finding does not instruct the system "
-                    "to delete a reader."
-                ),
+                ("The finding does not instruct the system " "to delete a reader."),
             ],
         )
 
@@ -1225,9 +972,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "reader_count",
             {},
         )
@@ -1238,9 +983,7 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        reader_count = self._reader_count(
-            context
-        )
+        reader_count = self._reader_count(context)
 
         minimum = int(
             self._number(
@@ -1259,9 +1002,7 @@ class AuroraAnalyzer(Analyzer):
 
         # Reader utilization may already have produced a stronger
         # finding. Here we only provide topology-level context.
-        readers = self._reader_instances(
-            context
-        )
+        readers = self._reader_instances(context)
 
         for reader_id in readers:
 
@@ -1277,13 +1018,9 @@ class AuroraAnalyzer(Analyzer):
                 "DatabaseConnections",
             )
 
-            cpu_avg = self._metric_value(
-                cpu
-            )
+            cpu_avg = self._metric_value(cpu)
 
-            conn_avg = self._metric_value(
-                connections
-            )
+            conn_avg = self._metric_value(connections)
 
             if (
                 cpu_avg is not None
@@ -1291,21 +1028,15 @@ class AuroraAnalyzer(Analyzer):
                 and cpu_avg <= 15.0
                 and conn_avg <= 2.0
             ):
-                underutilized_readers.append(
-                    reader_id
-                )
+                underutilized_readers.append(reader_id)
 
         if not underutilized_readers:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_reader_count_review"
-            ),
-            title=(
-                "Aurora reader capacity should be reviewed"
-            ),
+            finding_type=("aurora_reader_count_review"),
+            title=("Aurora reader capacity should be reviewed"),
             severity="low",
             confidence="medium",
             reason=(
@@ -1318,35 +1049,22 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="reader_count",
                     value=reader_count,
-                    description=(
-                        "Current Aurora reader count."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Current Aurora reader count."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 ),
                 self._statement(
                     name="lightly_used_readers",
                     value=underutilized_readers,
-                    description=(
-                        "Readers with low observed utilization."
-                    ),
-                    source=[
-                        "CloudWatch"
-                    ],
+                    description=("Readers with low observed utilization."),
+                    source=["CloudWatch"],
                     observed=True,
                 ),
             ],
             metadata={
-                "category":
-                    "reader_capacity",
-
-                "reader_count":
-                    reader_count,
-
-                "lightly_used_readers":
-                    underutilized_readers,
+                "category": "reader_capacity",
+                "reader_count": reader_count,
+                "lightly_used_readers": underutilized_readers,
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1355,14 +1073,8 @@ class AuroraAnalyzer(Analyzer):
                 )
             ),
             limitations=[
-                (
-                    "Reader redundancy may be required for "
-                    "availability and failover."
-                ),
-                (
-                    "The analyzer does not choose how many "
-                    "readers to remove."
-                ),
+                ("Reader redundancy may be required for " "availability and failover."),
+                ("The analyzer does not choose how many " "readers to remove."),
             ],
         )
 
@@ -1375,9 +1087,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "idle",
             {},
         )
@@ -1411,9 +1121,7 @@ class AuroraAnalyzer(Analyzer):
                 "cluster",
                 name,
                 minimum_coverage,
-                require_maximum=(
-                    name == "CPUUtilization"
-                ),
+                require_maximum=(name == "CPUUtilization"),
             ):
                 return None
 
@@ -1423,26 +1131,18 @@ class AuroraAnalyzer(Analyzer):
                 name,
             )
 
-        cpu_average = self._metric_value(
-            metrics["CPUUtilization"]
-        )
+        cpu_average = self._metric_value(metrics["CPUUtilization"])
 
         cpu_maximum = self._metric_value(
             metrics["CPUUtilization"],
             "maximum",
         )
 
-        connections = self._metric_value(
-            metrics["DatabaseConnections"]
-        )
+        connections = self._metric_value(metrics["DatabaseConnections"])
 
-        read_iops = self._metric_value(
-            metrics["ReadIOPS"]
-        )
+        read_iops = self._metric_value(metrics["ReadIOPS"])
 
-        write_iops = self._metric_value(
-            metrics["WriteIOPS"]
-        )
+        write_iops = self._metric_value(metrics["WriteIOPS"])
 
         if any(
             value is None
@@ -1530,28 +1230,13 @@ class AuroraAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "category":
-                    "unused_resource",
-
-                "cpu_average_percent":
-                    cpu_average,
-
-                "cpu_maximum_percent":
-                    cpu_maximum,
-
-                "connections":
-                    connections,
-
-                "read_iops":
-                    read_iops,
-
-                "write_iops":
-                    write_iops,
-
-                "reader_count":
-                    self._reader_count(
-                        context
-                    ),
+                "category": "unused_resource",
+                "cpu_average_percent": cpu_average,
+                "cpu_maximum_percent": cpu_maximum,
+                "connections": connections,
+                "read_iops": read_iops,
+                "write_iops": write_iops,
+                "reader_count": self._reader_count(context),
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1580,9 +1265,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "serverless_capacity",
             {},
         )
@@ -1593,13 +1276,9 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        serverless = self._serverless_v2(
-            context
-        )
+        serverless = self._serverless_v2(context)
 
-        if not serverless.get(
-            "enabled"
-        ):
+        if not serverless.get("enabled"):
             return None
 
         metric = self._metric(
@@ -1608,14 +1287,10 @@ class AuroraAnalyzer(Analyzer):
             "ACUUtilization",
         )
 
-        if not self._metric_observed(
-            metric
-        ):
+        if not self._metric_observed(metric):
             return None
 
-        utilization = self._metric_value(
-            metric
-        )
+        utilization = self._metric_value(metric)
 
         if utilization is None:
             return None
@@ -1632,12 +1307,8 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_serverless_capacity_pressure"
-            ),
-            title=(
-                "Aurora Serverless v2 capacity is frequently high"
-            ),
+            finding_type=("aurora_serverless_capacity_pressure"),
+            title=("Aurora Serverless v2 capacity is frequently high"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -1654,24 +1325,11 @@ class AuroraAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "category":
-                    "serverless_capacity",
-
-                "acu_utilization_percent":
-                    utilization,
-
-                "threshold_percent":
-                    threshold,
-
-                "min_capacity":
-                    serverless.get(
-                        "min_capacity"
-                    ),
-
-                "max_capacity":
-                    serverless.get(
-                        "max_capacity"
-                    ),
+                "category": "serverless_capacity",
+                "acu_utilization_percent": utilization,
+                "threshold_percent": threshold,
+                "min_capacity": serverless.get("min_capacity"),
+                "max_capacity": serverless.get("max_capacity"),
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1684,10 +1342,7 @@ class AuroraAnalyzer(Analyzer):
                     "High ACU utilization does not prove that "
                     "the cluster needs a different architecture."
                 ),
-                (
-                    "The analyzer does not automatically change "
-                    "the maximum ACU."
-                ),
+                ("The analyzer does not automatically change " "the maximum ACU."),
             ],
         )
 
@@ -1700,9 +1355,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "backup_retention",
             {},
         )
@@ -1713,11 +1366,7 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        retention = self._number(
-            self._backup(context).get(
-                "backup_retention_days"
-            )
-        )
+        retention = self._number(self._backup(context).get("backup_retention_days"))
 
         if retention is None:
             return None
@@ -1737,9 +1386,7 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_backup_retention_review"
-            ),
+            finding_type=("aurora_backup_retention_review"),
             title="Aurora backup retention is high",
             severity="low",
             confidence="medium",
@@ -1752,24 +1399,15 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="backup_retention_days",
                     value=int(retention),
-                    description=(
-                        "Configured Aurora backup retention."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Configured Aurora backup retention."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 )
             ],
             metadata={
-                "category":
-                    "backup_configuration",
-
-                "backup_retention_days":
-                    int(retention),
-
-                "review_threshold_days":
-                    threshold,
+                "category": "backup_configuration",
+                "backup_retention_days": int(retention),
+                "review_threshold_days": threshold,
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1778,10 +1416,7 @@ class AuroraAnalyzer(Analyzer):
                 )
             ),
             limitations=[
-                (
-                    "Retention may be required by recovery "
-                    "and compliance policy."
-                ),
+                ("Retention may be required by recovery " "and compliance policy."),
             ],
         )
 
@@ -1794,9 +1429,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "global_database",
             {},
         )
@@ -1807,24 +1440,16 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        relationships = self._relationships(
-            context
-        )
+        relationships = self._relationships(context)
 
-        global_cluster = (
-            relationships.get(
-                "global_cluster_identifier"
-            )
-        )
+        global_cluster = relationships.get("global_cluster_identifier")
 
         if not global_cluster:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_global_database_cost_review"
-            ),
+            finding_type=("aurora_global_database_cost_review"),
             title="Aurora Global Database configuration",
             severity="info",
             confidence="high",
@@ -1838,21 +1463,14 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="global_cluster_identifier",
                     value=global_cluster,
-                    description=(
-                        "Aurora Global Database identifier."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Aurora Global Database identifier."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 )
             ],
             metadata={
-                "category":
-                    "global_database",
-
-                "global_cluster_identifier":
-                    global_cluster,
+                "category": "global_database",
+                "global_cluster_identifier": global_cluster,
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1881,9 +1499,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = self._policy(
-            context
-        ).get(
+        policy = self._policy(context).get(
             "serverless_v1",
             {},
         )
@@ -1894,20 +1510,14 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        configuration = self._serverless_v1(
-            context
-        )
+        configuration = self._serverless_v1(context)
 
-        if not configuration.get(
-            "enabled"
-        ):
+        if not configuration.get("enabled"):
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_serverless_v1_review"
-            ),
+            finding_type=("aurora_serverless_v1_review"),
             title="Aurora Serverless v1 configuration",
             severity="low",
             confidence="high",
@@ -1920,21 +1530,14 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="serverless_v1",
                     value=configuration,
-                    description=(
-                        "Aurora Serverless v1 configuration."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Aurora Serverless v1 configuration."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 )
             ],
             metadata={
-                "category":
-                    "architecture_review",
-
-                "serverless_v1":
-                    configuration,
+                "category": "architecture_review",
+                "serverless_v1": configuration,
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -1962,33 +1565,15 @@ class AuroraAnalyzer(Analyzer):
         metric_name: str,
     ) -> dict[str, Any]:
 
-        instances = cls._dict(
-            cls._cloudwatch(context).get(
-                "instances"
-            )
-        )
+        instances = cls._dict(cls._cloudwatch(context).get("instances"))
 
-        instance = cls._dict(
-            instances.get(
-                instance_id
-            )
-        )
+        instance = cls._dict(instances.get(instance_id))
 
-        metrics = cls._dict(
-            instance.get(
-                "metrics"
-            )
-        )
+        metrics = cls._dict(instance.get("metrics"))
 
-        metric = metrics.get(
-            metric_name
-        )
+        metric = metrics.get(metric_name)
 
-        return (
-            metric
-            if isinstance(metric, dict)
-            else {}
-        )
+        return metric if isinstance(metric, dict) else {}
 
     @classmethod
     def _metric_ready_instance(
@@ -1999,30 +1584,23 @@ class AuroraAnalyzer(Analyzer):
         require_maximum: bool = False,
     ) -> bool:
 
-        if not cls._metric_observed(
-            metric
-        ):
+        if not cls._metric_observed(metric):
             return False
 
-        if cls._metric_value(
-            metric
-        ) is None:
+        if cls._metric_value(metric) is None:
             return False
 
         if (
             require_maximum
-            and
-            cls._metric_value(
+            and cls._metric_value(
                 metric,
                 "maximum",
-            ) is None
+            )
+            is None
         ):
             return False
 
-        return (
-            cls._coverage(metric)
-            >= minimum_coverage
-        )
+        return cls._coverage(metric) >= minimum_coverage
 
     # ==================================================================
     # EVIDENCE
@@ -2045,21 +1623,10 @@ class AuroraAnalyzer(Analyzer):
         return cls._statement(
             name=name,
             value=metric,
-            description=(
-                f"Observed Aurora {name} metric."
-            ),
-            source=[
-                "CloudWatch.AWS/RDS"
-            ],
-            evidence_keys=[
-                (
-                    f"observations.cloudwatch."
-                    f"{group}.metrics.{name}"
-                )
-            ],
-            observed=(
-                cls._metric_observed(metric)
-            ),
+            description=(f"Observed Aurora {name} metric."),
+            source=["CloudWatch.AWS/RDS"],
+            evidence_keys=[f"observations.cloudwatch." f"{group}.metrics.{name}"],
+            observed=(cls._metric_observed(metric)),
         )
 
     @staticmethod
@@ -2079,9 +1646,7 @@ class AuroraAnalyzer(Analyzer):
             value=value,
             description=description,
             source=list(source),
-            evidence_keys=list(
-                evidence_keys or []
-            ),
+            evidence_keys=list(evidence_keys or []),
             unit=unit,
             observed=observed,
         )
@@ -2107,54 +1672,23 @@ class AuroraAnalyzer(Analyzer):
 
         return Finding(
             finding_type=finding_type,
-
             title=title,
-
-            resource_type=(
-                context.resource_type
-                or "aurora_cluster"
-            ),
-
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
-
+            resource_type=(context.resource_type or "aurora_cluster"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
-
             analyzer_version=self.version,
-
             severity=severity.lower(),
-
             confidence=confidence.lower(),
-
             reason=reason,
-
             conditions=statements,
-
             evidence=self._build_evidence(
                 context,
                 metadata,
             ),
-
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
-
-            limitations=list(
-                limitations
-            ),
-
-            metadata=dict(
-                metadata
-            ),
-
-            recommendation_eligible=(
-                recommendation_eligible
-            ),
-
+            observation_period=(self._observation_period(context)),
+            limitations=list(limitations),
+            metadata=dict(metadata),
+            recommendation_eligible=(recommendation_eligible),
             aggregation_scope="resource",
         )
 
@@ -2168,86 +1702,40 @@ class AuroraAnalyzer(Analyzer):
         metadata: dict[str, Any],
     ) -> Evidence:
 
-        cloudwatch = self._cloudwatch(
-            context
-        )
+        cloudwatch = self._cloudwatch(context)
 
-        configuration = self._configuration(
-            context
-        )
+        configuration = self._configuration(context)
 
-        relationships = self._relationships(
-            context
-        )
+        relationships = self._relationships(context)
 
         return Evidence(
-            metrics={
-                key:
-                    value
-                for key, value
-                in self._dict(
-                    cloudwatch.get(
-                        "cluster"
-                    )
-                ).get(
-                    "metrics",
-                    {}
-                ).items()
-            }
-            if isinstance(
-                self._dict(
-                    cloudwatch.get(
-                        "cluster"
-                    )
-                ).get(
-                    "metrics"
-                ),
-                dict,
-            )
-            else {},
-
-            configuration=dict(
-                configuration
+            metrics=(
+                {
+                    key: value
+                    for key, value in self._dict(cloudwatch.get("cluster"))
+                    .get("metrics", {})
+                    .items()
+                }
+                if isinstance(
+                    self._dict(cloudwatch.get("cluster")).get("metrics"),
+                    dict,
+                )
+                else {}
             ),
-
-            topology=dict(
-                context.topology()
-                or {}
-            ),
-
-            billing=dict(
-                context.billing()
-                or {}
-            ),
-
+            configuration=dict(configuration),
+            topology=dict(context.topology() or {}),
+            billing=dict(context.billing() or {}),
             resource={
-                "resource_id":
-                    context.resource_id,
-
-                "resource_type":
-                    context.resource_type,
-
-                "region":
-                    context.region,
-
-                "cluster_identifier":
-                    self._cluster(context).get(
-                        "identifier"
-                    ),
-
-                "engine":
-                    self._cluster(context).get(
-                        "engine"
-                    ),
+                "resource_id": context.resource_id,
+                "resource_type": context.resource_type,
+                "region": context.region,
+                "cluster_identifier": self._cluster(context).get("identifier"),
+                "engine": self._cluster(context).get("engine"),
             },
-
             derived={
-                "relationships":
-                    relationships,
-
+                "relationships": relationships,
                 **metadata,
             },
-
             data_quality={
                 **(
                     context.collector_data_quality()
@@ -2257,17 +1745,11 @@ class AuroraAnalyzer(Analyzer):
                     )
                     else {}
                 ),
-
-                "cloudwatch_status":
-                    cloudwatch.get(
-                        "status"
-                    ),
-
-                "cloudwatch_data_quality":
-                    cloudwatch.get(
-                        "data_quality",
-                        {},
-                    ),
+                "cloudwatch_status": cloudwatch.get("status"),
+                "cloudwatch_data_quality": cloudwatch.get(
+                    "data_quality",
+                    {},
+                ),
             },
         )
 
@@ -2291,32 +1773,14 @@ class AuroraAnalyzer(Analyzer):
             return ObservationPeriod(
                 start=value.get("start"),
                 end=value.get("end"),
-                duration_seconds=value.get(
-                    "duration_seconds"
-                ),
+                duration_seconds=value.get("duration_seconds"),
             )
 
-        cloudwatch = cls._cloudwatch(
-            context
-        )
+        cloudwatch = cls._cloudwatch(context)
 
-        start = (
-            cloudwatch.get(
-                "analysis_start"
-            )
-            or cloudwatch.get(
-                "start"
-            )
-        )
+        start = cloudwatch.get("analysis_start") or cloudwatch.get("start")
 
-        end = (
-            cloudwatch.get(
-                "analysis_end"
-            )
-            or cloudwatch.get(
-                "end"
-            )
-        )
+        end = cloudwatch.get("analysis_end") or cloudwatch.get("end")
 
         if not start and not end:
             return None

@@ -17,21 +17,19 @@ class NetworkInterfaceCollector:
         region: str,
     ) -> None:
 
-        
         self.region = region
 
         self.ec2 = get_client(
             "ec2",
             region,
         )
+
     def collect(
         self,
         interface_ids: List[str],
     ) -> Dict[str, Any]:
 
-        interface_ids = self._normalize_ids(
-            interface_ids
-        )
+        interface_ids = self._normalize_ids(interface_ids)
 
         if not interface_ids:
             return {
@@ -40,13 +38,9 @@ class NetworkInterfaceCollector:
                 "count": 0,
             }
 
-        interfaces: List[
-            Dict[str, Any]
-        ] = []
+        interfaces: List[Dict[str, Any]] = []
 
-        errors: List[
-            Dict[str, Any]
-        ] = []
+        errors: List[Dict[str, Any]] = []
 
         # EC2 allows a bounded number of IDs per request.
         for chunk in self._chunks(
@@ -56,10 +50,8 @@ class NetworkInterfaceCollector:
 
             try:
 
-                response = (
-                    self.ec2.describe_network_interfaces(
-                        NetworkInterfaceIds=chunk
-                    )
+                response = self.ec2.describe_network_interfaces(
+                    NetworkInterfaceIds=chunk
                 )
 
             except Exception as exc:
@@ -78,23 +70,12 @@ class NetworkInterfaceCollector:
                 [],
             ):
 
-                normalized = (
-                    self._normalize_interface(
-                        interface
-                    )
-                )
+                normalized = self._normalize_interface(interface)
 
                 if normalized:
-                    interfaces.append(
-                        normalized
-                    )
+                    interfaces.append(normalized)
 
-        found_ids = {
-            interface.get(
-                "network_interface_id"
-            )
-            for interface in interfaces
-        }
+        found_ids = {interface.get("network_interface_id") for interface in interfaces}
 
         missing_ids = [
             interface_id
@@ -115,30 +96,19 @@ class NetworkInterfaceCollector:
 
         return {
             "status": status,
-
-            "interfaces":
-                interfaces,
-
-            "count":
-                len(interfaces),
-
-            "requested_count":
-                len(interface_ids),
-
-            "missing_ids":
-                missing_ids,
-
-            "errors":
-                errors,
+            "interfaces": interfaces,
+            "count": len(interfaces),
+            "requested_count": len(interface_ids),
+            "missing_ids": missing_ids,
+            "errors": errors,
         }
+
     @staticmethod
     def _normalize_interface(
         interface: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
 
-        interface_id = interface.get(
-            "NetworkInterfaceId"
-        )
+        interface_id = interface.get("NetworkInterfaceId")
 
         if not interface_id:
             return None
@@ -161,20 +131,9 @@ class NetworkInterfaceCollector:
 
             private_ip_addresses.append(
                 {
-                    "private_ip":
-                        address.get(
-                            "PrivateIpAddress"
-                        ),
-
-                    "primary":
-                        address.get(
-                            "Primary"
-                        ),
-
-                    "association":
-                        address.get(
-                            "Association"
-                        ),
+                    "private_ip": address.get("PrivateIpAddress"),
+                    "primary": address.get("Primary"),
+                    "association": address.get("Association"),
                 }
             )
 
@@ -196,156 +155,52 @@ class NetworkInterfaceCollector:
 
             groups.append(
                 {
-                    "group_id":
-                        group.get(
-                            "GroupId"
-                        ),
-
-                    "group_name":
-                        group.get(
-                            "GroupName"
-                        ),
+                    "group_id": group.get("GroupId"),
+                    "group_name": group.get("GroupName"),
                 }
             )
 
-        attachment = (
-            interface.get(
-                "Attachment"
-            )
-            or {}
-        )
+        attachment = interface.get("Attachment") or {}
 
         return {
-            "network_interface_id":
-                interface_id,
-
-            "subnet_id":
-                interface.get(
-                    "SubnetId"
-                ),
-
-            "vpc_id":
-                interface.get(
-                    "VpcId"
-                ),
-
-            "availability_zone":
-                interface.get(
-                    "AvailabilityZone"
-                ),
-
-            "availability_zone_id":
-                interface.get(
-                    "AvailabilityZoneId"
-                ),
-
-            "description":
-                interface.get(
-                    "Description"
-                ),
-
-            "interface_type":
-                interface.get(
-                    "InterfaceType"
-                ),
-
-            "status":
-                interface.get(
-                    "Status"
-                ),
-
-            "private_dns_name":
-                interface.get(
-                    "PrivateDnsName"
-                ),
-
-            "private_ip_address":
-                interface.get(
-                    "PrivateIpAddress"
-                ),
-
-            "private_ip_addresses":
-                private_ip_addresses,
-
-            "groups":
-                groups,
-
-            "source_dest_check":
-                interface.get(
-                    "SourceDestCheck"
-                ),
-
-            "requester_managed":
-                interface.get(
-                    "RequesterManaged"
-                ),
-
-            "requester_id":
-                interface.get(
-                    "RequesterId"
-                ),
-
-            "operator":
-                interface.get(
-                    "Operator"
-                ),
-
-            "owner_id":
-                interface.get(
-                    "OwnerId"
-                ),
-
+            "network_interface_id": interface_id,
+            "subnet_id": interface.get("SubnetId"),
+            "vpc_id": interface.get("VpcId"),
+            "availability_zone": interface.get("AvailabilityZone"),
+            "availability_zone_id": interface.get("AvailabilityZoneId"),
+            "description": interface.get("Description"),
+            "interface_type": interface.get("InterfaceType"),
+            "status": interface.get("Status"),
+            "private_dns_name": interface.get("PrivateDnsName"),
+            "private_ip_address": interface.get("PrivateIpAddress"),
+            "private_ip_addresses": private_ip_addresses,
+            "groups": groups,
+            "source_dest_check": interface.get("SourceDestCheck"),
+            "requester_managed": interface.get("RequesterManaged"),
+            "requester_id": interface.get("RequesterId"),
+            "operator": interface.get("Operator"),
+            "owner_id": interface.get("OwnerId"),
             "attachment": {
-                "attachment_id":
-                    attachment.get(
-                        "AttachmentId"
-                    ),
-
-                "instance_id":
-                    attachment.get(
-                        "InstanceId"
-                    ),
-
-                "instance_owner_id":
-                    attachment.get(
-                        "InstanceOwnerId"
-                    ),
-
-                "device_index":
-                    attachment.get(
-                        "DeviceIndex"
-                    ),
-
-                "status":
-                    attachment.get(
-                        "Status"
-                    ),
-
-                "attach_time":
-                    (
-                        attachment.get(
-                            "AttachTime"
-                        ).isoformat()
-                        if attachment.get(
-                            "AttachTime"
-                        )
-                        else None
-                    ),
-
-                "delete_on_termination":
-                    attachment.get(
-                        "DeleteOnTermination"
-                    ),
-            },
-
-            "tags":
-                NetworkInterfaceCollector._tags(
-                    interface.get(
-                        "TagSet",
-                        [],
-                    )
+                "attachment_id": attachment.get("AttachmentId"),
+                "instance_id": attachment.get("InstanceId"),
+                "instance_owner_id": attachment.get("InstanceOwnerId"),
+                "device_index": attachment.get("DeviceIndex"),
+                "status": attachment.get("Status"),
+                "attach_time": (
+                    attachment.get("AttachTime").isoformat()
+                    if attachment.get("AttachTime")
+                    else None
                 ),
+                "delete_on_termination": attachment.get("DeleteOnTermination"),
+            },
+            "tags": NetworkInterfaceCollector._tags(
+                interface.get(
+                    "TagSet",
+                    [],
+                )
+            ),
         }
+
     @staticmethod
     def _normalize_ids(
         interface_ids: List[str],
@@ -360,9 +215,7 @@ class NetworkInterfaceCollector:
             if not value:
                 continue
 
-            value = str(
-                value
-            ).strip()
+            value = str(value).strip()
 
             if not value:
                 continue
@@ -370,13 +223,9 @@ class NetworkInterfaceCollector:
             if value in seen:
                 continue
 
-            seen.add(
-                value
-            )
+            seen.add(value)
 
-            result.append(
-                value
-            )
+            result.append(value)
 
         return result
 
@@ -391,9 +240,7 @@ class NetworkInterfaceCollector:
             len(values),
             size,
         ):
-            yield values[
-                index:index + size
-            ]
+            yield values[index : index + size]
 
     @staticmethod
     def _tags(
@@ -407,14 +254,11 @@ class NetworkInterfaceCollector:
             return {}
 
         return {
-            tag["Key"]:
-                tag.get("Value")
+            tag["Key"]: tag.get("Value")
             for tag in tags
             if isinstance(
                 tag,
                 dict,
             )
-            and tag.get(
-                "Key"
-            )
+            and tag.get("Key")
         }

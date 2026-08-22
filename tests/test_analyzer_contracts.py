@@ -23,15 +23,10 @@ from analysis.registry import get_analyzers
 
 ROOT = Path(__file__).resolve().parent.parent
 RULES_PATH = (
-    ROOT
-    / "aws_cost_optimizer"
-    / "recommendations"
-    / "recommendation_rules.yaml"
+    ROOT / "aws_cost_optimizer" / "recommendations" / "recommendation_rules.yaml"
 )
 
-FINDING_TYPE_RE = re.compile(
-    r"finding_type\s*=\s*\(?\s*[\"']([a-z0-9_]+)[\"']"
-)
+FINDING_TYPE_RE = re.compile(r"finding_type\s*=\s*\(?\s*[\"']([a-z0-9_]+)[\"']")
 
 # Analyzers that set recommendation_eligible once in a shared finding
 # builder rather than per detector call.
@@ -84,7 +79,7 @@ def _emitted_finding_types() -> dict[str, bool | None]:
         source = path.read_text(encoding="utf-8")
 
         for match in FINDING_TYPE_RE.finditer(source):
-            tail = source[match.end(): match.end() + 2600]
+            tail = source[match.end() : match.end() + 2600]
             flag = re.search(
                 r"recommendation_eligible\s*=\s*\(?\s*(True|False)",
                 tail,
@@ -127,9 +122,7 @@ def test_analyzer_takes_an_analysis_context(analyzer):
 def test_analyzer_returns_a_list(analyzer):
     """analyze() must return a list even for a resource it ignores."""
 
-    result = analyzer.analyze(
-        AnalysisContext(resource={"resource_type": "__none__"})
-    )
+    result = analyzer.analyze(AnalysisContext(resource={"resource_type": "__none__"}))
 
     assert isinstance(result, list)
 
@@ -209,9 +202,7 @@ def test_reason_templates_only_use_supported_placeholders():
     bad = []
 
     for key, definition in catalog.items():
-        for variant_key, variant in (
-            definition.get("variants") or {}
-        ).items():
+        for variant_key, variant in (definition.get("variants") or {}).items():
             for field in ("title", "reason", "action"):
                 for placeholder in re.findall(
                     r"\{([a-z_]+)\}",
@@ -219,8 +210,7 @@ def test_reason_templates_only_use_supported_placeholders():
                 ):
                     if placeholder not in allowed:
                         bad.append(
-                            f"{key}.{variant_key}.{field}: "
-                            f"{{{placeholder}}}"
+                            f"{key}.{variant_key}.{field}: " f"{{{placeholder}}}"
                         )
 
     assert not bad, f"unsupported placeholders: {bad}"

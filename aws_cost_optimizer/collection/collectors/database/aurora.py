@@ -53,12 +53,8 @@ class AuroraClusterCollector(BaseCollector):
         self.cloudwatch = get_client("cloudwatch", self.region)
         self.cloudtrail = get_client("cloudtrail", self.region)
 
-        self.metric_collector = CloudWatchMetricCollector(
-            self.cloudwatch
-        )
-        self.topology_collector = NetworkTopologyCollector(
-            self.region
-        )
+        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
+        self.topology_collector = NetworkTopologyCollector(self.region)
 
         self._cluster_metrics_cache: Dict[
             str,
@@ -83,11 +79,7 @@ class AuroraClusterCollector(BaseCollector):
         self,
         name: str,
     ) -> dict[str, Any]:
-        value = (
-            self.profile.get(name, {})
-            if isinstance(self.profile, dict)
-            else {}
-        )
+        value = self.profile.get(name, {}) if isinstance(self.profile, dict) else {}
         return value if isinstance(value, dict) else {}
 
     @staticmethod
@@ -135,42 +127,34 @@ class AuroraClusterCollector(BaseCollector):
     ) -> List[Dict[str, Any]]:
         resources: list[Dict[str, Any]] = []
 
-        paginator = self.rds.get_paginator(
-            "describe_db_clusters"
-        )
+        paginator = self.rds.get_paginator("describe_db_clusters")
 
         for page in paginator.paginate():
-            for cluster in page.get(
-                "DBClusters",
-                [],
-            ) or []:
-                engine = str(
-                    cluster.get("Engine", "")
-                    or ""
-                ).lower()
+            for cluster in (
+                page.get(
+                    "DBClusters",
+                    [],
+                )
+                or []
+            ):
+                engine = str(cluster.get("Engine", "") or "").lower()
 
                 if not engine.startswith("aurora"):
                     continue
 
-                cluster_id = cluster.get(
-                    "DBClusterIdentifier"
-                )
+                cluster_id = cluster.get("DBClusterIdentifier")
 
                 if not cluster_id:
                     continue
 
                 resources.append(
                     {
-                        "id":
-                            cluster_id,
-                        "raw":
-                            cluster,
+                        "id": cluster_id,
+                        "raw": cluster,
                     }
                 )
 
-        self._prefetch_metrics(
-            resources
-        )
+        self._prefetch_metrics(resources)
 
         return resources
 
@@ -188,41 +172,18 @@ class AuroraClusterCollector(BaseCollector):
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
-        raw = self._dict(
-            resource.get("raw")
-        )
+        raw = self._dict(resource.get("raw"))
 
         return {
-            "name":
-                raw.get("DBClusterIdentifier"),
-
-            "db_cluster_identifier":
-                raw.get("DBClusterIdentifier"),
-
-            "db_cluster_arn":
-                raw.get("DBClusterArn"),
-
-            "engine":
-                raw.get("Engine"),
-
-            "engine_version":
-                raw.get("EngineVersion"),
-
-            "status":
-                raw.get("Status"),
-
-            "engine_mode":
-                raw.get("EngineMode"),
-
-            "created_at":
-                self._isoformat(
-                    raw.get("ClusterCreateTime")
-                ),
-
-            "tags":
-                self._tags(
-                    raw.get("TagList", [])
-                ),
+            "name": raw.get("DBClusterIdentifier"),
+            "db_cluster_identifier": raw.get("DBClusterIdentifier"),
+            "db_cluster_arn": raw.get("DBClusterArn"),
+            "engine": raw.get("Engine"),
+            "engine_version": raw.get("EngineVersion"),
+            "status": raw.get("Status"),
+            "engine_mode": raw.get("EngineMode"),
+            "created_at": self._isoformat(raw.get("ClusterCreateTime")),
+            "tags": self._tags(raw.get("TagList", [])),
         }
 
     # ------------------------------------------------------------------
@@ -233,9 +194,7 @@ class AuroraClusterCollector(BaseCollector):
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
-        raw = self._dict(
-            resource.get("raw")
-        )
+        raw = self._dict(resource.get("raw"))
 
         vpc_security_groups = [
             item.get("VpcSecurityGroupId")
@@ -246,201 +205,96 @@ class AuroraClusterCollector(BaseCollector):
                 )
                 or []
             )
-            if isinstance(item, dict)
-            and item.get("VpcSecurityGroupId")
+            if isinstance(item, dict) and item.get("VpcSecurityGroupId")
         ]
 
-        scaling_v2 = self._dict(
-            raw.get(
-                "ServerlessV2ScalingConfiguration"
-            )
-        )
+        scaling_v2 = self._dict(raw.get("ServerlessV2ScalingConfiguration"))
 
-        scaling_v1 = self._dict(
-            raw.get(
-                "ScalingConfigurationInfo"
-            )
-        )
+        scaling_v1 = self._dict(raw.get("ScalingConfigurationInfo"))
 
-        subnet_group = raw.get(
-            "DBSubnetGroup"
-        )
+        subnet_group = raw.get("DBSubnetGroup")
 
         return {
             "cluster": {
-                "identifier":
-                    raw.get(
-                        "DBClusterIdentifier"
-                    ),
-                "arn":
-                    raw.get(
-                        "DBClusterArn"
-                    ),
-                "status":
-                    raw.get("Status"),
-                "engine":
-                    raw.get("Engine"),
-                "engine_version":
-                    raw.get("EngineVersion"),
-                "engine_mode":
-                    raw.get("EngineMode"),
-                "database_name":
-                    raw.get("DatabaseName"),
-                "master_username":
-                    raw.get("MasterUsername"),
-                "cluster_create_time":
-                    self._isoformat(
-                        raw.get(
-                            "ClusterCreateTime"
-                        )
-                    ),
+                "identifier": raw.get("DBClusterIdentifier"),
+                "arn": raw.get("DBClusterArn"),
+                "status": raw.get("Status"),
+                "engine": raw.get("Engine"),
+                "engine_version": raw.get("EngineVersion"),
+                "engine_mode": raw.get("EngineMode"),
+                "database_name": raw.get("DatabaseName"),
+                "master_username": raw.get("MasterUsername"),
+                "cluster_create_time": self._isoformat(raw.get("ClusterCreateTime")),
             },
-
             "storage": {
-                "storage_type":
-                    raw.get("StorageType"),
-                "allocated_storage":
-                    raw.get("AllocatedStorage"),
-                "storage_encrypted":
-                    raw.get("StorageEncrypted"),
-                "kms_key_id":
-                    raw.get("KmsKeyId"),
+                "storage_type": raw.get("StorageType"),
+                "allocated_storage": raw.get("AllocatedStorage"),
+                "storage_encrypted": raw.get("StorageEncrypted"),
+                "kms_key_id": raw.get("KmsKeyId"),
             },
-
             "backup": {
-                "backup_retention_days":
-                    raw.get(
-                        "BackupRetentionPeriod"
-                    ),
-                "preferred_backup_window":
-                    raw.get(
-                        "PreferredBackupWindow"
-                    ),
-                "copy_tags_to_snapshot":
-                    raw.get(
-                        "CopyTagsToSnapshot"
-                    ),
+                "backup_retention_days": raw.get("BackupRetentionPeriod"),
+                "preferred_backup_window": raw.get("PreferredBackupWindow"),
+                "copy_tags_to_snapshot": raw.get("CopyTagsToSnapshot"),
             },
-
             "availability": {
-                "availability_zones":
-                    list(
-                        raw.get(
-                            "AvailabilityZones",
-                            [],
-                        )
-                        or []
-                    ),
-                "multi_az":
-                    raw.get("MultiAZ"),
-                "promotion_tier_count":
-                    len(
-                        raw.get(
-                            "DBClusterMembers",
-                            [],
-                        )
-                        or []
-                    ),
-            },
-
-            "endpoints": {
-                "writer":
-                    raw.get("Endpoint"),
-                "reader":
-                    raw.get("ReaderEndpoint"),
-                "custom":
-                    raw.get("CustomEndpoints", []),
-            },
-
-            "network": {
-                "vpc_security_group_ids":
-                    vpc_security_groups,
-                "db_subnet_group":
-                    subnet_group,
-            },
-
-            "serverless_v2": {
-                "enabled":
-                    bool(scaling_v2),
-                "min_capacity":
-                    scaling_v2.get(
-                        "MinCapacity"
-                    ),
-                "max_capacity":
-                    scaling_v2.get(
-                        "MaxCapacity"
-                    ),
-                "seconds_until_auto_pause":
-                    scaling_v2.get(
-                        "SecondsUntilAutoPause"
-                    ),
-            },
-
-            "serverless_v1": {
-                "enabled":
-                    bool(scaling_v1),
-                "min_capacity":
-                    scaling_v1.get(
-                        "MinCapacity"
-                    ),
-                "max_capacity":
-                    scaling_v1.get(
-                        "MaxCapacity"
-                    ),
-                "auto_pause":
-                    scaling_v1.get(
-                        "AutoPause"
-                    ),
-                "seconds_until_auto_pause":
-                    scaling_v1.get(
-                        "SecondsUntilAutoPause"
-                    ),
-            },
-
-            "deletion_protection":
-                raw.get(
-                    "DeletionProtection"
-                ),
-
-            "iam_database_authentication_enabled":
-                raw.get(
-                    "IAMDatabaseAuthenticationEnabled"
-                ),
-
-            "global_cluster_identifier":
-                raw.get(
-                    "GlobalClusterIdentifier"
-                ),
-
-            "global_write_forwarding":
-                raw.get(
-                    "GlobalWriteForwardingStatus"
-                ),
-
-            "backtrack_window":
-                raw.get(
-                    "BacktrackWindow"
-                ),
-
-            "enabled_cloudwatch_logs_exports":
-                list(
+                "availability_zones": list(
                     raw.get(
-                        "EnabledCloudwatchLogsExports",
+                        "AvailabilityZones",
                         [],
                     )
                     or []
                 ),
-
-            "db_cluster_parameter_group":
-                raw.get(
-                    "DBClusterParameterGroup"
+                "multi_az": raw.get("MultiAZ"),
+                "promotion_tier_count": len(
+                    raw.get(
+                        "DBClusterMembers",
+                        [],
+                    )
+                    or []
                 ),
-
-            "associated_roles":
+            },
+            "endpoints": {
+                "writer": raw.get("Endpoint"),
+                "reader": raw.get("ReaderEndpoint"),
+                "custom": raw.get("CustomEndpoints", []),
+            },
+            "network": {
+                "vpc_security_group_ids": vpc_security_groups,
+                "db_subnet_group": subnet_group,
+            },
+            "serverless_v2": {
+                "enabled": bool(scaling_v2),
+                "min_capacity": scaling_v2.get("MinCapacity"),
+                "max_capacity": scaling_v2.get("MaxCapacity"),
+                "seconds_until_auto_pause": scaling_v2.get("SecondsUntilAutoPause"),
+            },
+            "serverless_v1": {
+                "enabled": bool(scaling_v1),
+                "min_capacity": scaling_v1.get("MinCapacity"),
+                "max_capacity": scaling_v1.get("MaxCapacity"),
+                "auto_pause": scaling_v1.get("AutoPause"),
+                "seconds_until_auto_pause": scaling_v1.get("SecondsUntilAutoPause"),
+            },
+            "deletion_protection": raw.get("DeletionProtection"),
+            "iam_database_authentication_enabled": raw.get(
+                "IAMDatabaseAuthenticationEnabled"
+            ),
+            "global_cluster_identifier": raw.get("GlobalClusterIdentifier"),
+            "global_write_forwarding": raw.get("GlobalWriteForwardingStatus"),
+            "backtrack_window": raw.get("BacktrackWindow"),
+            "enabled_cloudwatch_logs_exports": list(
                 raw.get(
-                    "AssociatedRoles",
+                    "EnabledCloudwatchLogsExports",
                     [],
-                ),
+                )
+                or []
+            ),
+            "db_cluster_parameter_group": raw.get("DBClusterParameterGroup"),
+            "associated_roles": raw.get(
+                "AssociatedRoles",
+                [],
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -451,9 +305,7 @@ class AuroraClusterCollector(BaseCollector):
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
-        raw = self._dict(
-            resource.get("raw")
-        )
+        raw = self._dict(resource.get("raw"))
 
         members: list[dict[str, Any]] = []
 
@@ -469,119 +321,61 @@ class AuroraClusterCollector(BaseCollector):
 
             members.append(
                 {
-                    "db_instance_identifier":
-                        member.get(
-                            "DBInstanceIdentifier"
-                        ),
-                    "is_writer":
-                        bool(
-                            member.get(
-                                "IsClusterWriter"
-                            )
-                        ),
-                    "promotion_tier":
-                        member.get(
-                            "PromotionTier"
-                        ),
-                    "parameter_group_status":
-                        member.get(
-                            "DBClusterParameterGroupStatus"
-                        ),
+                    "db_instance_identifier": member.get("DBInstanceIdentifier"),
+                    "is_writer": bool(member.get("IsClusterWriter")),
+                    "promotion_tier": member.get("PromotionTier"),
+                    "parameter_group_status": member.get(
+                        "DBClusterParameterGroupStatus"
+                    ),
                 }
             )
 
         replicas = [
-            item.get(
-                "DBInstanceIdentifier"
-            )
+            item.get("DBInstanceIdentifier")
             for item in members
-            if not item.get("is_writer")
-            and item.get(
-                "db_instance_identifier"
-            )
+            if not item.get("is_writer") and item.get("db_instance_identifier")
         ]
 
         writers = [
-            item.get(
-                "DBInstanceIdentifier"
-            )
+            item.get("DBInstanceIdentifier")
             for item in members
-            if item.get("is_writer")
-            and item.get(
-                "db_instance_identifier"
-            )
+            if item.get("is_writer") and item.get("db_instance_identifier")
         ]
 
         return {
-            "status":
-                "ok",
-
-            "vpc_security_group_ids":
-                [
-                    item.get(
-                        "VpcSecurityGroupId"
-                    )
-                    for item in (
-                        raw.get(
-                            "VpcSecurityGroups",
-                            [],
-                        )
-                        or []
-                    )
-                    if isinstance(item, dict)
-                    and item.get(
-                        "VpcSecurityGroupId"
-                    )
-                ],
-
-            "db_subnet_group":
-                self._dict(
+            "status": "ok",
+            "vpc_security_group_ids": [
+                item.get("VpcSecurityGroupId")
+                for item in (
                     raw.get(
-                        "DBSubnetGroup"
-                    )
-                ).get(
-                    "DBSubnetGroupName"
-                ),
-
-            "members":
-                members,
-
-            "writer_instances":
-                writers,
-
-            "reader_instances":
-                replicas,
-
-            "writer_count":
-                len(writers),
-
-            "reader_count":
-                len(replicas),
-
-            "global_cluster_identifier":
-                raw.get(
-                    "GlobalClusterIdentifier"
-                ),
-
-            "replication_source_identifier":
-                raw.get(
-                    "ReplicationSourceIdentifier"
-                ),
-
-            "read_replica_identifiers":
-                list(
-                    raw.get(
-                        "ReadReplicaIdentifiers",
+                        "VpcSecurityGroups",
                         [],
                     )
                     or []
-                ),
-
-            "roles":
+                )
+                if isinstance(item, dict) and item.get("VpcSecurityGroupId")
+            ],
+            "db_subnet_group": self._dict(raw.get("DBSubnetGroup")).get(
+                "DBSubnetGroupName"
+            ),
+            "members": members,
+            "writer_instances": writers,
+            "reader_instances": replicas,
+            "writer_count": len(writers),
+            "reader_count": len(replicas),
+            "global_cluster_identifier": raw.get("GlobalClusterIdentifier"),
+            "replication_source_identifier": raw.get("ReplicationSourceIdentifier"),
+            "read_replica_identifiers": list(
                 raw.get(
-                    "AssociatedRoles",
+                    "ReadReplicaIdentifiers",
                     [],
-                ),
+                )
+                or []
+            ),
+            "roles": raw.get(
+                "AssociatedRoles",
+                [],
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -600,21 +394,11 @@ class AuroraClusterCollector(BaseCollector):
         ):
             return
 
-        cluster_specs = self._specs(
-            "cluster_metrics"
-        )
-        role_specs = self._specs(
-            "role_metrics"
-        )
-        member_specs = self._specs(
-            "instance_metrics"
-        )
+        cluster_specs = self._specs("cluster_metrics")
+        role_specs = self._specs("role_metrics")
+        member_specs = self._specs("instance_metrics")
 
-        if (
-            not cluster_specs
-            and not role_specs
-            and not member_specs
-        ):
+        if not cluster_specs and not role_specs and not member_specs:
             return
 
         try:
@@ -635,9 +419,7 @@ class AuroraClusterCollector(BaseCollector):
 
         for resource in resources:
             cluster_id = resource.get("id")
-            raw = self._dict(
-                resource.get("raw")
-            )
+            raw = self._dict(resource.get("raw"))
 
             if not cluster_id:
                 continue
@@ -645,20 +427,15 @@ class AuroraClusterCollector(BaseCollector):
             if cluster_specs:
                 cluster_requests.append(
                     {
-                        "resource_key":
-                            str(cluster_id),
-                        "namespace":
-                            namespace,
+                        "resource_key": str(cluster_id),
+                        "namespace": namespace,
                         "dimensions": [
                             {
-                                "Name":
-                                    "DBClusterIdentifier",
-                                "Value":
-                                    str(cluster_id),
+                                "Name": "DBClusterIdentifier",
+                                "Value": str(cluster_id),
                             }
                         ],
-                        "metric_specs":
-                            cluster_specs,
+                        "metric_specs": cluster_specs,
                     }
                 )
 
@@ -669,26 +446,19 @@ class AuroraClusterCollector(BaseCollector):
                 ):
                     role_requests.append(
                         {
-                            "resource_key":
-                                f"{cluster_id}:{role}",
-                            "namespace":
-                                namespace,
+                            "resource_key": f"{cluster_id}:{role}",
+                            "namespace": namespace,
                             "dimensions": [
                                 {
-                                    "Name":
-                                        "DBClusterIdentifier",
-                                    "Value":
-                                        str(cluster_id),
+                                    "Name": "DBClusterIdentifier",
+                                    "Value": str(cluster_id),
                                 },
                                 {
-                                    "Name":
-                                        "Role",
-                                    "Value":
-                                        role,
+                                    "Name": "Role",
+                                    "Value": role,
                                 },
                             ],
-                            "metric_specs":
-                                role_specs,
+                            "metric_specs": role_specs,
                         }
                     )
 
@@ -703,29 +473,22 @@ class AuroraClusterCollector(BaseCollector):
                     if not isinstance(member, dict):
                         continue
 
-                    instance_id = member.get(
-                        "DBInstanceIdentifier"
-                    )
+                    instance_id = member.get("DBInstanceIdentifier")
 
                     if not instance_id:
                         continue
 
                     member_requests.append(
                         {
-                            "resource_key":
-                                str(instance_id),
-                            "namespace":
-                                namespace,
+                            "resource_key": str(instance_id),
+                            "namespace": namespace,
                             "dimensions": [
                                 {
-                                    "Name":
-                                        "DBInstanceIdentifier",
-                                    "Value":
-                                        str(instance_id),
+                                    "Name": "DBInstanceIdentifier",
+                                    "Value": str(instance_id),
                                 }
                             ],
-                            "metric_specs":
-                                member_specs,
+                            "metric_specs": member_specs,
                         }
                     )
 
@@ -766,18 +529,12 @@ class AuroraClusterCollector(BaseCollector):
             profile,
             default=True,
         ):
-            return {
-                "status":
-                    "disabled"
-            }
+            return {"status": "disabled"}
 
         cluster_id = resource.get("id")
 
         if not cluster_id:
-            return {
-                "status":
-                    "incomplete"
-            }
+            return {"status": "incomplete"}
 
         start, end = self.get_analysis_period()
 
@@ -811,9 +568,7 @@ class AuroraClusterCollector(BaseCollector):
 
         member_metrics = {}
 
-        raw = self._dict(
-            resource.get("raw")
-        )
+        raw = self._dict(resource.get("raw"))
 
         for member in (
             raw.get(
@@ -825,97 +580,66 @@ class AuroraClusterCollector(BaseCollector):
             if not isinstance(member, dict):
                 continue
 
-            instance_id = member.get(
-                "DBInstanceIdentifier"
-            )
+            instance_id = member.get("DBInstanceIdentifier")
 
             if not instance_id:
                 continue
 
-            member_metrics[str(instance_id)] = (
-                self._metrics_to_map(
-                    self._member_metrics_cache.get(
-                        str(instance_id),
-                        [],
-                    )
+            member_metrics[str(instance_id)] = self._metrics_to_map(
+                self._member_metrics_cache.get(
+                    str(instance_id),
+                    [],
                 )
             )
 
         cloudwatch = {
-            "status":
-                "ok",
-            "namespace":
-                namespace,
-            "analysis_start":
-                start.isoformat(),
-            "analysis_end":
-                end.isoformat(),
-            "requested_period":
-                self._period(),
-
+            "status": "ok",
+            "namespace": namespace,
+            "analysis_start": start.isoformat(),
+            "analysis_end": end.isoformat(),
+            "requested_period": self._period(),
             "cluster": {
                 "dimensions": [
                     {
-                        "Name":
-                            "DBClusterIdentifier",
-                        "Value":
-                            str(cluster_id),
+                        "Name": "DBClusterIdentifier",
+                        "Value": str(cluster_id),
                     }
                 ],
-                "metrics":
-                    cluster,
+                "metrics": cluster,
             },
-
             "roles": {
                 "writer": {
-                    "metrics":
-                        writer,
+                    "metrics": writer,
                 },
                 "reader": {
-                    "metrics":
-                        reader,
+                    "metrics": reader,
                 },
             },
-
             "instances": {
-                instance_id:
-                    {
-                        "metrics":
-                            metrics
-                    }
-                for instance_id, metrics
-                in member_metrics.items()
+                instance_id: {"metrics": metrics}
+                for instance_id, metrics in member_metrics.items()
             },
-
-            "data_quality":
-                self._quality(
-                    cluster,
-                    writer,
-                    reader,
-                    member_metrics,
-                ),
+            "data_quality": self._quality(
+                cluster,
+                writer,
+                reader,
+                member_metrics,
+            ),
         }
 
         observations = {
-            "cloudwatch":
-                cloudwatch,
+            "cloudwatch": cloudwatch,
         }
 
         if self._enabled(
             self._section("cloudtrail"),
             default=False,
         ):
-            observations["cloudtrail"] = (
-                self._collect_cluster_events(
-                    cluster_id=str(
-                        cluster_id
-                    ),
-                    cluster_arn=raw.get(
-                        "DBClusterArn"
-                    ),
-                    start=start,
-                    end=end,
-                )
+            observations["cloudtrail"] = self._collect_cluster_events(
+                cluster_id=str(cluster_id),
+                cluster_arn=raw.get("DBClusterArn"),
+                start=start,
+                end=end,
             )
 
         return observations
@@ -929,24 +653,16 @@ class AuroraClusterCollector(BaseCollector):
         resource: Dict[str, Any],
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
-        raw = self._dict(
-            resource.get("raw")
-        )
+        raw = self._dict(resource.get("raw"))
 
-        subnet_group = self._dict(
-            raw.get("DBSubnetGroup")
-        )
+        subnet_group = self._dict(raw.get("DBSubnetGroup"))
 
-        vpc_id = subnet_group.get(
-            "VpcId"
-        )
+        vpc_id = subnet_group.get("VpcId")
 
         if not vpc_id:
             return {
-                "status":
-                    "incomplete",
-                "reason":
-                    "Aurora cluster has no VPC ID",
+                "status": "incomplete",
+                "reason": "Aurora cluster has no VPC ID",
             }
 
         topology = self.topology_collector.collect(
@@ -958,31 +674,25 @@ class AuroraClusterCollector(BaseCollector):
         topology = dict(topology)
 
         topology["aurora"] = {
-            "cluster_id":
-                resource.get("id"),
-            "member_count":
-                len(
+            "cluster_id": resource.get("id"),
+            "member_count": len(
+                raw.get(
+                    "DBClusterMembers",
+                    [],
+                )
+                or []
+            ),
+            "writer_count": sum(
+                1
+                for member in (
                     raw.get(
                         "DBClusterMembers",
                         [],
                     )
                     or []
-                ),
-            "writer_count":
-                sum(
-                    1
-                    for member in (
-                        raw.get(
-                            "DBClusterMembers",
-                            [],
-                        )
-                        or []
-                    )
-                    if isinstance(member, dict)
-                    and member.get(
-                        "IsClusterWriter"
-                    )
-                ),
+                )
+                if isinstance(member, dict) and member.get("IsClusterWriter")
+            ),
         }
 
         return topology
@@ -996,158 +706,69 @@ class AuroraClusterCollector(BaseCollector):
         resource: Dict[str, Any],
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
-        identity = self._dict(
-            collected_resource.get(
-                "identity"
-            )
-        )
-        configuration = self._dict(
-            collected_resource.get(
-                "configuration"
-            )
-        )
-        relationships = self._dict(
-            collected_resource.get(
-                "relationships"
-            )
-        )
-        observations = self._dict(
-            collected_resource.get(
-                "observations"
-            )
-        )
+        identity = self._dict(collected_resource.get("identity"))
+        configuration = self._dict(collected_resource.get("configuration"))
+        relationships = self._dict(collected_resource.get("relationships"))
+        observations = self._dict(collected_resource.get("observations"))
 
-        cloudwatch = self._dict(
-            observations.get(
-                "cloudwatch"
-            )
-        )
-        cloudtrail = self._dict(
-            observations.get(
-                "cloudtrail"
-            )
-        )
+        cloudwatch = self._dict(observations.get("cloudwatch"))
+        cloudtrail = self._dict(observations.get("cloudtrail"))
 
         return {
             "resource": {
-                "id":
-                    resource.get("id"),
-                "name":
-                    identity.get("name"),
-                "region":
-                    self.region,
-                "engine":
-                    identity.get("engine"),
-                "engine_version":
-                    identity.get("engine_version"),
-                "status":
-                    identity.get("status"),
+                "id": resource.get("id"),
+                "name": identity.get("name"),
+                "region": self.region,
+                "engine": identity.get("engine"),
+                "engine_version": identity.get("engine_version"),
+                "status": identity.get("status"),
             },
-
-            "cluster_configuration":
-                configuration,
-
-            "members":
-                relationships,
-
+            "cluster_configuration": configuration,
+            "members": relationships,
             "capacity": {
-                "serverless_v2":
-                    self._dict(
-                        configuration.get(
-                            "serverless_v2"
+                "serverless_v2": self._dict(configuration.get("serverless_v2")),
+                "serverless_v2_enabled": self._dict(
+                    configuration.get("serverless_v2")
+                ).get(
+                    "enabled",
+                    False,
+                ),
+                "provisioned_member_count": sum(
+                    1
+                    for member in (
+                        relationships.get(
+                            "members",
+                            [],
                         )
-                    ),
-
-                "serverless_v2_enabled":
-                    self._dict(
-                        configuration.get(
-                            "serverless_v2"
-                        )
-                    ).get(
-                        "enabled",
-                        False,
-                    ),
-
-                "provisioned_member_count":
-                    sum(
-                        1
-                        for member in (
-                            relationships.get(
-                                "members",
-                                [],
-                            )
-                            or []
-                        )
-                        if isinstance(member, dict)
-                    ),
+                        or []
+                    )
+                    if isinstance(member, dict)
+                ),
             },
-
-            "utilization":
-                cloudwatch,
-
-            "cloudtrail":
-                cloudtrail,
-
+            "utilization": cloudwatch,
+            "cloudtrail": cloudtrail,
             "cost_drivers": {
-                "storage_type":
-                    self._dict(
-                        configuration.get(
-                            "storage"
-                        )
-                    ).get(
-                        "storage_type"
-                    ),
-
-                "backup_retention_days":
-                    self._dict(
-                        configuration.get(
-                            "backup"
-                        )
-                    ).get(
-                        "backup_retention_days"
-                    ),
-
-                "reader_count":
-                    relationships.get(
-                        "reader_count"
-                    ),
-
-                "writer_count":
-                    relationships.get(
-                        "writer_count"
-                    ),
-
-                "global_cluster_identifier":
-                    relationships.get(
-                        "global_cluster_identifier"
-                    ),
-
-                "global_write_forwarding":
-                    configuration.get(
-                        "global_write_forwarding"
-                    ),
-
-                "deletion_protection":
-                    configuration.get(
-                        "deletion_protection"
-                    ),
+                "storage_type": self._dict(configuration.get("storage")).get(
+                    "storage_type"
+                ),
+                "backup_retention_days": self._dict(configuration.get("backup")).get(
+                    "backup_retention_days"
+                ),
+                "reader_count": relationships.get("reader_count"),
+                "writer_count": relationships.get("writer_count"),
+                "global_cluster_identifier": relationships.get(
+                    "global_cluster_identifier"
+                ),
+                "global_write_forwarding": configuration.get("global_write_forwarding"),
+                "deletion_protection": configuration.get("deletion_protection"),
             },
-
             "data_quality": {
-                "cloudwatch_available":
-                    bool(cloudwatch),
-                "cloudtrail_available":
-                    cloudtrail.get(
-                        "status"
-                    ) == "ok",
-                "topology_available":
-                    self._dict(
-                        collected_resource.get(
-                            "topology"
-                        )
-                    ).get(
-                        "status"
-                    ) == "ok",
+                "cloudwatch_available": bool(cloudwatch),
+                "cloudtrail_available": cloudtrail.get("status") == "ok",
+                "topology_available": self._dict(
+                    collected_resource.get("topology")
+                ).get("status")
+                == "ok",
             },
         }
 
@@ -1162,9 +783,7 @@ class AuroraClusterCollector(BaseCollector):
         start: datetime,
         end: datetime,
     ) -> Dict[str, Any]:
-        profile = self._section(
-            "cloudtrail"
-        )
+        profile = self._section("cloudtrail")
 
         event_names = profile.get(
             "event_names",
@@ -1188,9 +807,7 @@ class AuroraClusterCollector(BaseCollector):
         seen: set[str] = set()
 
         try:
-            paginator = self.cloudtrail.get_paginator(
-                "lookup_events"
-            )
+            paginator = self.cloudtrail.get_paginator("lookup_events")
 
             for event_name in event_names:
                 if not isinstance(
@@ -1202,10 +819,8 @@ class AuroraClusterCollector(BaseCollector):
                 for page in paginator.paginate(
                     LookupAttributes=[
                         {
-                            "AttributeKey":
-                                "EventName",
-                            "AttributeValue":
-                                event_name,
+                            "AttributeKey": "EventName",
+                            "AttributeValue": event_name,
                         }
                     ],
                     StartTime=start,
@@ -1223,22 +838,20 @@ class AuroraClusterCollector(BaseCollector):
                         ),
                     ),
                 ):
-                    for event in page.get(
-                        "Events",
-                        [],
-                    ) or []:
+                    for event in (
+                        page.get(
+                            "Events",
+                            [],
+                        )
+                        or []
+                    ):
                         if not isinstance(
                             event,
                             dict,
                         ):
                             continue
 
-                        event_id = str(
-                            event.get(
-                                "EventId"
-                            )
-                            or ""
-                        )
+                        event_id = str(event.get("EventId") or "")
 
                         if event_id and event_id in seen:
                             continue
@@ -1254,120 +867,66 @@ class AuroraClusterCollector(BaseCollector):
                         matches_resource = any(
                             isinstance(item, dict)
                             and (
-                                item.get(
-                                    "ResourceName"
-                                ) == cluster_id
+                                item.get("ResourceName") == cluster_id
                                 or (
                                     cluster_arn
-                                    and item.get(
-                                        "ResourceName"
-                                    ) == cluster_arn
+                                    and item.get("ResourceName") == cluster_arn
                                 )
                             )
                             for item in resources
                         )
 
-                        raw_event = event.get(
-                            "CloudTrailEvent"
-                        )
+                        raw_event = event.get("CloudTrailEvent")
 
                         parsed = {}
                         if raw_event:
                             try:
-                                parsed = json.loads(
-                                    raw_event
-                                )
+                                parsed = json.loads(raw_event)
                             except (
                                 TypeError,
                                 ValueError,
                             ):
                                 parsed = {}
 
-                        request = self._dict(
-                            parsed.get(
-                                "requestParameters"
-                            )
+                        request = self._dict(parsed.get("requestParameters"))
+
+                        request_matches = cluster_id in str(
+                            request.get("dBClusterIdentifier")
+                            or request.get("DBClusterIdentifier")
+                            or ""
                         )
 
-                        request_matches = (
-                            cluster_id
-                            in str(
-                                request.get(
-                                    "dBClusterIdentifier"
-                                )
-                                or request.get(
-                                    "DBClusterIdentifier"
-                                )
-                                or ""
-                            )
-                        )
-
-                        if not (
-                            matches_resource
-                            or request_matches
-                        ):
+                        if not (matches_resource or request_matches):
                             continue
 
                         seen.add(event_id)
 
                         events.append(
                             {
-                                "event_id":
-                                    event_id,
-                                "event_name":
-                                    event.get(
-                                        "EventName"
-                                    ),
-                                "event_time":
-                                    self._isoformat(
-                                        event.get(
-                                            "EventTime"
-                                        )
-                                    ),
-                                "username":
-                                    event.get(
-                                        "Username"
-                                    ),
-                                "event_source":
-                                    event.get(
-                                        "EventSource"
-                                    ),
-                                "read_only":
-                                    event.get(
-                                        "ReadOnly"
-                                    ),
-                                "request_parameters":
-                                    request,
+                                "event_id": event_id,
+                                "event_name": event.get("EventName"),
+                                "event_time": self._isoformat(event.get("EventTime")),
+                                "username": event.get("Username"),
+                                "event_source": event.get("EventSource"),
+                                "read_only": event.get("ReadOnly"),
+                                "request_parameters": request,
                             }
                         )
 
         except Exception as exc:
             return {
-                "status":
-                    "error",
-                "events":
-                    [],
-                "event_count":
-                    0,
-                "error":
-                    str(exc),
+                "status": "error",
+                "events": [],
+                "event_count": 0,
+                "error": str(exc),
             }
 
-        events.sort(
-            key=lambda item:
-                item.get(
-                    "event_time"
-                )
-                or ""
-        )
+        events.sort(key=lambda item: item.get("event_time") or "")
 
         return {
-            "status":
-                "ok",
-            "events":
-                events,
-            "event_count":
-                len(events),
+            "status": "ok",
+            "events": events,
+            "event_count": len(events),
         }
 
     # ------------------------------------------------------------------
@@ -1394,17 +953,12 @@ class AuroraClusterCollector(BaseCollector):
             ):
                 continue
 
-            name = (
-                metric.get("metric_key")
-                or metric.get("metric_name")
-            )
+            name = metric.get("metric_key") or metric.get("metric_name")
 
             if name:
                 result[str(name)] = metric
 
-            metric_name = metric.get(
-                "metric_name"
-            )
+            metric_name = metric.get("metric_name")
 
             if metric_name:
                 result[str(metric_name)] = metric
@@ -1426,44 +980,29 @@ class AuroraClusterCollector(BaseCollector):
             writer,
             reader,
         ):
-            all_metrics.extend(
-                mapping.values()
-            )
+            all_metrics.extend(mapping.values())
 
         for member in members.values():
-            all_metrics.extend(
-                member.values()
-            )
+            all_metrics.extend(member.values())
 
         return {
-            "queried_metric_count":
-                len(all_metrics),
-
-            "observed_metric_count":
-                sum(
-                    1
-                    for metric in all_metrics
-                    if isinstance(metric, dict)
-                    and metric.get("has_data") is True
-                ),
-
-            "no_data_metric_count":
-                sum(
-                    1
-                    for metric in all_metrics
-                    if isinstance(metric, dict)
-                    and metric.get("status")
-                    in {"no_data", "missing"}
-                ),
-
-            "metric_error_count":
-                sum(
-                    1
-                    for metric in all_metrics
-                    if isinstance(metric, dict)
-                    and metric.get("status")
-                    == "error"
-                ),
+            "queried_metric_count": len(all_metrics),
+            "observed_metric_count": sum(
+                1
+                for metric in all_metrics
+                if isinstance(metric, dict) and metric.get("has_data") is True
+            ),
+            "no_data_metric_count": sum(
+                1
+                for metric in all_metrics
+                if isinstance(metric, dict)
+                and metric.get("status") in {"no_data", "missing"}
+            ),
+            "metric_error_count": sum(
+                1
+                for metric in all_metrics
+                if isinstance(metric, dict) and metric.get("status") == "error"
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -1474,11 +1013,7 @@ class AuroraClusterCollector(BaseCollector):
     def _dict(
         value: Any,
     ) -> dict[str, Any]:
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
-        )
+        return value if isinstance(value, dict) else {}
 
     @staticmethod
     def _tags(
@@ -1488,11 +1023,9 @@ class AuroraClusterCollector(BaseCollector):
             return {}
 
         return {
-            str(tag.get("Key")):
-                tag.get("Value")
+            str(tag.get("Key")): tag.get("Value")
             for tag in tags
-            if isinstance(tag, dict)
-            and tag.get("Key")
+            if isinstance(tag, dict) and tag.get("Key")
         }
 
     @staticmethod
@@ -1507,13 +1040,9 @@ class AuroraClusterCollector(BaseCollector):
             datetime,
         ):
             if value.tzinfo is None:
-                value = value.replace(
-                    tzinfo=timezone.utc
-                )
+                value = value.replace(tzinfo=timezone.utc)
             else:
-                value = value.astimezone(
-                    timezone.utc
-                )
+                value = value.astimezone(timezone.utc)
 
             return value.isoformat()
 

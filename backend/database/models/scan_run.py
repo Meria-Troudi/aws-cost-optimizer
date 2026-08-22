@@ -120,4 +120,3 @@ class ScanRun(Base):
         back_populates="scan_run",
         cascade="all, delete-orphan",
     )
-    

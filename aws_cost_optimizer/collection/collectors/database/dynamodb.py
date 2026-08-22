@@ -78,9 +78,7 @@ class DynamoDBCollector(BaseCollector):
         )
 
         if not self.region:
-            raise ValueError(
-                "DynamoDB collector requires a region."
-            )
+            raise ValueError("DynamoDB collector requires a region.")
 
         self.dynamodb = get_client(
             "dynamodb",
@@ -97,11 +95,7 @@ class DynamoDBCollector(BaseCollector):
             self.region,
         )
 
-        self.metric_collector = (
-            CloudWatchMetricCollector(
-                self.cloudwatch
-            )
-        )
+        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
 
         self._metrics_batch_cache: Dict[
             str,
@@ -124,20 +118,19 @@ class DynamoDBCollector(BaseCollector):
         name: str,
     ) -> Dict[str, Any]:
 
-        value = (
-            self.profile.get(name, {})
-            if isinstance(self.profile, dict)
-            else {}
-        )
+        value = self.profile.get(name, {}) if isinstance(self.profile, dict) else {}
 
         return value if isinstance(value, dict) else {}
 
     def _cloudwatch_profile(self) -> Dict[str, Any]:
 
-        return self._section("observations").get(
-            "cloudwatch",
-            {},
-        ) or {}
+        return (
+            self._section("observations").get(
+                "cloudwatch",
+                {},
+            )
+            or {}
+        )
 
     def _metric_specs(
         self,
@@ -182,9 +175,7 @@ class DynamoDBCollector(BaseCollector):
 
         resources: List[Dict[str, Any]] = []
 
-        paginator = self.dynamodb.get_paginator(
-            "list_tables"
-        )
+        paginator = self.dynamodb.get_paginator("list_tables")
 
         try:
 
@@ -197,17 +188,12 @@ class DynamoDBCollector(BaseCollector):
 
                     try:
 
-                        response = (
-                            self.dynamodb.describe_table(
-                                TableName=table_name
-                            )
-                        )
+                        response = self.dynamodb.describe_table(TableName=table_name)
 
                     except Exception as exc:
 
                         raise RuntimeError(
-                            "Failed to describe DynamoDB "
-                            f"table {table_name}: {exc}"
+                            "Failed to describe DynamoDB " f"table {table_name}: {exc}"
                         ) from exc
 
                     table = response.get("Table")
@@ -225,8 +211,7 @@ class DynamoDBCollector(BaseCollector):
         except Exception as exc:
 
             raise RuntimeError(
-                "Failed to discover DynamoDB tables "
-                f"in {self.region}: {exc}"
+                "Failed to discover DynamoDB tables " f"in {self.region}: {exc}"
             ) from exc
 
         # Prefetched together so per-resource collection never issues
@@ -244,9 +229,7 @@ class DynamoDBCollector(BaseCollector):
         value = resource.get("id")
 
         if not value:
-            raise ValueError(
-                "DynamoDB table name is missing."
-            )
+            raise ValueError("DynamoDB table name is missing.")
 
         return str(value)
 
@@ -269,12 +252,8 @@ class DynamoDBCollector(BaseCollector):
             "status": table.get("TableStatus"),
             "billing_mode": self._billing_mode(table),
             "region": self.region,
-            "created_at": self._isoformat(
-                table.get("CreationDateTime")
-            ),
-            "tags": self._collect_tags(
-                table.get("TableArn")
-            ),
+            "created_at": self._isoformat(table.get("CreationDateTime")),
+            "tags": self._collect_tags(table.get("TableArn")),
         }
 
     # ==============================================================
@@ -288,13 +267,9 @@ class DynamoDBCollector(BaseCollector):
 
         table = self._dict(resource.get("raw"))
 
-        provisioned = self._dict(
-            table.get("ProvisionedThroughput")
-        )
+        provisioned = self._dict(table.get("ProvisionedThroughput"))
 
-        billing_mode_summary = self._dict(
-            table.get("BillingModeSummary")
-        )
+        billing_mode_summary = self._dict(table.get("BillingModeSummary"))
 
         table_name = table.get("TableName")
 
@@ -304,26 +279,16 @@ class DynamoDBCollector(BaseCollector):
                 "arn": table.get("TableArn"),
                 "id": table.get("TableId"),
                 "status": table.get("TableStatus"),
-                "creation_time": self._isoformat(
-                    table.get("CreationDateTime")
-                ),
-                "table_size_bytes": table.get(
-                    "TableSizeBytes"
-                ),
+                "creation_time": self._isoformat(table.get("CreationDateTime")),
+                "table_size_bytes": table.get("TableSizeBytes"),
                 "item_count": table.get("ItemCount"),
             },
             "capacity": {
                 "billing_mode": self._billing_mode(table),
-                "provisioned_read": provisioned.get(
-                    "ReadCapacityUnits"
-                ),
-                "provisioned_write": provisioned.get(
-                    "WriteCapacityUnits"
-                ),
+                "provisioned_read": provisioned.get("ReadCapacityUnits"),
+                "provisioned_write": provisioned.get("WriteCapacityUnits"),
                 "billing_mode_last_update": self._isoformat(
-                    billing_mode_summary.get(
-                        "LastUpdateToPayPerRequestDateTime"
-                    )
+                    billing_mode_summary.get("LastUpdateToPayPerRequestDateTime")
                 ),
             },
             "indexes": self._collect_indexes(table),
@@ -333,29 +298,19 @@ class DynamoDBCollector(BaseCollector):
             ),
             "global_table": self._global_table_context(table),
             "backup": {
-                "point_in_time_recovery": self._collect_pitr(
-                    table_name
-                ),
+                "point_in_time_recovery": self._collect_pitr(table_name),
             },
             "ttl": self._collect_ttl(table_name),
-            "deletion_protection": table.get(
-                "DeletionProtectionEnabled"
-            ),
+            "deletion_protection": table.get("DeletionProtectionEnabled"),
             "stream": {
-                "enabled": bool(
-                    table.get("StreamSpecification", {})
+                "enabled": bool(table.get("StreamSpecification", {})),
+                "view_type": self._dict(table.get("StreamSpecification")).get(
+                    "StreamViewType"
                 ),
-                "view_type": self._dict(
-                    table.get("StreamSpecification")
-                ).get("StreamViewType"),
             },
             "encryption": {
-                "enabled": bool(
-                    table.get("SSEDescription")
-                ),
-                "type": self._dict(
-                    table.get("SSEDescription")
-                ).get("SSEType"),
+                "enabled": bool(table.get("SSEDescription")),
+                "type": self._dict(table.get("SSEDescription")).get("SSEType"),
             },
         }
 
@@ -380,18 +335,12 @@ class DynamoDBCollector(BaseCollector):
             "global_table": global_context,
             "indexes": indexes,
             "gsi_names": [
-                index.get("index_name")
-                for index in indexes
-                if index.get("index_name")
+                index.get("index_name") for index in indexes if index.get("index_name")
             ],
             "summary": {
                 "gsi_count": len(indexes),
-                "global_replica_count": global_context.get(
-                    "replica_count", 0
-                ),
-                "is_global_table": global_context.get(
-                    "is_global_table", False
-                ),
+                "global_replica_count": global_context.get("replica_count", 0),
+                "is_global_table": global_context.get("is_global_table", False),
             },
         }
 
@@ -449,10 +398,7 @@ class DynamoDBCollector(BaseCollector):
 
             if gsi_specs:
 
-                for index in (
-                    raw.get("GlobalSecondaryIndexes", [])
-                    or []
-                ):
+                for index in raw.get("GlobalSecondaryIndexes", []) or []:
 
                     if not isinstance(index, dict):
                         continue
@@ -464,9 +410,7 @@ class DynamoDBCollector(BaseCollector):
 
                     requests.append(
                         {
-                            "resource_key": (
-                                f"gsi:{table_name}:{index_name}"
-                            ),
+                            "resource_key": (f"gsi:{table_name}:{index_name}"),
                             "namespace": namespace,
                             "dimensions": [
                                 {
@@ -492,9 +436,7 @@ class DynamoDBCollector(BaseCollector):
             requested_period=self._requested_period(),
         )
 
-        self._metrics_batch_cache = (
-            results if isinstance(results, dict) else {}
-        )
+        self._metrics_batch_cache = results if isinstance(results, dict) else {}
 
     # ==============================================================
     # OBSERVATIONS
@@ -535,16 +477,12 @@ class DynamoDBCollector(BaseCollector):
             }
 
         table_map = self._metrics_to_map(
-            self._metrics_batch_cache.get(
-                f"table:{table_name}", []
-            )
+            self._metrics_batch_cache.get(f"table:{table_name}", [])
         )
 
         gsi_map: Dict[str, Dict[str, Any]] = {}
 
-        for index in self._collect_indexes(
-            self._dict(resource.get("raw"))
-        ):
+        for index in self._collect_indexes(self._dict(resource.get("raw"))):
 
             index_name = index.get("index_name")
 
@@ -554,9 +492,7 @@ class DynamoDBCollector(BaseCollector):
             key = f"gsi:{table_name}:{index_name}"
 
             gsi_map[str(index_name)] = {
-                "metrics": self._metrics_to_map(
-                    self._metrics_batch_cache.get(key, [])
-                )
+                "metrics": self._metrics_to_map(self._metrics_batch_cache.get(key, []))
             }
 
         duration_seconds = max(
@@ -617,21 +553,11 @@ class DynamoDBCollector(BaseCollector):
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        identity = self._dict(
-            collected_resource.get("identity")
-        )
-        configuration = self._dict(
-            collected_resource.get("configuration")
-        )
-        relationships = self._dict(
-            collected_resource.get("relationships")
-        )
-        observations = self._dict(
-            collected_resource.get("observations")
-        )
-        cloudwatch = self._dict(
-            observations.get("cloudwatch")
-        )
+        identity = self._dict(collected_resource.get("identity"))
+        configuration = self._dict(collected_resource.get("configuration"))
+        relationships = self._dict(collected_resource.get("relationships"))
+        observations = self._dict(collected_resource.get("observations"))
+        cloudwatch = self._dict(observations.get("cloudwatch"))
         derived = self._dict(observations.get("derived"))
         capacity = self._dict(configuration.get("capacity"))
         table_info = self._dict(configuration.get("table"))
@@ -646,47 +572,29 @@ class DynamoDBCollector(BaseCollector):
             },
             "capacity": {
                 "billing_mode": capacity.get("billing_mode"),
-                "provisioned_read": capacity.get(
-                    "provisioned_read"
-                ),
-                "provisioned_write": capacity.get(
-                    "provisioned_write"
-                ),
-                "autoscaling": configuration.get(
-                    "autoscaling", {}
-                ),
+                "provisioned_read": capacity.get("provisioned_read"),
+                "provisioned_write": capacity.get("provisioned_write"),
+                "autoscaling": configuration.get("autoscaling", {}),
             },
             "indexes": {
-                "count": relationships.get("summary", {}).get(
-                    "gsi_count", 0
-                ),
+                "count": relationships.get("summary", {}).get("gsi_count", 0),
                 "items": configuration.get("indexes", []),
             },
-            "global_table": relationships.get(
-                "global_table", {}
-            ),
+            "global_table": relationships.get("global_table", {}),
             "utilization": cloudwatch,
             "derived": derived,
             "backup": configuration.get("backup", {}),
             "storage": {
-                "table_size_bytes": table_info.get(
-                    "table_size_bytes"
-                ),
+                "table_size_bytes": table_info.get("table_size_bytes"),
                 "item_count": table_info.get("item_count"),
             },
             "data_quality": {
                 "cloudwatch_available": bool(cloudwatch),
                 "table_metrics_available": bool(
-                    self._dict(cloudwatch.get("table")).get(
-                        "metrics"
-                    )
+                    self._dict(cloudwatch.get("table")).get("metrics")
                 ),
-                "gsi_metrics_available": bool(
-                    cloudwatch.get("gsis")
-                ),
-                "autoscaling_available": bool(
-                    configuration.get("autoscaling")
-                ),
+                "gsi_metrics_available": bool(cloudwatch.get("gsis")),
+                "autoscaling_available": bool(configuration.get("autoscaling")),
                 "global_table_context_available": bool(
                     relationships.get("global_table")
                 ),
@@ -704,16 +612,12 @@ class DynamoDBCollector(BaseCollector):
 
         result: List[Dict[str, Any]] = []
 
-        for index in (
-            table.get("GlobalSecondaryIndexes", []) or []
-        ):
+        for index in table.get("GlobalSecondaryIndexes", []) or []:
 
             if not isinstance(index, dict):
                 continue
 
-            provisioned = self._dict(
-                index.get("ProvisionedThroughput")
-            )
+            provisioned = self._dict(index.get("ProvisionedThroughput"))
 
             result.append(
                 {
@@ -723,15 +627,9 @@ class DynamoDBCollector(BaseCollector):
                     "projection": index.get("Projection", {}),
                     "status": index.get("IndexStatus"),
                     "item_count": index.get("ItemCount"),
-                    "index_size_bytes": index.get(
-                        "IndexSizeBytes"
-                    ),
-                    "provisioned_read": provisioned.get(
-                        "ReadCapacityUnits"
-                    ),
-                    "provisioned_write": provisioned.get(
-                        "WriteCapacityUnits"
-                    ),
+                    "index_size_bytes": index.get("IndexSizeBytes"),
+                    "provisioned_read": provisioned.get("ReadCapacityUnits"),
+                    "provisioned_write": provisioned.get("WriteCapacityUnits"),
                 }
             )
 
@@ -755,8 +653,7 @@ class DynamoDBCollector(BaseCollector):
             {
                 str(replica.get("RegionName"))
                 for replica in replicas
-                if isinstance(replica, dict)
-                and replica.get("RegionName")
+                if isinstance(replica, dict) and replica.get("RegionName")
             }
         )
 
@@ -795,11 +692,9 @@ class DynamoDBCollector(BaseCollector):
             raw = self._dict(resource.get("raw"))
             indexes = self._collect_indexes(raw)
 
-            self._autoscaling_cache[str(table_name)] = (
-                self._collect_autoscaling(
-                    str(table_name),
-                    indexes,
-                )
+            self._autoscaling_cache[str(table_name)] = self._collect_autoscaling(
+                str(table_name),
+                indexes,
             )
 
     def _collect_autoscaling(
@@ -866,10 +761,8 @@ class DynamoDBCollector(BaseCollector):
 
         try:
 
-            paginator = (
-                self.application_autoscaling.get_paginator(
-                    "describe_scalable_targets"
-                )
+            paginator = self.application_autoscaling.get_paginator(
+                "describe_scalable_targets"
             )
 
             targets: List[Dict[str, Any]] = []
@@ -877,14 +770,10 @@ class DynamoDBCollector(BaseCollector):
             for page in paginator.paginate(
                 ServiceNamespace="dynamodb",
                 ResourceIds=[resource_id],
-                ScalableDimension=(
-                    f"dynamodb:{resource_type}:{dimension}"
-                ),
+                ScalableDimension=(f"dynamodb:{resource_type}:{dimension}"),
             ):
 
-                targets.extend(
-                    page.get("ScalableTargets", [])
-                )
+                targets.extend(page.get("ScalableTargets", []))
 
             if not targets:
 
@@ -935,13 +824,9 @@ class DynamoDBCollector(BaseCollector):
             duration_seconds,
         )
 
-        provisioned_read = cls._metric_value(
-            table_metrics.get(cls.PROVISIONED_READ)
-        )
+        provisioned_read = cls._metric_value(table_metrics.get(cls.PROVISIONED_READ))
 
-        provisioned_write = cls._metric_value(
-            table_metrics.get(cls.PROVISIONED_WRITE)
-        )
+        provisioned_write = cls._metric_value(table_metrics.get(cls.PROVISIONED_WRITE))
 
         return {
             "table": {
@@ -958,8 +843,7 @@ class DynamoDBCollector(BaseCollector):
                     provisioned_write,
                 ),
                 "traffic_observed": (
-                    consumed_read_rate is not None
-                    or consumed_write_rate is not None
+                    consumed_read_rate is not None or consumed_write_rate is not None
                 ),
             },
             "gsis": {
@@ -990,11 +874,7 @@ class DynamoDBCollector(BaseCollector):
         duration_seconds: float,
     ) -> Dict[str, Any]:
 
-        metrics = (
-            value.get("metrics", {})
-            if isinstance(value, dict)
-            else {}
-        )
+        metrics = value.get("metrics", {}) if isinstance(value, dict) else {}
 
         consumed_read_rate = cls._consumed_rate(
             metrics.get(cls.CONSUMED_READ),
@@ -1006,13 +886,9 @@ class DynamoDBCollector(BaseCollector):
             duration_seconds,
         )
 
-        provisioned_read = cls._metric_value(
-            metrics.get(cls.PROVISIONED_READ)
-        )
+        provisioned_read = cls._metric_value(metrics.get(cls.PROVISIONED_READ))
 
-        provisioned_write = cls._metric_value(
-            metrics.get(cls.PROVISIONED_WRITE)
-        )
+        provisioned_write = cls._metric_value(metrics.get(cls.PROVISIONED_WRITE))
 
         return {
             "consumed_read_units_per_second": consumed_read_rate,
@@ -1073,11 +949,7 @@ class DynamoDBCollector(BaseCollector):
         provisioned: Optional[float],
     ) -> Optional[float]:
 
-        if (
-            consumed_rate is None
-            or provisioned is None
-            or provisioned <= 0
-        ):
+        if consumed_rate is None or provisioned is None or provisioned <= 0:
             return None
 
         return min(100.0, consumed_rate / provisioned * 100.0)
@@ -1096,9 +968,7 @@ class DynamoDBCollector(BaseCollector):
             if not isinstance(metric, dict):
                 continue
 
-            key = metric.get("metric_key") or metric.get(
-                "metric_name"
-            )
+            key = metric.get("metric_key") or metric.get("metric_name")
 
             if key:
                 result[str(key)] = metric
@@ -1129,8 +999,7 @@ class DynamoDBCollector(BaseCollector):
         errors = sum(
             1
             for metric in values
-            if isinstance(metric, dict)
-            and metric.get("status") == "error"
+            if isinstance(metric, dict) and metric.get("status") == "error"
         )
 
         if observed > 0 and errors == 0:
@@ -1157,9 +1026,7 @@ class DynamoDBCollector(BaseCollector):
             if not isinstance(item, dict):
                 continue
 
-            values.extend(
-                list(item.get("metrics", {}).values())
-            )
+            values.extend(list(item.get("metrics", {}).values()))
 
         return {
             "queried_metric_count": len(values),
@@ -1173,8 +1040,7 @@ class DynamoDBCollector(BaseCollector):
             "metric_error_count": sum(
                 1
                 for metric in values
-                if isinstance(metric, dict)
-                and metric.get("status") == "error"
+                if isinstance(metric, dict) and metric.get("status") == "error"
             ),
         }
 
@@ -1194,9 +1060,7 @@ class DynamoDBCollector(BaseCollector):
             if mode:
                 return str(mode).upper()
 
-        if isinstance(
-            table.get("ProvisionedThroughput"), dict
-        ):
+        if isinstance(table.get("ProvisionedThroughput"), dict):
             return "PROVISIONED"
 
         return "UNKNOWN"
@@ -1211,29 +1075,15 @@ class DynamoDBCollector(BaseCollector):
 
         try:
 
-            response = (
-                self.dynamodb.describe_continuous_backups(
-                    TableName=table_name
-                )
-            )
+            response = self.dynamodb.describe_continuous_backups(TableName=table_name)
 
-            description = self._dict(
-                response.get(
-                    "ContinuousBackupsDescription"
-                )
-            )
+            description = self._dict(response.get("ContinuousBackupsDescription"))
 
-            pitr = self._dict(
-                description.get(
-                    "PointInTimeRecoveryDescription"
-                )
-            )
+            pitr = self._dict(description.get("PointInTimeRecoveryDescription"))
 
             return {
                 "status": "ok",
-                "point_in_time_recovery_status": pitr.get(
-                    "PointInTimeRecoveryStatus"
-                ),
+                "point_in_time_recovery_status": pitr.get("PointInTimeRecoveryStatus"),
             }
 
         except Exception as exc:
@@ -1250,23 +1100,14 @@ class DynamoDBCollector(BaseCollector):
 
         try:
 
-            response = self.dynamodb.describe_time_to_live(
-                TableName=table_name
-            )
+            response = self.dynamodb.describe_time_to_live(TableName=table_name)
 
-            specification = self._dict(
-                response.get("TimeToLiveDescription")
-            )
+            specification = self._dict(response.get("TimeToLiveDescription"))
 
             return {
                 "status": "ok",
-                "enabled": specification.get(
-                    "TimeToLiveStatus"
-                )
-                == "ENABLED",
-                "attribute_name": specification.get(
-                    "AttributeName"
-                ),
+                "enabled": specification.get("TimeToLiveStatus") == "ENABLED",
+                "attribute_name": specification.get("AttributeName"),
             }
 
         except Exception as exc:
@@ -1283,15 +1124,11 @@ class DynamoDBCollector(BaseCollector):
 
         try:
 
-            paginator = self.dynamodb.get_paginator(
-                "list_tags_of_resource"
-            )
+            paginator = self.dynamodb.get_paginator("list_tags_of_resource")
 
             tags: List[Dict[str, Any]] = []
 
-            for page in paginator.paginate(
-                ResourceArn=table_arn
-            ):
+            for page in paginator.paginate(ResourceArn=table_arn):
                 tags.extend(page.get("Tags", []))
 
             return {

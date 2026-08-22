@@ -11,6 +11,7 @@ from typing import Any
 
 from aws_cost_optimizer.collection.cost.periods import period_label
 
+
 def _box(title: str, width: int = 72) -> list[str]:
     title = str(title)
 
@@ -53,11 +54,8 @@ def _finding_title(finding: dict) -> str:
     return str(
         finding.get("title")
         or finding.get("name")
-        or finding.get("finding_type", "Unknown finding")
-        .replace("_", " ")
-        .title()
+        or finding.get("finding_type", "Unknown finding").replace("_", " ").title()
     )
-
 
 
 class ScanExporter:
@@ -67,9 +65,7 @@ class ScanExporter:
         self.scan = scan
         self.scan_id = scan.id
 
-        self.base = Path(
-            f"scans/scan_{self.scan_id}"
-        )
+        self.base = Path(f"scans/scan_{self.scan_id}")
 
         self.base.mkdir(
             parents=True,
@@ -90,47 +86,21 @@ class ScanExporter:
 
         lines: list[str] = []
 
-        lines.extend(
-            self._section_header()
-        )
+        lines.extend(self._section_header())
 
-        lines.extend(
-            self._section_scan_info()
-        )
+        lines.extend(self._section_scan_info())
 
-        lines.extend(
-            self._section_cost_summary(
-                validation
-            )
-        )
+        lines.extend(self._section_cost_summary(validation))
 
-        lines.extend(
-            self._section_cost_drivers()
-        )
+        lines.extend(self._section_cost_drivers())
 
-        lines.extend(
-            self._section_collection_summary(
-                results
-            )
-        )
+        lines.extend(self._section_collection_summary(results))
 
-        lines.extend(
-            self._section_findings(
-                findings
-            )
-        )
+        lines.extend(self._section_findings(findings))
 
-        lines.extend(
-            self._section_recommendations(
-                recommendations
-            )
-        )
+        lines.extend(self._section_recommendations(recommendations))
 
-        lines.extend(
-            self._section_resource_details(
-                contexts
-            )
-        )
+        lines.extend(self._section_resource_details(contexts))
 
         path = self.base / "summary.txt"
 
@@ -140,18 +110,13 @@ class ScanExporter:
             encoding="utf-8",
         ) as file:
 
-            file.write(
-                "\n".join(lines)
-            )
+            file.write("\n".join(lines))
 
         return path
 
- 
     def _section_header(self) -> list[str]:
 
-        now = datetime.now(
-            timezone.utc
-        ).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
 
         return [
             "=" * 72,
@@ -159,31 +124,23 @@ class ScanExporter:
             f"Generated: {now}",
             "=" * 72,
         ]
+
     def _section_scan_info(self) -> list[str]:
 
-        region = (
-            self.scan.region
-            or "all regions"
-        )
+        region = self.scan.region or "all regions"
 
-        lines = _box(
-            "SCAN INFORMATION"
-        )
+        lines = _box("SCAN INFORMATION")
 
         lines.extend(
             [
                 f" Account        : {self.scan.account_id}",
-
                 " Period         : "
                 + period_label(
                     self.scan.start_date,
                     self.scan.end_date,
                 ),
-
                 f" Region         : {region}",
-
-                f" Cost threshold : "
-                f"${self.scan.cost_threshold:,.2f}",
+                f" Cost threshold : " f"${self.scan.cost_threshold:,.2f}",
             ]
         )
 
@@ -194,24 +151,15 @@ class ScanExporter:
         validation,
     ) -> list[str]:
 
-        lines = _box(
-            "COST SUMMARY"
-        )
+        lines = _box("COST SUMMARY")
 
         if not validation:
 
-            lines.append(
-                " No billing validation data available."
-            )
+            lines.append(" No billing validation data available.")
 
             return lines
 
-        scope = (
-            validation.get(
-                "billing_scope"
-            )
-            or "all regions"
-        )
+        scope = validation.get("billing_scope") or "all regions"
 
         total = float(
             validation.get(
@@ -245,39 +193,22 @@ class ScanExporter:
         lines.extend(
             [
                 f" Billing scope  : {scope}",
-
                 f" Period total   : ${total:,.2f}",
-
                 f" Monthly total  : ${monthly_total:,.2f}",
-
-                f" Validation     : "
-                f"{'PASS' if matches else 'FAIL'}",
-
+                f" Validation     : " f"{'PASS' if matches else 'FAIL'}",
                 f" Difference     : ${difference:,.2f}",
             ]
         )
 
-        months = _safe_list(
-            validation.get(
-                "months_included"
-            )
-        )
+        months = _safe_list(validation.get("months_included"))
 
         if months:
 
             lines.append(
-                " Months         : "
-                + ", ".join(
-                    str(month)
-                    for month in months
-                )
+                " Months         : " + ", ".join(str(month) for month in months)
             )
 
-        breakdown = _safe_list(
-            validation.get(
-                "monthly_breakdown"
-            )
-        )
+        breakdown = _safe_list(validation.get("monthly_breakdown"))
 
         if breakdown:
 
@@ -297,7 +228,6 @@ class ScanExporter:
 
         return lines
 
- 
     def _section_cost_drivers(self) -> list[str]:
 
         from backend.database.connection import SessionLocal
@@ -323,21 +253,15 @@ class ScanExporter:
                 self.scan_id,
             )
 
-            lines = _box(
-                "COST DRIVERS"
-            )
+            lines = _box("COST DRIVERS")
 
             if not services:
 
-                lines.append(
-                    " No service cost data available."
-                )
+                lines.append(" No service cost data available.")
 
                 return lines
 
-            lines.append(
-                f" Period total: ${period_total:,.2f}"
-            )
+            lines.append(f" Period total: ${period_total:,.2f}")
 
             lines.append("")
 
@@ -350,12 +274,10 @@ class ScanExporter:
                     f"({service['share_pct']:.1f}%)"
                 )
 
-                usage_types = (
-                    get_usage_types_by_service(
-                        db,
-                        self.scan_id,
-                        service["service"],
-                    )
+                usage_types = get_usage_types_by_service(
+                    db,
+                    self.scan_id,
+                    service["service"],
                 )
 
                 if not usage_types:
@@ -363,9 +285,7 @@ class ScanExporter:
 
                 for usage in usage_types:
 
-                    if float(
-                        usage.get("cost", 0) or 0
-                    ) <= 0:
+                    if float(usage.get("cost", 0) or 0) <= 0:
                         continue
 
                     lines.append(
@@ -384,25 +304,19 @@ class ScanExporter:
         results,
     ) -> list[str]:
 
-        lines = _box(
-            "COLLECTION SUMMARY"
-        )
+        lines = _box("COLLECTION SUMMARY")
 
         results = results or []
 
         if not results:
 
-            lines.append(
-                " No collectors executed."
-            )
+            lines.append(" No collectors executed.")
 
             return lines
 
         lines.extend(
             [
-                " Collector             Region          "
-                "Resources    Reconciliation",
-
+                " Collector             Region          " "Resources    Reconciliation",
                 _separator(),
             ]
         )
@@ -435,12 +349,8 @@ class ScanExporter:
             )
 
             reconciliation = (
-                result.get(
-                    "reconciliation_status"
-                )
-                or result.get(
-                    "match_status"
-                )
+                result.get("reconciliation_status")
+                or result.get("match_status")
                 or result.get(
                     "status",
                     "unknown",
@@ -454,9 +364,7 @@ class ScanExporter:
                 f"{reconciliation}"
             )
 
-            cost = result.get(
-                "cost"
-            )
+            cost = result.get("cost")
 
             if cost is not None:
 
@@ -466,30 +374,16 @@ class ScanExporter:
                 )
 
                 lines.append(
-                    f"   Billing: "
-                    f"{usage_type} "
-                    f"(${float(cost or 0):,.2f})"
+                    f"   Billing: " f"{usage_type} " f"(${float(cost or 0):,.2f})"
                 )
 
-            if result.get(
-                "match_reason"
-            ):
+            if result.get("match_reason"):
 
-                lines.append(
-                    "   Note: "
-                    + str(
-                        result["match_reason"]
-                    )
-                )
+                lines.append("   Note: " + str(result["match_reason"]))
 
             if result.get("error"):
 
-                lines.append(
-                    "   ERROR: "
-                    + str(
-                        result["error"]
-                    )
-                )
+                lines.append("   ERROR: " + str(result["error"]))
 
         return lines
 
@@ -498,9 +392,7 @@ class ScanExporter:
         findings,
     ) -> list[str]:
 
-        lines = _box(
-            "OPTIMIZATION FINDINGS"
-        )
+        lines = _box("OPTIMIZATION FINDINGS")
 
         findings = findings or []
 
@@ -569,21 +461,14 @@ class ScanExporter:
                 if not isinstance(resource, dict):
                     continue
 
-                resource_id = str(
-                    resource.get("resource_id")
-                    or "unknown"
-                )
+                resource_id = str(resource.get("resource_id") or "unknown")
 
                 lines.append("")
                 lines.append(f"Resource: {resource_id}")
 
-                evidence_summary = _safe_list(
-                    resource.get("evidence_summary")
-                )
+                evidence_summary = _safe_list(resource.get("evidence_summary"))
 
-                evidence = self._clean_evidence_summary(
-                    evidence_summary
-                )
+                evidence = self._clean_evidence_summary(evidence_summary)
 
                 for item in evidence:
                     lines.append(f"  • {item}")
@@ -591,13 +476,9 @@ class ScanExporter:
         else:
 
             # Fallback for legacy finding dicts without resource_evidence.
-            evidence_summary = _safe_list(
-                finding.get("evidence_summary")
-            )
+            evidence_summary = _safe_list(finding.get("evidence_summary"))
 
-            evidence = self._clean_evidence_summary(
-                evidence_summary
-            )
+            evidence = self._clean_evidence_summary(evidence_summary)
 
             if evidence:
                 lines.append("Evidence:")
@@ -663,9 +544,7 @@ class ScanExporter:
         recommendations,
     ) -> list[str]:
 
-        lines = _box(
-            "RECOMMENDATIONS"
-        )
+        lines = _box("RECOMMENDATIONS")
 
         # The frontend reads recommendations from the database via
         # get_recommendations_by_scan + present_recommendations, so it
@@ -698,9 +577,7 @@ class ScanExporter:
 
         if not presented:
 
-            lines.append(
-                " No recommendations generated."
-            )
+            lines.append(" No recommendations generated.")
 
             return lines
 
@@ -712,11 +589,7 @@ class ScanExporter:
             ):
                 continue
 
-            lines.extend(
-                self._format_user_recommendation(
-                    recommendation
-                )
-            )
+            lines.extend(self._format_user_recommendation(recommendation))
 
         return lines
 
@@ -779,11 +652,7 @@ class ScanExporter:
             )
         ).strip()
 
-        financial_impact = _safe_dict(
-            recommendation.get(
-                "financial_impact"
-            )
-        )
+        financial_impact = _safe_dict(recommendation.get("financial_impact"))
 
         lines.append("")
         lines.append(f"[{priority}] {title}")
@@ -800,34 +669,24 @@ class ScanExporter:
         if action:
             lines.append(f"Action: {action}")
 
-        observed_cost = financial_impact.get(
-            "observed_monthly_cost"
-        )
+        observed_cost = financial_impact.get("observed_monthly_cost")
 
         if isinstance(
             observed_cost,
             (int, float),
         ):
-            lines.append(
-                f"Observed cost: ${observed_cost:,.2f}"
-            )
+            lines.append(f"Observed cost: ${observed_cost:,.2f}")
 
-        estimated_savings = financial_impact.get(
-            "estimated_monthly_savings"
-        )
+        estimated_savings = financial_impact.get("estimated_monthly_savings")
 
         if isinstance(
             estimated_savings,
             (int, float),
         ):
-            lines.append(
-                f"Potential savings: ${estimated_savings:,.2f}"
-            )
+            lines.append(f"Potential savings: ${estimated_savings:,.2f}")
 
         if status:
-            lines.append(
-                f"Status: {status.replace('_', ' ').title()}"
-            )
+            lines.append(f"Status: {status.replace('_', ' ').title()}")
 
         return lines
 
@@ -836,55 +695,30 @@ class ScanExporter:
         contexts,
     ) -> list[str]:
 
-        lines = _box(
-            "RESOURCE DETAILS"
-        )
+        lines = _box("RESOURCE DETAILS")
 
         contexts = contexts or []
 
         if not contexts:
 
-            lines.append(
-                " No resource details available."
-            )
+            lines.append(" No resource details available.")
 
             return lines
 
         for context in contexts:
 
-            resources = (
-                _safe_dict(
-                    context.get(
-                        "evidence"
-                    )
-                ).get(
-                    "resources",
-                    []
-                )
-            )
+            resources = _safe_dict(context.get("evidence")).get("resources", [])
 
             if not resources:
                 continue
 
-            service = context.get(
-                "service",
-                ""
-            )
+            service = context.get("service", "")
 
-            region = context.get(
-                "region",
-                ""
-            )
+            region = context.get("region", "")
 
-            usage_type = context.get(
-                "usage_type",
-                ""
-            )
+            usage_type = context.get("usage_type", "")
 
-            resource_type = context.get(
-                "resource_type",
-                ""
-            )
+            resource_type = context.get("resource_type", "")
 
             cost = float(
                 context.get(
@@ -901,8 +735,7 @@ class ScanExporter:
                     f" Region     : {region}",
                     f" Usage type : {usage_type}",
                     f" Cost       : ${cost:,.2f}",
-                    f" Resources  : {len(resources)} "
-                    f"{resource_type}",
+                    f" Resources  : {len(resources)} " f"{resource_type}",
                 ]
             )
 
@@ -921,15 +754,7 @@ class ScanExporter:
         resource: dict,
     ) -> None:
 
-        resource_id = (
-            resource.get(
-                "resource_id"
-            )
-            or resource.get(
-                "id"
-            )
-            or "unknown"
-        )
+        resource_id = resource.get("resource_id") or resource.get("id") or "unknown"
 
         lines.extend(
             [
@@ -938,17 +763,11 @@ class ScanExporter:
             ]
         )
 
-        configuration = _safe_dict(
-            resource.get(
-                "configuration"
-            )
-        )
+        configuration = _safe_dict(resource.get("configuration"))
 
         if configuration:
 
-            lines.append(
-                "  Configuration:"
-            )
+            lines.append("  Configuration:")
 
             for key, value in configuration.items():
 
@@ -963,42 +782,28 @@ class ScanExporter:
                 }:
                     continue
 
-                lines.append(
-                    f"    {key}: "
-                    f"{_format_value(value)}"
-                )
+                lines.append(f"    {key}: " f"{_format_value(value)}")
 
         self._append_relationships(
             lines,
-            resource.get(
-                "relationships"
-            ),
+            resource.get("relationships"),
         )
 
         self._append_observations(
             lines,
-            resource.get(
-                "observations"
-            ),
+            resource.get("observations"),
         )
 
         self._append_topology(
             lines,
-            resource.get(
-                "topology"
-            ),
+            resource.get("topology"),
         )
 
-        tags = resource.get(
-            "tags"
-        )
+        tags = resource.get("tags")
 
         if tags:
 
-            lines.append(
-                "  Tags: "
-                + _format_value(tags)
-            )
+            lines.append("  Tags: " + _format_value(tags))
 
     @staticmethod
     def _append_relationships(
@@ -1006,25 +811,17 @@ class ScanExporter:
         relationships,
     ) -> None:
 
-        relationships = _safe_dict(
-            relationships
-        )
+        relationships = _safe_dict(relationships)
 
         if not relationships:
             return
 
-        summary = _safe_dict(
-            relationships.get(
-                "summary"
-            )
-        )
+        summary = _safe_dict(relationships.get("summary"))
 
         if not summary:
             return
 
-        lines.append(
-            "  Relationships:"
-        )
+        lines.append("  Relationships:")
 
         preferred = (
             "listener_count",
@@ -1046,10 +843,7 @@ class ScanExporter:
             if key not in summary:
                 continue
 
-            lines.append(
-                f"    {key}: "
-                f"{summary[key]}"
-            )
+            lines.append(f"    {key}: " f"{summary[key]}")
 
     @staticmethod
     def _append_observations(
@@ -1057,39 +851,22 @@ class ScanExporter:
         observations,
     ) -> None:
 
-        observations = _safe_dict(
-            observations
-        )
+        observations = _safe_dict(observations)
 
-        cloudwatch = _safe_dict(
-            observations.get(
-                "cloudwatch"
-            )
-        ) 
-
+        cloudwatch = _safe_dict(observations.get("cloudwatch"))
 
         if not cloudwatch:
             return
 
-        lines.append(
-            "  Observations:"
-        )
+        lines.append("  Observations:")
 
-        status = cloudwatch.get(
-            "status"
-        )
+        status = cloudwatch.get("status")
 
         if status:
 
-            lines.append(
-                f"    CloudWatch: {status}"
-            )
+            lines.append(f"    CloudWatch: {status}")
 
-        metrics = _safe_dict(
-            cloudwatch.get(
-                "metrics"
-            )
-        )
+        metrics = _safe_dict(cloudwatch.get("metrics"))
 
         observed = sum(
             1
@@ -1106,19 +883,14 @@ class ScanExporter:
             for metric in metrics.values()
             if (
                 isinstance(metric, dict)
-                and metric.get("status")
-                in {"no_data", "missing"}
+                and metric.get("status") in {"no_data", "missing"}
             )
         )
-    
 
         errors = sum(
             1
             for metric in metrics.values()
-            if (
-                isinstance(metric, dict)
-                and metric.get("status") == "error"
-            )
+            if (isinstance(metric, dict) and metric.get("status") == "error")
         )
 
         if metrics:
@@ -1131,11 +903,7 @@ class ScanExporter:
             )
 
         # Print only useful derived activity data.
-        activity = _safe_dict(
-            cloudwatch.get(
-                "activity"
-            )
-        )
+        activity = _safe_dict(cloudwatch.get("activity"))
 
         if activity:
 
@@ -1150,41 +918,29 @@ class ScanExporter:
                 "traffic_observed",
             ):
 
-                value = activity.get(
-                    key
-                )
+                value = activity.get(key)
 
                 if value is not None:
                     useful[key] = value
 
             for key, value in useful.items():
 
-                lines.append(
-                    f"    {key}: "
-                    f"{_format_value(value)}"
-                )
+                lines.append(f"    {key}: " f"{_format_value(value)}")
+
     @staticmethod
     def _append_topology(
         lines: list[str],
         topology,
     ) -> None:
 
-        topology = _safe_dict(
-            topology
-        )
+        topology = _safe_dict(topology)
 
         if not topology:
             return
 
-        lines.append(
-            "  Topology:"
-        )
+        lines.append("  Topology:")
 
-        summary = _safe_dict(
-            topology.get(
-                "summary"
-            )
-        )
+        summary = _safe_dict(topology.get("summary"))
 
         for key in (
             "load_balancer_subnet_count",
@@ -1204,16 +960,9 @@ class ScanExporter:
             if key not in summary:
                 continue
 
-            lines.append(
-                f"    {key}: "
-                f"{summary[key]}"
-            )
+            lines.append(f"    {key}: " f"{summary[key]}")
 
-        route_tables = _safe_list(
-            topology.get(
-                "route_tables"
-            )
-        )
+        route_tables = _safe_list(topology.get("route_tables"))
 
         if route_tables:
 
@@ -1226,38 +975,22 @@ class ScanExporter:
                     dict,
                 ):
 
-                    value = (
-                        route_table.get(
-                            "route_table_id"
-                        )
-                        or route_table.get(
-                            "transit_gateway_route_table_id"
-                        )
+                    value = route_table.get("route_table_id") or route_table.get(
+                        "transit_gateway_route_table_id"
                     )
 
                     if value:
-                        ids.append(
-                            str(value)
-                        )
+                        ids.append(str(value))
 
                 else:
 
-                    ids.append(
-                        str(route_table)
-                    )
+                    ids.append(str(route_table))
 
             if ids:
 
-                lines.append(
-                    "    Route tables: "
-                    + ", ".join(ids)
-                )
+                lines.append("    Route tables: " + ", ".join(ids))
 
-        subnets = _safe_list(
-            topology.get(
-                "subnets"
-            )
-        )
+        subnets = _safe_list(topology.get("subnets"))
 
         if subnets:
 
@@ -1270,33 +1003,20 @@ class ScanExporter:
                     dict,
                 ):
 
-                    value = subnet.get(
-                        "subnet_id"
-                    )
+                    value = subnet.get("subnet_id")
 
                     if value:
-                        ids.append(
-                            str(value)
-                        )
+                        ids.append(str(value))
 
                 else:
 
-                    ids.append(
-                        str(subnet)
-                    )
+                    ids.append(str(subnet))
 
             if ids:
 
-                lines.append(
-                    "    Subnets: "
-                    + ", ".join(ids)
-                )
+                lines.append("    Subnets: " + ", ".join(ids))
 
-        endpoints = _safe_list(
-            topology.get(
-                "vpc_endpoints"
-            )
-        )
+        endpoints = _safe_list(topology.get("vpc_endpoints"))
 
         if endpoints:
 
@@ -1311,25 +1031,14 @@ class ScanExporter:
                     continue
 
                 name = (
-                    endpoint.get(
-                        "service_name"
-                    )
-                    or endpoint.get(
-                        "service"
-                    )
-                    or endpoint.get(
-                        "vpc_endpoint_id"
-                    )
+                    endpoint.get("service_name")
+                    or endpoint.get("service")
+                    or endpoint.get("vpc_endpoint_id")
                 )
 
                 if name:
-                    names.append(
-                        str(name)
-                    )
+                    names.append(str(name))
 
             if names:
 
-                lines.append(
-                    "    VPC endpoints: "
-                    + ", ".join(names)
-                )
+                lines.append("    VPC endpoints: " + ", ".join(names))

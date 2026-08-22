@@ -5,7 +5,6 @@ Shared severity/confidence/priority ordering.
 
 from __future__ import annotations
 
-
 SEVERITY_RANK: dict[str, int] = {
     "critical": 4,
     "high": 3,

@@ -34,9 +34,9 @@ class ObservationPeriod:
         return {
             "start": self.start,
             "end": self.end,
-            "duration_seconds":
-                self.duration_seconds,
+            "duration_seconds": self.duration_seconds,
         }
+
 
 @dataclass(slots=True)
 class Finding:
@@ -61,13 +61,9 @@ class Finding:
 
     observation_period: ObservationPeriod | None
 
-    limitations: list[str] = field(
-        default_factory=list
-    )
+    limitations: list[str] = field(default_factory=list)
 
-    metadata: dict[str, Any] = field(
-        default_factory=dict
-    )
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     finding_id: str | None = None
 
@@ -83,13 +79,9 @@ class Finding:
 
     finding_key: str | None = None
 
-    evidence_summary: list[str] = field(
-        default_factory=list
-    )
+    evidence_summary: list[str] = field(default_factory=list)
 
-    impact: dict[str, Any] = field(
-        default_factory=dict
-    )
+    impact: dict[str, Any] = field(default_factory=dict)
 
     account_id: str | None = None
 
@@ -120,46 +112,28 @@ class Finding:
 
     def __post_init__(self) -> None:
 
-        self.severity = str(
-            self.severity or "info"
-        ).lower()
+        self.severity = str(self.severity or "info").lower()
 
-        self.confidence = str(
-            self.confidence or "medium"
-        ).lower()
+        self.confidence = str(self.confidence or "medium").lower()
 
-        self.category = str(
-            self.category or "optimization"
-        ).lower()
+        self.category = str(self.category or "optimization").lower()
 
-        self.status = str(
-            self.status or "active"
-        ).lower()
+        self.status = str(self.status or "active").lower()
 
-        normalized_cost_optimization_type = str(
-            self.cost_optimization_type or "review"
-        ).strip().lower()
+        normalized_cost_optimization_type = (
+            str(self.cost_optimization_type or "review").strip().lower()
+        )
 
-        if (
-            normalized_cost_optimization_type
-            not in self.VALID_COST_OPTIMIZATION_TYPES
-        ):
+        if normalized_cost_optimization_type not in self.VALID_COST_OPTIMIZATION_TYPES:
             normalized_cost_optimization_type = "review"
 
-        self.cost_optimization_type = (
-            normalized_cost_optimization_type
-        )
+        self.cost_optimization_type = normalized_cost_optimization_type
 
         if self.aggregation_scope is not None:
 
-            self.aggregation_scope = str(
-                self.aggregation_scope
-            ).strip().lower() or None
+            self.aggregation_scope = str(self.aggregation_scope).strip().lower() or None
 
-        self.resource_id = str(
-            self.resource_id
-            or "unknown"
-        )
+        self.resource_id = str(self.resource_id or "unknown")
 
         if not self.account_id:
 
@@ -172,45 +146,29 @@ class Finding:
                 else {}
             )
 
-            account_id = (
-                resource_evidence.get(
-                    "account_id"
-                )
-            )
+            account_id = resource_evidence.get("account_id")
 
             if account_id:
 
-                self.account_id = str(
-                    account_id
-                )
+                self.account_id = str(account_id)
 
         if not self.finding_key:
 
-            self.finding_key = (
-                self.build_finding_key()
-            )
+            self.finding_key = self.build_finding_key()
 
         if not self.finding_id:
 
-            self.finding_id = (
-                self.build_stable_id()
-            )
+            self.finding_id = self.build_stable_id()
 
         if not self.evidence_summary:
 
-            self.evidence_summary = (
-                self.build_evidence_summary()
-            )
+            self.evidence_summary = self.build_evidence_summary()
 
     def build_finding_key(
         self,
     ) -> str:
 
-        return (
-            f"{self.category}:"
-            f"{self.finding_type}:"
-            f"{self.resource_type}"
-        )
+        return f"{self.category}:" f"{self.finding_type}:" f"{self.resource_type}"
 
     def build_stable_id(
         self,
@@ -218,40 +176,22 @@ class Finding:
 
         # Raw identity is always resource-specific.
         payload = {
-            "finding_key":
-                (
-                    self.finding_key
-                    or self.build_finding_key()
-                ),
-
-            "resource_type":
-                self.resource_type,
-
-            "resource_id":
-                self.resource_id,
-
-            "region":
-                self._region(),
-
-            "account_id":
-                self.account_id,
+            "finding_key": (self.finding_key or self.build_finding_key()),
+            "resource_type": self.resource_type,
+            "resource_id": self.resource_id,
+            "region": self._region(),
+            "account_id": self.account_id,
         }
 
         encoded = json.dumps(
             payload,
             sort_keys=True,
             default=str,
-        ).encode(
-            "utf-8"
-        )
+        ).encode("utf-8")
 
-        digest = hashlib.sha256(
-            encoded
-        ).hexdigest()
+        digest = hashlib.sha256(encoded).hexdigest()
 
-        return (
-            f"finding-{digest[:20]}"
-        )
+        return f"finding-{digest[:20]}"
 
     def _region(
         self,
@@ -264,22 +204,14 @@ class Finding:
             dict,
         ):
 
-            value = resource.get(
-                "region"
-            )
+            value = resource.get("region")
 
             if value:
                 return str(value)
 
-        value = self.metadata.get(
-            "region"
-        )
+        value = self.metadata.get("region")
 
-        return (
-            str(value)
-            if value
-            else None
-        )
+        return str(value) if value else None
 
     def build_evidence_summary(
         self,
@@ -287,9 +219,7 @@ class Finding:
 
         result = []
 
-        for statement in (
-            self.conditions or []
-        ):
+        for statement in self.conditions or []:
 
             if not isinstance(
                 statement,
@@ -297,20 +227,11 @@ class Finding:
             ):
                 continue
 
-            rendered = (
-                self._render_statement(
-                    statement
-                )
-            )
+            rendered = self._render_statement(statement)
 
-            if (
-                rendered
-                and rendered not in result
-            ):
+            if rendered and rendered not in result:
 
-                result.append(
-                    rendered
-                )
+                result.append(rendered)
 
         return result[:20]
 
@@ -319,14 +240,9 @@ class Finding:
         statement: EvidenceStatement,
     ) -> str:
 
-        for path in (
-            statement.evidence_keys
-            or []
-        ):
+        for path in statement.evidence_keys or []:
 
-            value = self.evidence.get_path(
-                path
-            )
+            value = self.evidence.get_path(path)
 
             if value is None:
                 continue
@@ -337,10 +253,7 @@ class Finding:
                 statement.unit,
             )
 
-        if (
-            statement.value is not None
-            and statement.value != ""
-        ):
+        if statement.value is not None and statement.value != "":
 
             return self._format_fact(
                 statement.name,
@@ -348,9 +261,7 @@ class Finding:
                 statement.unit,
             )
 
-        matches = self.evidence.find_key(
-            statement.name
-        )
+        matches = self.evidence.find_key(statement.name)
 
         if matches:
 
@@ -362,10 +273,7 @@ class Finding:
                 statement.unit,
             )
 
-        return (
-            statement.description
-            or ""
-        ).strip()
+        return (statement.description or "").strip()
 
     @staticmethod
     def _format_fact(
@@ -374,30 +282,20 @@ class Finding:
         unit: str | None = None,
     ) -> str:
 
-        label = str(
-            name or "evidence"
-        ).replace(
-            "_",
-            " ",
-        ).strip()
-
-        rendered = (
-            Finding._format_value(
-                value
+        label = (
+            str(name or "evidence")
+            .replace(
+                "_",
+                " ",
             )
+            .strip()
         )
 
-        suffix = (
-            f" {unit}"
-            if unit
-            else ""
-        )
+        rendered = Finding._format_value(value)
 
-        return (
-            f"{label}: "
-            f"{rendered}"
-            f"{suffix}"
-        )
+        suffix = f" {unit}" if unit else ""
+
+        return f"{label}: " f"{rendered}" f"{suffix}"
 
     @staticmethod
     def _format_value(
@@ -412,11 +310,7 @@ class Finding:
             bool,
         ):
 
-            return (
-                "true"
-                if value
-                else "false"
-            )
+            return "true" if value else "false"
 
         if isinstance(
             value,
@@ -443,8 +337,7 @@ class Finding:
             return (
                 "{"
                 + ", ".join(
-                    f"{key}="
-                    f"{Finding._format_value(child)}"
+                    f"{key}=" f"{Finding._format_value(child)}"
                     for key, child in value.items()
                     if child is not None
                 )
@@ -456,16 +349,7 @@ class Finding:
             list,
         ):
 
-            return (
-                "["
-                + ", ".join(
-                    Finding._format_value(
-                        item
-                    )
-                    for item in value
-                )
-                + "]"
-            )
+            return "[" + ", ".join(Finding._format_value(item) for item in value) + "]"
 
         return str(value)
 
@@ -474,114 +358,41 @@ class Finding:
     ) -> dict[str, Any]:
 
         return {
-            "finding_id":
-                self.finding_id,
-
-            "finding_key":
-                self.finding_key,
-
-            "finding_type":
-                self.finding_type,
-
-            "category":
-                self.category,
-
-            "title":
-                self.title,
-
-            "resource_type":
-                self.resource_type,
-
-            "resource_id":
-                self.resource_id,
-
-            "analyzer":
-                self.analyzer,
-
-            "analyzer_version":
-                self.analyzer_version,
-
-            "severity":
-                self.severity,
-
-            "confidence":
-                self.confidence,
-
-            "status":
-                self.status,
-
-            "reason":
-                self.reason,
-
-            "conditions":
-                [
-                    condition.to_dict()
-                    for condition
-                    in self.conditions
-                ],
-
-            "evidence":
-                self.evidence.to_dict(),
-
-            "evidence_summary":
-                list(
-                    self.evidence_summary
-                ),
-
-            "observation_period":
-                (
-                    self.observation_period.to_dict()
-                    if self.observation_period
-                    else None
-                ),
-
-            "impact":
-                dict(
-                    self.impact
-                ),
-
-            "recommendation_eligible":
-                self.recommendation_eligible,
-
-            "aggregation_scope":
-                self.aggregation_scope,
-
-            "limitations":
-                list(
-                    self.limitations
-                ),
-
-            "metadata":
-                dict(
-                    self.metadata
-                ),
-
-            "account_id":
-                self.account_id,
-
-            "region":
-                self._region(),
-
-            "service":
-                self._service(),
-
-            "cost_optimization_type":
-                self.cost_optimization_type,
-
-            "database_id":
-                self.database_id,
+            "finding_id": self.finding_id,
+            "finding_key": self.finding_key,
+            "finding_type": self.finding_type,
+            "category": self.category,
+            "title": self.title,
+            "resource_type": self.resource_type,
+            "resource_id": self.resource_id,
+            "analyzer": self.analyzer,
+            "analyzer_version": self.analyzer_version,
+            "severity": self.severity,
+            "confidence": self.confidence,
+            "status": self.status,
+            "reason": self.reason,
+            "conditions": [condition.to_dict() for condition in self.conditions],
+            "evidence": self.evidence.to_dict(),
+            "evidence_summary": list(self.evidence_summary),
+            "observation_period": (
+                self.observation_period.to_dict() if self.observation_period else None
+            ),
+            "impact": dict(self.impact),
+            "recommendation_eligible": self.recommendation_eligible,
+            "aggregation_scope": self.aggregation_scope,
+            "limitations": list(self.limitations),
+            "metadata": dict(self.metadata),
+            "account_id": self.account_id,
+            "region": self._region(),
+            "service": self._service(),
+            "cost_optimization_type": self.cost_optimization_type,
+            "database_id": self.database_id,
         }
 
     def _service(
         self,
     ) -> str | None:
 
-        value = self.metadata.get(
-            "service"
-        )
+        value = self.metadata.get("service")
 
-        return (
-            str(value)
-            if value
-            else None
-        )
+        return str(value) if value else None

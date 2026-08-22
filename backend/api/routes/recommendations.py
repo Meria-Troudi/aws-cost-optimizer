@@ -23,7 +23,6 @@ from backend.database.repositories.recommendation_repository import (
     get_recommendation_by_id,
 )
 
-
 router = APIRouter(
     prefix="/api/recommendations",
     tags=["Recommendations"],
@@ -47,9 +46,7 @@ def get_recommendation(
             detail="Recommendation not found.",
         )
 
-    return present_recommendation(
-        recommendation
-    )
+    return present_recommendation(recommendation)
 
 
 @router.post("/{recommendation_id}/explain")
@@ -59,9 +56,7 @@ def explain_recommendation(
     db: Session = Depends(get_db),
 ):
 
-    result = RecommendationExplanationService(
-        db
-    ).explain(
+    result = RecommendationExplanationService(db).explain(
         recommendation_id,
         force=force,
     )

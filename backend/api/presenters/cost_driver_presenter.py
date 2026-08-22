@@ -67,27 +67,17 @@ def _present_scan_info(scan_run: ScanRun) -> dict[str, Any]:
         "id": scan_run.id,
         "account_id": scan_run.account_id,
         "start_date": (
-            scan_run.start_date.isoformat()
-            if scan_run.start_date
-            else None
+            scan_run.start_date.isoformat() if scan_run.start_date else None
         ),
-        "end_date": (
-            scan_run.end_date.isoformat()
-            if scan_run.end_date
-            else None
-        ),
+        "end_date": (scan_run.end_date.isoformat() if scan_run.end_date else None),
         "region": scan_run.region,
         "cost_threshold": scan_run.cost_threshold,
         "status": scan_run.status,
         "created_at": (
-            scan_run.created_at.isoformat()
-            if scan_run.created_at
-            else None
+            scan_run.created_at.isoformat() if scan_run.created_at else None
         ),
         "finished_at": (
-            scan_run.finished_at.isoformat()
-            if scan_run.finished_at
-            else None
+            scan_run.finished_at.isoformat() if scan_run.finished_at else None
         ),
     }
 
@@ -95,9 +85,7 @@ def _present_scan_info(scan_run: ScanRun) -> dict[str, Any]:
 def _present_cost_collection(
     scan_run: ScanRun,
 ) -> dict[str, Any] | None:
-    validation = parse_json_object(
-        scan_run.cost_validation_json
-    )
+    validation = parse_json_object(scan_run.cost_validation_json)
 
     if not validation:
         return None

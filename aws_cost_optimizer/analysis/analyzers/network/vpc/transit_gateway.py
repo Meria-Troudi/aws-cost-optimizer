@@ -31,7 +31,6 @@ from ....evidence import Evidence
 from ....finding import Finding, ObservationPeriod
 from ....registry import register
 
-
 DEFAULT_HIGH_INGRESS_GIB = 100.0
 
 
@@ -77,9 +76,7 @@ def _number(
         return None
 
     try:
-        return float(
-            value
-        )
+        return float(value)
     except (
         TypeError,
         ValueError,
@@ -91,75 +88,51 @@ def _relationships(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.resource.get(
-            "relationships"
-        )
-    )
+    return _dict(context.resource.get("relationships"))
 
 
 def _topology(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.topology()
-    )
+    return _dict(context.topology())
 
 
 def _cloudwatch(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.cloudwatch()
-    )
+    return _dict(context.cloudwatch())
 
 
 def _traffic(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        _cloudwatch(context).get(
-            "traffic"
-        )
-    )
+    return _dict(_cloudwatch(context).get("traffic"))
 
 
 def _attachment_traffic(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        _cloudwatch(context).get(
-            "attachment_traffic"
-        )
-    )
+    return _dict(_cloudwatch(context).get("attachment_traffic"))
 
 
 def _collection_status(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        _relationships(context).get(
-            "collection_status"
-        )
-    )
+    return _dict(_relationships(context).get("collection_status"))
 
 
 def _attachments(
     context: AnalysisContext,
 ) -> list[dict[str, Any]]:
 
-    relationships = _relationships(
-        context
-    )
+    relationships = _relationships(context)
 
-    result: list[
-        dict[str, Any]
-    ] = []
+    result: list[dict[str, Any]] = []
 
     for key in (
         "vpc_attachments",
@@ -194,64 +167,47 @@ def _vpc_attachments(
     context: AnalysisContext,
 ) -> list[dict[str, Any]]:
 
-    values = _relationships(
-        context
-    ).get(
+    values = _relationships(context).get(
         "vpc_attachments",
         [],
     )
 
-    return [
-        item
-        for item in values
+    return (
+        [
+            item
+            for item in values
+            if isinstance(
+                item,
+                dict,
+            )
+        ]
         if isinstance(
-            item,
-            dict,
+            values,
+            list,
         )
-    ] if isinstance(
-        values,
-        list,
-    ) else []
+        else []
+    )
 
 
 def _attachments_complete(
     context: AnalysisContext,
 ) -> bool:
 
-    return (
-        _collection_status(context).get(
-            "attachments_complete"
-        )
-        is True
-    )
+    return _collection_status(context).get("attachments_complete") is True
 
 
 def _route_data_complete(
     context: AnalysisContext,
 ) -> bool:
 
-    return (
-        _collection_status(context).get(
-            "route_data_complete"
-        )
-        is True
-    )
+    return _collection_status(context).get("route_data_complete") is True
 
 
 def _topology_complete(
     context: AnalysisContext,
 ) -> bool:
 
-    return (
-        _dict(
-            _topology(context).get(
-                "summary"
-            )
-        ).get(
-            "topology_complete"
-        )
-        is True
-    )
+    return _dict(_topology(context).get("summary")).get("topology_complete") is True
 
 
 def _route_table_accessible(
@@ -259,13 +215,7 @@ def _route_table_accessible(
 ) -> bool:
 
     return (
-        _dict(
-            _relationships(context).get(
-                "route_table_access"
-            )
-        ).get(
-            "status"
-        )
+        _dict(_relationships(context).get("route_table_access")).get("status")
         == "accessible"
     )
 
@@ -274,53 +224,55 @@ def _tgw_routes(
     context: AnalysisContext,
 ) -> list[dict[str, Any]]:
 
-    if not _route_data_complete(
-        context
-    ):
+    if not _route_data_complete(context):
         return []
 
-    values = _relationships(
-        context
-    ).get(
+    values = _relationships(context).get(
         "routes",
         [],
     )
 
-    return [
-        route
-        for route in values
+    return (
+        [
+            route
+            for route in values
+            if isinstance(
+                route,
+                dict,
+            )
+        ]
         if isinstance(
-            route,
-            dict,
+            values,
+            list,
         )
-    ] if isinstance(
-        values,
-        list,
-    ) else []
+        else []
+    )
 
 
 def _vpc_topologies(
     context: AnalysisContext,
 ) -> list[dict[str, Any]]:
 
-    values = _topology(
-        context
-    ).get(
+    values = _topology(context).get(
         "vpcs",
         [],
     )
 
-    return [
-        value
-        for value in values
+    return (
+        [
+            value
+            for value in values
+            if isinstance(
+                value,
+                dict,
+            )
+        ]
         if isinstance(
-            value,
-            dict,
+            values,
+            list,
         )
-    ] if isinstance(
-        values,
-        list,
-    ) else []
+        else []
+    )
 
 
 def _threshold(
@@ -329,20 +281,14 @@ def _threshold(
     default: float,
 ) -> float:
 
-    config = context.resource.get(
-        "analyzer_config"
-    )
+    config = context.resource.get("analyzer_config")
 
     if isinstance(
         config,
         dict,
     ):
 
-        value = _number(
-            config.get(
-                name
-            )
-        )
+        value = _number(config.get(name))
 
         if value is not None:
             return max(
@@ -350,20 +296,14 @@ def _threshold(
                 0.0,
             )
 
-        transit = config.get(
-            "transit_gateway"
-        )
+        transit = config.get("transit_gateway")
 
         if isinstance(
             transit,
             dict,
         ):
 
-            value = _number(
-                transit.get(
-                    name
-                )
-            )
+            value = _number(transit.get(name))
 
             if value is not None:
                 return max(
@@ -378,27 +318,11 @@ def _observation_period(
     context: AnalysisContext,
 ) -> ObservationPeriod | None:
 
-    cloudwatch = _cloudwatch(
-        context
-    )
+    cloudwatch = _cloudwatch(context)
 
-    start = (
-        cloudwatch.get(
-            "start"
-        )
-        or cloudwatch.get(
-            "metric_start"
-        )
-    )
+    start = cloudwatch.get("start") or cloudwatch.get("metric_start")
 
-    end = (
-        cloudwatch.get(
-            "end"
-        )
-        or cloudwatch.get(
-            "metric_end"
-        )
-    )
+    end = cloudwatch.get("end") or cloudwatch.get("metric_end")
 
     if start or end:
 
@@ -417,15 +341,9 @@ def _observation_period(
         return None
 
     return ObservationPeriod(
-        start=value.get(
-            "start"
-        ),
-        end=value.get(
-            "end"
-        ),
-        duration_seconds=value.get(
-            "duration_seconds"
-        ),
+        start=value.get("start"),
+        end=value.get("end"),
+        duration_seconds=value.get("duration_seconds"),
     )
 
 
@@ -460,24 +378,17 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        return (
-            context.resource_type
-            in self.SUPPORTED_RESOURCE_TYPES
-        )
+        return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
     def analyze(
         self,
         context: AnalysisContext,
     ) -> list[Finding]:
 
-        if not self.supports(
-            context
-        ):
+        if not self.supports(context):
             return []
 
-        findings: list[
-            Finding
-        ] = []
+        findings: list[Finding] = []
 
         for detector in (
             self._no_traffic,
@@ -488,14 +399,10 @@ class TransitGatewayAnalyzer(Analyzer):
             self._vpc_blackhole_routes,
         ):
 
-            finding = detector(
-                context
-            )
+            finding = detector(context)
 
             if finding is not None:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
         return findings
 
@@ -508,16 +415,12 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _attachments_complete(
-            context
-        ):
+        if not _attachments_complete(context):
             return None
 
         attachments = [
             attachment
-            for attachment in _attachments(
-                context
-            )
+            for attachment in _attachments(context)
             if str(
                 attachment.get(
                     "state",
@@ -530,79 +433,47 @@ class TransitGatewayAnalyzer(Analyzer):
         if not attachments:
             return None
 
-        traffic = _traffic(
-            context
-        )
+        traffic = _traffic(context)
 
-        if traffic.get(
-            "traffic_complete"
-        ) is not True:
+        if traffic.get("traffic_complete") is not True:
             return None
 
-        if traffic.get(
-            "traffic_observed"
-        ) is not False:
+        if traffic.get("traffic_observed") is not False:
             return None
 
         return self._finding(
             context=context,
-
-            finding_type=
-                "transit_gateway_no_observed_traffic",
-
-            title=
-                "Transit Gateway has no observed traffic",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
-            recommendation_eligible=
-                True,
-
+            finding_type="transit_gateway_no_observed_traffic",
+            title="Transit Gateway has no observed traffic",
+            severity="medium",
+            confidence="high",
+            recommendation_eligible=True,
             reason=(
                 f"{len(attachments)} active attachment(s) "
                 "are present, but no TGW traffic was observed "
                 "during the complete observation period."
             ),
-
             statements=[
                 _statement(
                     name="traffic",
                     value=traffic,
-                    description=(
-                        "Complete CloudWatch traffic evidence."
-                    ),
+                    description=("Complete CloudWatch traffic evidence."),
                     source=[
                         "CloudWatch.BytesIn",
                         "CloudWatch.BytesOut",
                     ],
                 ),
-
                 _statement(
                     name="active_attachments",
                     value=len(attachments),
-                    description=(
-                        "Active Transit Gateway attachments."
-                    ),
-                    source=[
-                        "Transit Gateway attachment inventory"
-                    ],
+                    description=("Active Transit Gateway attachments."),
+                    source=["Transit Gateway attachment inventory"],
                 ),
             ],
-
             metadata={
-                "active_attachment_count":
-                    len(attachments),
-
-                "ingress_gib":
-                    traffic.get(
-                        "ingress_gib"
-                    ),
+                "active_attachment_count": len(attachments),
+                "ingress_gib": traffic.get("ingress_gib"),
             },
-
             limitations=[
                 (
                     "No observed traffic does not prove that "
@@ -613,10 +484,7 @@ class TransitGatewayAnalyzer(Analyzer):
                     "Scheduled, intermittent, failover, or "
                     "future workloads may exist."
                 ),
-                (
-                    "Savings are not calculated without valid "
-                    "billing attribution."
-                ),
+                ("Savings are not calculated without valid " "billing attribution."),
             ],
         )
 
@@ -629,20 +497,12 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        traffic = _traffic(
-            context
-        )
+        traffic = _traffic(context)
 
-        if traffic.get(
-            "traffic_complete"
-        ) is not True:
+        if traffic.get("traffic_complete") is not True:
             return None
 
-        ingress_gib = _number(
-            traffic.get(
-                "ingress_gib"
-            )
-        )
+        ingress_gib = _number(traffic.get("ingress_gib"))
 
         if ingress_gib is None:
             return None
@@ -656,102 +516,54 @@ class TransitGatewayAnalyzer(Analyzer):
         if ingress_gib < threshold:
             return None
 
-        attachment_traffic = (
-            _attachment_traffic(
-                context
-            )
-        )
+        attachment_traffic = _attachment_traffic(context)
 
         return self._finding(
             context=context,
-
-            finding_type=
-                "transit_gateway_high_traffic",
-
-            title=
-                "Transit Gateway has high ingress traffic",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
-            recommendation_eligible=
-                True,
-
+            finding_type="transit_gateway_high_traffic",
+            title="Transit Gateway has high ingress traffic",
+            severity="medium",
+            confidence="high",
+            recommendation_eligible=True,
             reason=(
                 f"Approximately {ingress_gib:,.1f} GiB of "
                 "traffic entered the Transit Gateway during "
                 "the observation period."
             ),
-
             statements=[
                 _statement(
                     name="ingress_traffic",
                     value={
-                        "bytes":
-                            traffic.get(
-                                "bytes_in"
-                            ),
-
-                        "gib":
-                            ingress_gib,
-
-                        "threshold_gib":
-                            threshold,
+                        "bytes": traffic.get("bytes_in"),
+                        "gib": ingress_gib,
+                        "threshold_gib": threshold,
                     },
                     description=(
                         "Observed TGW ingress traffic. "
                         "This is a cost-exposure signal, "
                         "not a monetary billing amount."
                     ),
-                    source=[
-                        "CloudWatch.BytesIn"
-                    ],
+                    source=["CloudWatch.BytesIn"],
                 ),
-
                 _statement(
                     name="attachment_traffic",
                     value={
-                        "count":
-                            attachment_traffic.get(
-                                "count"
-                            ),
-
-                        "complete":
-                            attachment_traffic.get(
-                                "complete"
-                            ),
+                        "count": attachment_traffic.get("count"),
+                        "complete": attachment_traffic.get("complete"),
                     },
                     description=(
                         "Attachment-level traffic evidence "
                         "available for source analysis."
                     ),
-                    source=[
-                        "CloudWatch.TransitGatewayAttachment"
-                    ],
+                    source=["CloudWatch.TransitGatewayAttachment"],
                 ),
             ],
-
             metadata={
-                "ingress_bytes":
-                    traffic.get(
-                        "bytes_in"
-                    ),
-
-                "ingress_gib":
-                    ingress_gib,
-
-                "threshold_gib":
-                    threshold,
-
-                "attachment_traffic_complete":
-                    attachment_traffic.get(
-                        "complete"
-                    ),
+                "ingress_bytes": traffic.get("bytes_in"),
+                "ingress_gib": ingress_gib,
+                "threshold_gib": threshold,
+                "attachment_traffic_complete": attachment_traffic.get("complete"),
             },
-
             limitations=[
                 (
                     "Traffic volume is a cost-exposure signal, "
@@ -777,73 +589,48 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _attachments_complete(
-            context
-        ):
+        if not _attachments_complete(context):
             return None
 
-        if not _topology_complete(
-            context
-        ):
+        if not _topology_complete(context):
             return None
 
         topologies = {
-            item.get(
-                "attachment_id"
-            ):
-                item
-            for item in _vpc_topologies(
-                context
-            )
-            if item.get(
-                "attachment_id"
-            )
+            item.get("attachment_id"): item
+            for item in _vpc_topologies(context)
+            if item.get("attachment_id")
         }
 
         candidates = []
 
-        for attachment in _vpc_attachments(
-            context
-        ):
+        for attachment in _vpc_attachments(context):
 
-            if str(
-                attachment.get(
-                    "state",
-                    "",
-                )
-            ).lower() != "available":
+            if (
+                str(
+                    attachment.get(
+                        "state",
+                        "",
+                    )
+                ).lower()
+                != "available"
+            ):
                 continue
 
-            attachment_id = attachment.get(
-                "attachment_id"
-            )
+            attachment_id = attachment.get("attachment_id")
 
-            topology = (
-                topologies.get(
-                    attachment_id
-                )
-            )
+            topology = topologies.get(attachment_id)
 
             if not topology:
                 continue
 
-            count = _number(
-                topology.get(
-                    "vpc_routes_to_tgw_count"
-                )
-            )
+            count = _number(topology.get("vpc_routes_to_tgw_count"))
 
             if count == 0:
 
                 candidates.append(
                     {
-                        "attachment_id":
-                            attachment_id,
-
-                        "vpc_id":
-                            attachment.get(
-                                "vpc_id"
-                            ),
+                        "attachment_id": attachment_id,
+                        "vpc_id": attachment.get("vpc_id"),
                     }
                 )
 
@@ -852,49 +639,30 @@ class TransitGatewayAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-
-            finding_type=
-                "transit_gateway_unrouted_attachment",
-
-            title=
-                "Transit Gateway attachment has no VPC route",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
-            recommendation_eligible=
-                False,
-
+            finding_type="transit_gateway_unrouted_attachment",
+            title="Transit Gateway attachment has no VPC route",
+            severity="medium",
+            confidence="high",
+            recommendation_eligible=False,
             reason=(
                 f"{len(candidates)} active VPC attachment(s) "
                 "have no discovered VPC route targeting the TGW."
             ),
-
             statements=[
                 _statement(
                     name="unrouted_attachments",
                     value=candidates,
-                    description=(
-                        "VPC-side routing evidence."
-                    ),
+                    description=("VPC-side routing evidence."),
                     source=[
                         "VPC route topology",
                         "Transit Gateway attachments",
                     ],
                 )
             ],
-
             metadata={
-                "candidate_count":
-                    len(candidates),
-
-                "candidates":
-                    candidates,
+                "candidate_count": len(candidates),
+                "candidates": candidates,
             },
-
             limitations=[
                 (
                     "This is an operational routing finding, "
@@ -912,19 +680,13 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _route_table_accessible(
-            context
-        ):
+        if not _route_table_accessible(context):
             return None
 
-        if not _route_data_complete(
-            context
-        ):
+        if not _route_data_complete(context):
             return None
 
-        associations = _relationships(
-            context
-        ).get(
+        associations = _relationships(context).get(
             "associations",
             [],
         )
@@ -936,36 +698,31 @@ class TransitGatewayAnalyzer(Analyzer):
             return None
 
         associated_ids = {
-            item.get(
-                "attachment_id"
-            )
+            item.get("attachment_id")
             for item in associations
             if isinstance(
                 item,
                 dict,
             )
-            and item.get(
-                "attachment_id"
-            )
+            and item.get("attachment_id")
         }
 
         candidates = []
 
-        for attachment in _attachments(
-            context
-        ):
+        for attachment in _attachments(context):
 
-            if str(
-                attachment.get(
-                    "state",
-                    "",
-                )
-            ).lower() != "available":
+            if (
+                str(
+                    attachment.get(
+                        "state",
+                        "",
+                    )
+                ).lower()
+                != "available"
+            ):
                 continue
 
-            attachment_id = attachment.get(
-                "attachment_id"
-            )
+            attachment_id = attachment.get("attachment_id")
 
             if not attachment_id:
                 continue
@@ -986,18 +743,9 @@ class TransitGatewayAnalyzer(Analyzer):
 
             candidates.append(
                 {
-                    "attachment_id":
-                        attachment_id,
-
-                    "resource_id":
-                        attachment.get(
-                            "resource_id"
-                        ),
-
-                    "resource_type":
-                        attachment.get(
-                            "resource_type"
-                        ),
+                    "attachment_id": attachment_id,
+                    "resource_id": attachment.get("resource_id"),
+                    "resource_type": attachment.get("resource_type"),
                 }
             )
 
@@ -1006,48 +754,27 @@ class TransitGatewayAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-
-            finding_type=
-                "transit_gateway_unassociated_attachment",
-
-            title=
-                "Transit Gateway attachment is not associated",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
-            recommendation_eligible=
-                False,
-
+            finding_type="transit_gateway_unassociated_attachment",
+            title="Transit Gateway attachment is not associated",
+            severity="medium",
+            confidence="high",
+            recommendation_eligible=False,
             reason=(
                 f"{len(candidates)} active attachment(s) "
                 "have no route-table association."
             ),
-
             statements=[
                 _statement(
                     name="unassociated_attachments",
                     value=candidates,
-                    description=(
-                        "Complete TGW association data."
-                    ),
-                    source=[
-                        "Transit Gateway route-table associations"
-                    ],
+                    description=("Complete TGW association data."),
+                    source=["Transit Gateway route-table associations"],
                 )
             ],
-
             metadata={
-                "candidate_count":
-                    len(candidates),
-
-                "candidates":
-                    candidates,
+                "candidate_count": len(candidates),
+                "candidates": candidates,
             },
-
             limitations=[
                 (
                     "This is an operational routing finding, "
@@ -1065,62 +792,32 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        routes = _tgw_routes(
-            context
-        )
+        routes = _tgw_routes(context)
 
-        blackholes = [
-            route
-            for route in routes
-            if route.get(
-                "state"
-            ) == "blackhole"
-        ]
+        blackholes = [route for route in routes if route.get("state") == "blackhole"]
 
         if not blackholes:
             return None
 
         return self._finding(
             context=context,
-
-            finding_type=
-                "transit_gateway_blackhole_routes",
-
-            title=
-                "Transit Gateway has blackhole routes",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
-            recommendation_eligible=
-                False,
-
-            reason=(
-                f"{len(blackholes)} TGW route(s) "
-                "are in blackhole state."
-            ),
-
+            finding_type="transit_gateway_blackhole_routes",
+            title="Transit Gateway has blackhole routes",
+            severity="medium",
+            confidence="high",
+            recommendation_eligible=False,
+            reason=(f"{len(blackholes)} TGW route(s) " "are in blackhole state."),
             statements=[
                 _statement(
                     name="blackhole_routes",
                     value=blackholes,
-                    description=(
-                        "Transit Gateway routing evidence."
-                    ),
-                    source=[
-                        "Transit Gateway route tables"
-                    ],
+                    description=("Transit Gateway routing evidence."),
+                    source=["Transit Gateway route tables"],
                 )
             ],
-
             metadata={
-                "blackhole_route_count":
-                    len(blackholes),
+                "blackhole_route_count": len(blackholes),
             },
-
             limitations=[
                 (
                     "This is an operational network finding, "
@@ -1138,95 +835,54 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _topology_complete(
-            context
-        ):
+        if not _topology_complete(context):
             return None
 
         affected = []
 
-        for item in _vpc_topologies(
-            context
-        ):
+        for item in _vpc_topologies(context):
 
-            count = _number(
-                item.get(
-                    "blackhole_vpc_routes_to_tgw_count"
-                )
-            )
+            count = _number(item.get("blackhole_vpc_routes_to_tgw_count"))
 
             if count is None or count <= 0:
                 continue
 
             affected.append(
                 {
-                    "attachment_id":
-                        item.get(
-                            "attachment_id"
-                        ),
-
-                    "vpc_id":
-                        item.get(
-                            "vpc_id"
-                        ),
-
-                    "count":
-                        int(count),
+                    "attachment_id": item.get("attachment_id"),
+                    "vpc_id": item.get("vpc_id"),
+                    "count": int(count),
                 }
             )
 
         if not affected:
             return None
 
-        total = sum(
-            item["count"]
-            for item in affected
-        )
+        total = sum(item["count"] for item in affected)
 
         return self._finding(
             context=context,
-
-            finding_type=
-                "transit_gateway_vpc_blackhole_routes",
-
-            title=
-                "VPC routes to Transit Gateway are blackholed",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
-            recommendation_eligible=
-                False,
-
+            finding_type="transit_gateway_vpc_blackhole_routes",
+            title="VPC routes to Transit Gateway are blackholed",
+            severity="medium",
+            confidence="high",
+            recommendation_eligible=False,
             reason=(
                 f"{total} VPC-side route(s) targeting "
                 "the Transit Gateway are blackholed."
             ),
-
             statements=[
                 _statement(
                     name="blackhole_vpc_routes",
                     value=affected,
-                    description=(
-                        "VPC routing evidence."
-                    ),
-                    source=[
-                        "VPC route topology"
-                    ],
+                    description=("VPC routing evidence."),
+                    source=["VPC route topology"],
                 )
             ],
-
             metadata={
-                "blackhole_route_count":
-                    total,
-
-                "affected_vpcs":
-                    affected,
+                "blackhole_route_count": total,
+                "affected_vpcs": affected,
             },
-
             limitations=[
                 (
                     "This is an operational network finding, "
@@ -1248,76 +904,36 @@ class TransitGatewayAnalyzer(Analyzer):
         severity: str,
         confidence: str,
         reason: str,
-        statements: list[
-            EvidenceStatement
-        ],
+        statements: list[EvidenceStatement],
         metadata: dict[str, Any],
         limitations: list[str],
         recommendation_eligible: bool,
     ) -> Finding:
 
         final_metadata = {
-            "region":
-                context.region,
-
+            "region": context.region,
             **metadata,
         }
 
         return Finding(
-            finding_type=
-                finding_type,
-
-            title=
-                title,
-
-            resource_type=(
-                context.resource_type
-                or "transit_gateway"
-            ),
-
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
-
-            analyzer=
-                self.name,
-
-            analyzer_version=
-                self.version,
-
-            severity=
-                severity,
-
-            confidence=
-                confidence,
-
-            reason=
-                reason,
-
-            conditions=
-                statements,
-
-            evidence=
-                self._build_evidence(
-                    context,
-                    final_metadata,
-                ),
-
-            observation_period=
-                _observation_period(
-                    context
-                ),
-
-            limitations=
-                limitations,
-
-            metadata=
+            finding_type=finding_type,
+            title=title,
+            resource_type=(context.resource_type or "transit_gateway"),
+            resource_id=(context.resource_id or "unknown"),
+            analyzer=self.name,
+            analyzer_version=self.version,
+            severity=severity,
+            confidence=confidence,
+            reason=reason,
+            conditions=statements,
+            evidence=self._build_evidence(
+                context,
                 final_metadata,
-
-            recommendation_eligible=
-                recommendation_eligible,
-
+            ),
+            observation_period=_observation_period(context),
+            limitations=limitations,
+            metadata=final_metadata,
+            recommendation_eligible=recommendation_eligible,
             impact={},
         )
 
@@ -1327,110 +943,44 @@ class TransitGatewayAnalyzer(Analyzer):
         metadata: dict[str, Any],
     ) -> Evidence:
 
-        relationships = _relationships(
-            context
-        )
+        relationships = _relationships(context)
 
-        topology = _topology(
-            context
-        )
+        topology = _topology(context)
 
-        configuration = _dict(
-            context.configuration()
-        )
+        configuration = _dict(context.configuration())
 
-        metrics = {
-            name:
-                context.metric_summary(
-                    name
-                )
-            for name in context.metrics()
-        }
+        metrics = {name: context.metric_summary(name) for name in context.metrics()}
 
         return Evidence(
             metrics=metrics,
-
             configuration={
-                key: value
-                for key, value
-                in configuration.items()
-                if key != "tags"
+                key: value for key, value in configuration.items() if key != "tags"
             },
-
             topology={
-                "relationships":
-                    {
-                        "summary":
-                            _dict(
-                                relationships.get(
-                                    "summary"
-                                )
-                            ),
-
-                        "collection_status":
-                            relationships.get(
-                                "collection_status",
-                                {},
-                            ),
-                    },
-
-                "network":
-                    _dict(
-                        topology.get(
-                            "summary"
-                        )
+                "relationships": {
+                    "summary": _dict(relationships.get("summary")),
+                    "collection_status": relationships.get(
+                        "collection_status",
+                        {},
                     ),
+                },
+                "network": _dict(topology.get("summary")),
             },
-
             resource={
-                "resource_id":
-                    context.resource_id,
-
-                "resource_type":
-                    context.resource_type,
-
-                "region":
-                    context.region,
+                "resource_id": context.resource_id,
+                "resource_type": context.resource_type,
+                "region": context.region,
             },
-
             derived={
-                "traffic":
-                    _traffic(
-                        context
-                    ),
-
-                "attachment_traffic":
-                    _attachment_traffic(
-                        context
-                    ),
-
+                "traffic": _traffic(context),
+                "attachment_traffic": _attachment_traffic(context),
                 **metadata,
             },
-
-            billing=
-                context.billing(),
-
+            billing=context.billing(),
             data_quality={
-                "attachments_complete":
-                    _attachments_complete(
-                        context
-                    ),
-
-                "route_data_complete":
-                    _route_data_complete(
-                        context
-                    ),
-
-                "topology_complete":
-                    _topology_complete(
-                        context
-                    ),
-
-                "cloudwatch_status":
-                    _cloudwatch(
-                        context
-                    ).get(
-                        "status"
-                    ),
+                "attachments_complete": _attachments_complete(context),
+                "route_data_complete": _route_data_complete(context),
+                "topology_complete": _topology_complete(context),
+                "cloudwatch_status": _cloudwatch(context).get("status"),
             },
         )

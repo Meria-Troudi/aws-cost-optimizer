@@ -23,9 +23,7 @@ from aws_cost_optimizer.analysis.ranking import CONFIDENCE_RANK
 # project's own FinOps policy, not AWS facts -- plain constants for
 # now rather than YAML config, since there's no data yet to justify
 # exposing them as tunable.
-FINANCIAL_PRIORITY_THRESHOLDS: tuple[
-    tuple[float, str], ...
-] = (
+FINANCIAL_PRIORITY_THRESHOLDS: tuple[tuple[float, str], ...] = (
     (500.0, "critical"),
     (100.0, "high"),
     (25.0, "medium"),
@@ -59,9 +57,7 @@ def _financial_value(
     ):
         return None
 
-    if billing.get(
-        "attribution_scope"
-    ) != "resource":
+    if billing.get("attribution_scope") != "resource":
         return None
 
     impact = finding.get("impact")
@@ -72,9 +68,7 @@ def _financial_value(
     ):
         impact = {}
 
-    savings = impact.get(
-        "estimated_monthly_savings"
-    )
+    savings = impact.get("estimated_monthly_savings")
 
     if (
         isinstance(savings, (int, float))
@@ -83,14 +77,9 @@ def _financial_value(
     ):
         return float(savings)
 
-    cost = impact.get(
-        "observed_monthly_cost"
-    )
+    cost = impact.get("observed_monthly_cost")
 
-    if (
-        isinstance(cost, (int, float))
-        and not isinstance(cost, bool)
-    ):
+    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
         return float(cost)
 
     return None
@@ -106,27 +95,27 @@ def score(
     there is no resource-attributed financial signal to rank by.
     """
 
-    confidence = str(
-        finding.get(
-            "confidence",
-            "low",
+    confidence = (
+        str(
+            finding.get(
+                "confidence",
+                "low",
+            )
+            or "low"
         )
-        or "low"
-    ).strip().lower()
+        .strip()
+        .lower()
+    )
 
     if confidence not in CONFIDENCE_RANK:
         confidence = "low"
 
-    financial_value = _financial_value(
-        finding
-    )
+    financial_value = _financial_value(finding)
 
     if financial_value is None:
         return default_priority, confidence
 
-    for threshold, label in (
-        FINANCIAL_PRIORITY_THRESHOLDS
-    ):
+    for threshold, label in FINANCIAL_PRIORITY_THRESHOLDS:
 
         if financial_value >= threshold:
             return label, confidence

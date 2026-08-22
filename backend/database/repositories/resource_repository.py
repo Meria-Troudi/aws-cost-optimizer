@@ -102,16 +102,10 @@ def save_resource_snapshot(
         availability_zone=availability_zone,
         configuration=json_dumps(configuration or {}),
         topology=json_dumps(topology or {}),
-        relationships=json_dumps(
-            relationships if relationships is not None else {}
-        ),
-        raw_response=json_dumps(
-            raw_response if raw_response is not None else {}
-        ),
+        relationships=json_dumps(relationships if relationships is not None else {}),
+        raw_response=json_dumps(raw_response if raw_response is not None else {}),
         optimization_evidence=json_dumps(
-            optimization_evidence
-            if optimization_evidence is not None
-            else {}
+            optimization_evidence if optimization_evidence is not None else {}
         ),
     )
 
@@ -136,18 +130,12 @@ def get_resources_for_scan(
 
     resource_ids = (
         db.query(ResourceSnapshot.resource_id)
-        .filter(
-            ResourceSnapshot.scan_run_id == scan_id
-        )
+        .filter(ResourceSnapshot.scan_run_id == scan_id)
         .distinct()
         .all()
     )
 
-    ids = [
-        row[0]
-        for row in resource_ids
-        if row[0] is not None
-    ]
+    ids = [row[0] for row in resource_ids if row[0] is not None]
 
     if not ids:
         return []

@@ -29,13 +29,9 @@ class OptimizationPipeline:
         analyzers: list | None = None,
     ) -> None:
 
-        self.finding_engine = FindingEngine(
-            analyzers=analyzers
-        )
+        self.finding_engine = FindingEngine(analyzers=analyzers)
 
-        self.recommendation_engine = (
-            RecommendationEngine()
-        )
+        self.recommendation_engine = RecommendationEngine()
 
     def run(
         self,
@@ -51,48 +47,34 @@ class OptimizationPipeline:
         _ = collection_plans
 
         if scan is None:
-            raise ValueError(
-                "scan is required."
-            )
+            raise ValueError("scan is required.")
 
         if not isinstance(
             resources,
             list,
         ):
-            raise TypeError(
-                "resources must be a list."
-            )
+            raise TypeError("resources must be a list.")
 
         try:
 
-            finding_result = (
-                self.finding_engine.evaluate_and_persist(
-                    db=db,
-                    scan=scan,
-                    resources=resources,
-                    enriched_results=enriched_results,
-                    pre_findings=pre_findings,
-                )
+            finding_result = self.finding_engine.evaluate_and_persist(
+                db=db,
+                scan=scan,
+                resources=resources,
+                enriched_results=enriched_results,
+                pre_findings=pre_findings,
             )
 
-            raw_findings = finding_result[
-                "raw_findings"
-            ]
+            raw_findings = finding_result["raw_findings"]
 
-            aggregated_findings = finding_result[
-                "aggregated_findings"
-            ]
+            aggregated_findings = finding_result["aggregated_findings"]
 
             # Recommendations are built from raw (one-resource) findings
             # only -- aggregated_findings is a reporting view and must
             # never be fed back into recommendation generation, or
             # e.g. 3 idle NAT gateways would collapse into 1
             # recommendation instead of 3.
-            recommendations = (
-                self.recommendation_engine.generate(
-                    raw_findings
-                )
-            )
+            recommendations = self.recommendation_engine.generate(raw_findings)
 
             saved = (
                 self._save_recommendations(
@@ -104,9 +86,7 @@ class OptimizationPipeline:
                 else []
             )
 
-            if len(saved) != len(
-                recommendations
-            ):
+            if len(saved) != len(recommendations):
                 raise RuntimeError(
                     "Recommendation persistence count mismatch: "
                     f"{len(recommendations)} generated, "
@@ -116,23 +96,12 @@ class OptimizationPipeline:
             db.commit()
 
             return {
-                "scan_run_id":
-                    scan.id,
-
-                "findings":
-                    aggregated_findings,
-
-                "finding_count":
-                    len(aggregated_findings),
-
-                "recommendations":
-                    recommendations,
-
-                "recommendation_count":
-                    len(recommendations),
-
-                "saved_recommendation_count":
-                    len(saved),
+                "scan_run_id": scan.id,
+                "findings": aggregated_findings,
+                "finding_count": len(aggregated_findings),
+                "recommendations": recommendations,
+                "recommendation_count": len(recommendations),
+                "saved_recommendation_count": len(saved),
             }
 
         except Exception:
@@ -143,9 +112,7 @@ class OptimizationPipeline:
     def _save_recommendations(
         db: Session,
         scan,
-        recommendations: list[
-            dict[str, Any]
-        ],
+        recommendations: list[dict[str, Any]],
     ) -> list[Any]:
 
         try:
@@ -156,9 +123,7 @@ class OptimizationPipeline:
 
         except ImportError as exc:
 
-            raise RuntimeError(
-                "Recommendation repository is not available."
-            ) from exc
+            raise RuntimeError("Recommendation repository is not available.") from exc
 
         saved = save_recommendations(
             db=db,

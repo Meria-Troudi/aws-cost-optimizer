@@ -11,18 +11,13 @@ from typing import Any
 @dataclass(slots=True)
 class EvidenceStatement:
 
-
     name: str
     value: Any = None
     description: str = ""
 
-    source: list[str] = field(
-        default_factory=list
-    )
+    source: list[str] = field(default_factory=list)
 
-    evidence_keys: list[str] = field(
-        default_factory=list
-    )
+    evidence_keys: list[str] = field(default_factory=list)
 
     unit: str | None = None
 
@@ -37,9 +32,7 @@ class EvidenceStatement:
             "value": self.value,
             "description": self.description,
             "source": list(self.source),
-            "evidence_keys": list(
-                self.evidence_keys
-            ),
+            "evidence_keys": list(self.evidence_keys),
             "unit": self.unit,
             "observed": self.observed,
         }
@@ -53,19 +46,15 @@ class Condition:
     actual: Any
     passed: bool
     description: str | None = None
-    evidence_keys: list[str] = field(
-        default_factory=list
-    )
+    evidence_keys: list[str] = field(default_factory=list)
+
     @property
     def result(
         self,
     ) -> str:
 
-        return (
-            "passed"
-            if self.passed
-            else "failed"
-        )
+        return "passed" if self.passed else "failed"
+
     def to_dict(
         self,
     ) -> dict[str, Any]:
@@ -78,7 +67,5 @@ class Condition:
             "actual": self.actual,
             "result": self.result,
             "passed": self.passed,
-            "evidence_keys": list(
-                self.evidence_keys
-            ),
+            "evidence_keys": list(self.evidence_keys),
         }

@@ -65,14 +65,10 @@ def test_partial_month_is_not_served_to_a_full_month_request():
 
     fetch, calls = _recorder(PARTIAL_WINDOW_BLOCKS)
 
-    ce._fetch_monthly_with_cache(
-        "test", fetch, "2026-06-15", "2026-08-17", "eu-west-1"
-    )
+    ce._fetch_monthly_with_cache("test", fetch, "2026-06-15", "2026-08-17", "eu-west-1")
     calls.clear()
 
-    ce._fetch_monthly_with_cache(
-        "test", fetch, "2026-06-01", "2026-07-01", "eu-west-1"
-    )
+    ce._fetch_monthly_with_cache("test", fetch, "2026-06-01", "2026-07-01", "eu-west-1")
 
     assert calls == [("2026-06-01", "2026-07-01")]
 
@@ -82,26 +78,18 @@ def test_identical_window_is_served_from_cache():
 
     fetch, calls = _recorder(PARTIAL_WINDOW_BLOCKS)
 
-    ce._fetch_monthly_with_cache(
-        "test", fetch, "2026-06-15", "2026-08-17", "eu-west-1"
-    )
+    ce._fetch_monthly_with_cache("test", fetch, "2026-06-15", "2026-08-17", "eu-west-1")
     assert len(calls) == 1
 
-    ce._fetch_monthly_with_cache(
-        "test", fetch, "2026-06-15", "2026-08-17", "eu-west-1"
-    )
+    ce._fetch_monthly_with_cache("test", fetch, "2026-06-15", "2026-08-17", "eu-west-1")
     assert len(calls) == 1, "second identical request should hit cache"
 
 
 def test_regions_are_cached_separately():
     fetch, calls = _recorder(PARTIAL_WINDOW_BLOCKS)
 
-    ce._fetch_monthly_with_cache(
-        "test", fetch, "2026-06-15", "2026-08-17", "eu-west-1"
-    )
-    ce._fetch_monthly_with_cache(
-        "test", fetch, "2026-06-15", "2026-08-17", "us-east-1"
-    )
+    ce._fetch_monthly_with_cache("test", fetch, "2026-06-15", "2026-08-17", "eu-west-1")
+    ce._fetch_monthly_with_cache("test", fetch, "2026-06-15", "2026-08-17", "us-east-1")
 
     assert len(calls) == 2
 
@@ -110,24 +98,18 @@ def test_empty_or_inverted_window_makes_no_request():
     fetch, calls = _recorder(PARTIAL_WINDOW_BLOCKS)
 
     assert (
-        ce._fetch_monthly_with_cache(
-            "test", fetch, "2026-08-17", "2026-06-15", None
-        )
+        ce._fetch_monthly_with_cache("test", fetch, "2026-08-17", "2026-06-15", None)
         == []
     )
     assert (
-        ce._fetch_monthly_with_cache(
-            "test", fetch, "2026-06-15", "2026-06-15", None
-        )
+        ce._fetch_monthly_with_cache("test", fetch, "2026-06-15", "2026-06-15", None)
         == []
     )
     assert calls == []
 
 
 def test_single_partial_month_window():
-    blocks = [
-        {"TimePeriod": {"Start": "2026-06-10", "End": "2026-06-20"}}
-    ]
+    blocks = [{"TimePeriod": {"Start": "2026-06-10", "End": "2026-06-20"}}]
     fetch, calls = _recorder(blocks)
 
     result = ce._fetch_monthly_with_cache(

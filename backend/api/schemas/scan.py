@@ -35,7 +35,6 @@ class ScanRequest(BaseModel):
 
 class ScanResponse(BaseModel):
 
-
     scan_id: int
     status: str
     result: dict[str, Any]

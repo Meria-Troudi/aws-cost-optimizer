@@ -38,9 +38,7 @@ def breakdown_from_ce_monthly(
         period = block.get("TimePeriod") or {}
         month = (period.get("Start") or "")[:7]
         amount = float(
-            block.get("Total", {})
-            .get("UnblendedCost", {})
-            .get("Amount", 0.0)
+            block.get("Total", {}).get("UnblendedCost", {}).get("Amount", 0.0)
         )
         if month:
             rows.append({"month": month, "cost": round(amount, 2)})

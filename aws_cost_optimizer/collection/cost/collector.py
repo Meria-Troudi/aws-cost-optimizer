@@ -35,9 +35,7 @@ class CostCollector:
         if scan.region:
             regions = [scan.region]
 
-            print(
-                f"  Collecting costs for region: {scan.region}"
-            )
+            print(f"  Collecting costs for region: {scan.region}")
 
         else:
             regions = get_regions_with_costs(
@@ -45,9 +43,7 @@ class CostCollector:
                 end,
             )
 
-            print(
-                f"  Found {len(regions)} regions with costs"
-            )
+            print(f"  Found {len(regions)} regions with costs")
 
         saved_count = 0
         collected_total = 0.0
@@ -61,13 +57,9 @@ class CostCollector:
 
             for result in results:
 
-                time_start = date.fromisoformat(
-                    result["TimePeriod"]["Start"]
-                )
+                time_start = date.fromisoformat(result["TimePeriod"]["Start"])
 
-                time_end = date.fromisoformat(
-                    result["TimePeriod"]["End"]
-                )
+                time_end = date.fromisoformat(result["TimePeriod"]["End"])
 
                 for group in result.get("Groups", []):
 
@@ -79,11 +71,7 @@ class CostCollector:
                     service_name = keys[0]
                     usage_type_name = keys[1]
 
-                    operation_name = (
-                        keys[2]
-                        if len(keys) >= 3 and keys[2]
-                        else None
-                    )
+                    operation_name = keys[2] if len(keys) >= 3 and keys[2] else None
 
                     metrics = group.get(
                         "Metrics",
@@ -121,9 +109,7 @@ class CostCollector:
                     if usage_metric.get("Amount") is not None:
 
                         try:
-                            usage_quantity = float(
-                                usage_metric["Amount"]
-                            )
+                            usage_quantity = float(usage_metric["Amount"])
 
                         except (
                             TypeError,
@@ -165,6 +151,7 @@ class CostCollector:
         validation["saved_count"] = saved_count
 
         return validation
+
     def _validate(
         self,
         start: str,
@@ -182,89 +169,52 @@ class CostCollector:
             region=region,
         )
 
-        monthly_breakdown = (
-            breakdown_from_ce_monthly(
-                monthly_results
-            )
-        )
+        monthly_breakdown = breakdown_from_ce_monthly(monthly_results)
 
-        monthly_total = sum(
-            float(row["cost"])
-            for row in monthly_breakdown
-        )
+        monthly_total = sum(float(row["cost"]) for row in monthly_breakdown)
 
-        account_breakdown: list[
-            dict[str, float | str]
-        ] = []
+        account_breakdown: list[dict[str, float | str]] = []
 
         if region:
 
-            account_breakdown = (
-                breakdown_from_ce_monthly(
-                    get_monthly_totals(
-                        start,
-                        end,
-                        region=None,
-                    )
+            account_breakdown = breakdown_from_ce_monthly(
+                get_monthly_totals(
+                    start,
+                    end,
+                    region=None,
                 )
             )
 
-        difference = abs(
-            collected_total - monthly_total
-        )
+        difference = abs(collected_total - monthly_total)
 
         matches = difference < 0.01
 
         if scan_start and scan_end:
 
-            months_included = (
-                month_keys_in_period(
-                    scan_start,
-                    scan_end,
-                )
+            months_included = month_keys_in_period(
+                scan_start,
+                scan_end,
             )
 
         else:
 
-            months_included = [
-                row["month"]
-                for row in monthly_breakdown
-            ]
-        print(
-            f"    Collected total: "
-            f"${collected_total:.2f}"
-        )
+            months_included = [row["month"] for row in monthly_breakdown]
+        print(f"    Collected total: " f"${collected_total:.2f}")
 
-        print(
-            f"    Monthly sum:     "
-            f"${monthly_total:.2f}"
-        )
+        print(f"    Monthly sum:     " f"${monthly_total:.2f}")
 
         if region:
-            print(
-                f"    Billing scope:   {region}"
-            )
+            print(f"    Billing scope:   {region}")
         else:
-            print(
-                "    Billing scope:   all regions"
-            )
+            print("    Billing scope:   all regions")
 
         for row in monthly_breakdown:
 
-            print(
-                f"      {row['month']}: "
-                f"${float(row['cost']):,.2f}"
-            )
+            print(f"      {row['month']}: " f"${float(row['cost']):,.2f}")
 
-        print(
-            f"    Difference:      "
-            f"${difference:.2f}"
-        )
+        print(f"    Difference:      " f"${difference:.2f}")
 
-        print(
-            "    Match:           "
-            f"{'✓' if matches else '✗'}"
-        )
+        print("    Match:           " f"{'✓' if matches else '✗'}")
 
         return {
             "collected_total": collected_total,
@@ -274,9 +224,5 @@ class CostCollector:
             "monthly_breakdown": monthly_breakdown,
             "account_monthly_breakdown": account_breakdown,
             "months_included": months_included,
-            "billing_scope": (
-                region
-                if region
-                else "all regions"
-            ),
+            "billing_scope": (region if region else "all regions"),
         }

@@ -38,14 +38,10 @@ class OllamaProvider(LLMProvider):
     ) -> None:
 
         self.base_url = (
-            base_url
-            or os.getenv("OLLAMA_BASE_URL", DEFAULT_BASE_URL)
+            base_url or os.getenv("OLLAMA_BASE_URL", DEFAULT_BASE_URL)
         ).rstrip("/")
 
-        self.model = (
-            model
-            or os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
-        )
+        self.model = model or os.getenv("OLLAMA_MODEL", DEFAULT_MODEL)
 
         self.timeout = timeout
 
@@ -93,17 +89,11 @@ class OllamaProvider(LLMProvider):
         message = data.get("message")
 
         if not isinstance(message, dict):
-            raise RuntimeError(
-                "Ollama response is missing 'message'."
-            )
+            raise RuntimeError("Ollama response is missing 'message'.")
 
         content = message.get("content")
 
         if not content:
-            raise RuntimeError(
-                "Ollama returned empty content."
-            )
+            raise RuntimeError("Ollama returned empty content.")
 
-        return RecommendationExplanation.model_validate_json(
-            content
-        )
+        return RecommendationExplanation.model_validate_json(content)

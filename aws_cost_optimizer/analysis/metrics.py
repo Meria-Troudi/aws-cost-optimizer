@@ -52,9 +52,7 @@ def metric_was_queried(
     if not isinstance(metric, dict):
         return False
 
-    return bool(
-        metric.get("metric_name")
-    )
+    return bool(metric.get("metric_name"))
 
 
 def metric_query_succeeded(
@@ -64,10 +62,7 @@ def metric_query_succeeded(
     if not metric_was_queried(metric):
         return False
 
-    return (
-        metric.get("status")
-        != "error"
-    )
+    return metric.get("status") != "error"
 
 
 def metric_has_observed_data(
@@ -101,34 +96,21 @@ def metric_has_no_observed_data(
     metric: dict[str, Any] | None,
 ) -> bool:
 
-    return (
-        metric_query_succeeded(metric)
-        and not metric_has_observed_data(
-            metric
-        )
-    )
+    return metric_query_succeeded(metric) and not metric_has_observed_data(metric)
 
 
 def metric_is_zero(
     metric: dict[str, Any] | None,
 ) -> bool:
 
-    return (
-        metric_has_observed_data(metric)
-        and float(
-            metric["value"]
-        ) == 0.0
-    )
+    return metric_has_observed_data(metric) and float(metric["value"]) == 0.0
 
 
 def metric_is_detected(
     metric: dict[str, Any] | None,
 ) -> bool:
 
-    return (
-        metric_status(metric)
-        == "observed"
-    )
+    return metric_status(metric) == "observed"
 
 
 def metric_numeric_value(
@@ -156,9 +138,7 @@ def metric_statistic(
     if not isinstance(metric, dict):
         return None
 
-    value = metric.get(
-        "statistic"
-    )
+    value = metric.get("statistic")
 
     return str(value) if value else None
 
@@ -167,10 +147,7 @@ def metric_is_sum(
     metric: dict[str, Any] | None,
 ) -> bool:
 
-    return (
-        metric_statistic(metric)
-        == "Sum"
-    )
+    return metric_statistic(metric) == "Sum"
 
 
 def metric_sum_value(
@@ -193,16 +170,12 @@ def metric_datapoint_count(
     if not isinstance(metric, dict):
         return 0
 
-    datapoints = metric.get(
-        "datapoints"
-    )
+    datapoints = metric.get("datapoints")
 
     if isinstance(datapoints, int):
         return datapoints
 
-    raw = metric.get(
-        "raw_datapoints"
-    )
+    raw = metric.get("raw_datapoints")
 
     if isinstance(raw, list):
         return len(raw)
@@ -211,101 +184,57 @@ def metric_datapoint_count(
 
 
 def _metric_list(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> list[dict[str, Any]]:
 
     if isinstance(metrics, dict):
 
-        return [
-            metric
-            for metric in metrics.values()
-            if isinstance(metric, dict)
-        ]
+        return [metric for metric in metrics.values() if isinstance(metric, dict)]
 
     if isinstance(metrics, list):
 
-        return [
-            metric
-            for metric in metrics
-            if isinstance(metric, dict)
-        ]
+        return [metric for metric in metrics if isinstance(metric, dict)]
 
     return []
 
 
 def count_queried_metrics(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
 
-    return sum(
-        metric_was_queried(metric)
-        for metric in _metric_list(metrics)
-    )
+    return sum(metric_was_queried(metric) for metric in _metric_list(metrics))
 
 
 def count_observed_metrics(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
 
-    return sum(
-        metric_has_observed_data(metric)
-        for metric in _metric_list(metrics)
-    )
+    return sum(metric_has_observed_data(metric) for metric in _metric_list(metrics))
 
 
 def count_zero_metrics(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
 
-    return sum(
-        metric_is_zero(metric)
-        for metric in _metric_list(metrics)
-    )
+    return sum(metric_is_zero(metric) for metric in _metric_list(metrics))
 
 
 def count_missing_metrics(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
 
-    return sum(
-        metric_has_no_observed_data(metric)
-        for metric in _metric_list(metrics)
-    )
+    return sum(metric_has_no_observed_data(metric) for metric in _metric_list(metrics))
 
 
 def count_metric_errors(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
 
-    return sum(
-        metric_status(metric) == "error"
-        for metric in _metric_list(metrics)
-    )
+    return sum(metric_status(metric) == "error" for metric in _metric_list(metrics))
 
 
 def count_persistable_metrics(
-    metrics:
-        dict[str, Any]
-        | list[Any]
-        | None,
+    metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
 
     return count_observed_metrics(metrics)
@@ -316,12 +245,7 @@ def all_metrics_observed(
     names: list[str],
 ) -> bool:
 
-    return all(
-        metric_has_observed_data(
-            metrics.get(name)
-        )
-        for name in names
-    )
+    return all(metric_has_observed_data(metrics.get(name)) for name in names)
 
 
 def any_metric_observed(
@@ -329,12 +253,7 @@ def any_metric_observed(
     names: list[str],
 ) -> bool:
 
-    return any(
-        metric_has_observed_data(
-            metrics.get(name)
-        )
-        for name in names
-    )
+    return any(metric_has_observed_data(metrics.get(name)) for name in names)
 
 
 def all_metrics_zero(
@@ -342,12 +261,7 @@ def all_metrics_zero(
     names: list[str],
 ) -> bool:
 
-    return all(
-        metric_is_zero(
-            metrics.get(name)
-        )
-        for name in names
-    )
+    return all(metric_is_zero(metrics.get(name)) for name in names)
 
 
 def any_metric_zero(
@@ -355,12 +269,7 @@ def any_metric_zero(
     names: list[str],
 ) -> bool:
 
-    return any(
-        metric_is_zero(
-            metrics.get(name)
-        )
-        for name in names
-    )
+    return any(metric_is_zero(metrics.get(name)) for name in names)
 
 
 def sum_observed_values(
@@ -368,18 +277,9 @@ def sum_observed_values(
     names: list[str],
 ) -> float | None:
 
-    values = [
-        metric_numeric_value(
-            metrics.get(name)
-        )
-        for name in names
-    ]
+    values = [metric_numeric_value(metrics.get(name)) for name in names]
 
-    values = [
-        value
-        for value in values
-        if value is not None
-    ]
+    values = [value for value in values if value is not None]
 
     if not values:
         return None
@@ -392,18 +292,9 @@ def sum_sum_metrics(
     names: list[str],
 ) -> float | None:
 
-    values = [
-        metric_sum_value(
-            metrics.get(name)
-        )
-        for name in names
-    ]
+    values = [metric_sum_value(metrics.get(name)) for name in names]
 
-    values = [
-        value
-        for value in values
-        if value is not None
-    ]
+    values = [value for value in values if value is not None]
 
     if not values:
         return None
@@ -436,85 +327,29 @@ def metric_summary(
 
     state = metric_status(metric)
 
-    observed = metric_has_observed_data(
-        metric
-    )
+    observed = metric_has_observed_data(metric)
 
     return {
         "status": state,
         "state": state,
-
-        "queried":
-            metric_was_queried(metric),
-
-        "query_succeeded":
-            metric_query_succeeded(metric),
-
-        "has_data":
-            observed,
-
-        "observed":
-            observed,
-
-        "zero":
-            metric_is_zero(metric),
-
-        "value":
-            metric.get("value")
-            if observed
-            else None,
-
-        "average":
-            metric.get("average")
-            if observed
-            else None,
-
-        "maximum":
-            metric.get("maximum")
-            if observed
-            else None,
-
-        "minimum":
-            metric.get("minimum")
-            if observed
-            else None,
-
-        "statistic":
-            metric.get("statistic"),
-
-        "unit":
-            metric.get("unit"),
-
-        "datapoints":
-            metric_datapoint_count(metric),
-
-        "requested_period":
-            metric.get("requested_period"),
-
-        "effective_period":
-            metric.get("effective_period"),
-
-        "coverage_ratio":
-            metric.get("coverage_ratio"),
-
-        "coverage_percent":
-            metric.get("coverage_percent"),
-
-        "data_quality":
-            metric.get("data_quality"),
-
-        "metric_start":
-            (
-                metric.get("metric_start")
-                or metric.get("start")
-            ),
-
-        "metric_end":
-            (
-                metric.get("metric_end")
-                or metric.get("end")
-            ),
-
-        "error":
-            metric.get("error"),
+        "queried": metric_was_queried(metric),
+        "query_succeeded": metric_query_succeeded(metric),
+        "has_data": observed,
+        "observed": observed,
+        "zero": metric_is_zero(metric),
+        "value": metric.get("value") if observed else None,
+        "average": metric.get("average") if observed else None,
+        "maximum": metric.get("maximum") if observed else None,
+        "minimum": metric.get("minimum") if observed else None,
+        "statistic": metric.get("statistic"),
+        "unit": metric.get("unit"),
+        "datapoints": metric_datapoint_count(metric),
+        "requested_period": metric.get("requested_period"),
+        "effective_period": metric.get("effective_period"),
+        "coverage_ratio": metric.get("coverage_ratio"),
+        "coverage_percent": metric.get("coverage_percent"),
+        "data_quality": metric.get("data_quality"),
+        "metric_start": (metric.get("metric_start") or metric.get("start")),
+        "metric_end": (metric.get("metric_end") or metric.get("end")),
+        "error": metric.get("error"),
     }

@@ -44,32 +44,18 @@ from ....evidence import Evidence
 from ....finding import Finding, ObservationPeriod
 from ....registry import register
 
-
 DEFAULT_LOW_TRAFFIC_GIB = 1.0
 DEFAULT_HIGH_TRAFFIC_GIB = 100.0
 
 
 TITLES = {
-    "nat_gateway_idle":
-        "NAT Gateway is idle",
-
-    "nat_gateway_no_route_dependency":
-        "NAT Gateway has no route dependency",
-
-    "nat_gateway_low_traffic":
-        "NAT Gateway has low observed traffic",
-
-    "nat_gateway_cross_az":
-        "NAT Gateway serves cross-AZ traffic paths",
-
-    "nat_gateway_endpoint_opportunity":
-        "NAT Gateway may have endpoint opportunity",
-
-    "nat_gateway_high_data_processing":
-        "NAT Gateway has high observed traffic",
-
-    "nat_gateway_multiple_az":
-        "NAT Gateway architecture warrants review",
+    "nat_gateway_idle": "NAT Gateway is idle",
+    "nat_gateway_no_route_dependency": "NAT Gateway has no route dependency",
+    "nat_gateway_low_traffic": "NAT Gateway has low observed traffic",
+    "nat_gateway_cross_az": "NAT Gateway serves cross-AZ traffic paths",
+    "nat_gateway_endpoint_opportunity": "NAT Gateway may have endpoint opportunity",
+    "nat_gateway_high_data_processing": "NAT Gateway has high observed traffic",
+    "nat_gateway_multiple_az": "NAT Gateway architecture warrants review",
 }
 
 
@@ -79,36 +65,30 @@ LIMITATIONS = {
         "Missing telemetry is not treated as zero.",
         "Confirm workload and recovery requirements before removal.",
     ],
-
     "nat_gateway_no_route_dependency": [
         "Based on the discovered route tables.",
         "Future or non-discovered dependencies may still exist.",
         "No resource-level billing amount is claimed.",
     ],
-
     "nat_gateway_low_traffic": [
         "Traffic is an operational indicator, not a resource billing amount.",
         "Low traffic does not prove that the gateway is unnecessary.",
     ],
-
     "nat_gateway_cross_az": [
         "The finding identifies topology, not cross-AZ transfer cost.",
         "The collector does not attribute traffic volume to each subnet.",
         "Review availability and resilience requirements before changing routing.",
     ],
-
     "nat_gateway_endpoint_opportunity": [
         "Observed NAT traffic is not identified by destination service.",
         "No conclusion is made that the traffic is S3, DynamoDB, ECR, or another endpoint-eligible service.",
         "No savings amount is estimated.",
     ],
-
     "nat_gateway_high_data_processing": [
         "The traffic value is an operational indicator, not billing-attributed NAT usage.",
         "High traffic does not prove that the traffic is unnecessary.",
         "Review traffic sources and architecture before claiming savings.",
     ],
-
     "nat_gateway_multiple_az": [
         "Multiple NAT gateways may be intentional for availability or isolation.",
         "The finding identifies architecture for review, not guaranteed savings.",
@@ -121,22 +101,14 @@ def _dict(
     value: Any,
 ) -> dict[str, Any]:
 
-    return (
-        value
-        if isinstance(value, dict)
-        else {}
-    )
+    return value if isinstance(value, dict) else {}
 
 
 def _list(
     value: Any,
 ) -> list[Any]:
 
-    return (
-        value
-        if isinstance(value, list)
-        else []
-    )
+    return value if isinstance(value, list) else []
 
 
 def _number(
@@ -198,10 +170,7 @@ class NatGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        return (
-            context.resource_type
-            in self.SUPPORTED_RESOURCE_TYPES
-        )
+        return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
     # ==============================================================
     # ENTRY POINT
@@ -215,26 +184,18 @@ class NatGatewayAnalyzer(Analyzer):
         if not self.supports(context):
             return []
 
-        evidence = _dict(
-            context.optimization_evidence()
-        )
+        evidence = _dict(context.optimization_evidence())
 
         if not evidence:
             return []
 
-        resource = _dict(
-            evidence.get("resource")
-        )
+        resource = _dict(evidence.get("resource"))
 
-        if resource.get(
-            "state_category"
-        ) != "operational":
+        if resource.get("state_category") != "operational":
 
             return []
 
-        if not self._usable(
-            evidence
-        ):
+        if not self._usable(evidence):
             return []
 
         detectors = (
@@ -271,9 +232,7 @@ class NatGatewayAnalyzer(Analyzer):
                 continue
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
         return findings
 
@@ -286,55 +245,35 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get(
-                "activity"
-            )
-        )
+        return _dict(evidence.get("activity"))
 
     @staticmethod
     def _network(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get(
-                "network"
-            )
-        )
+        return _dict(evidence.get("network"))
 
     @staticmethod
     def _fleet(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get(
-                "fleet"
-            )
-        )
+        return _dict(evidence.get("fleet"))
 
     @staticmethod
     def _configuration(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get(
-                "configuration"
-            )
-        )
+        return _dict(evidence.get("configuration"))
 
     @staticmethod
     def _quality(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get(
-                "data_quality"
-            )
-        )
+        return _dict(evidence.get("data_quality"))
 
     # ==============================================================
     # QUALITY
@@ -345,20 +284,11 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> bool:
 
-        quality = _dict(
-            evidence.get(
-                "data_quality"
-            )
-        )
+        quality = _dict(evidence.get("data_quality"))
 
         return (
-            quality.get(
-                "topology_available"
-            ) is True
-            or
-            quality.get(
-                "traffic_available"
-            ) is True
+            quality.get("topology_available") is True
+            or quality.get("traffic_available") is True
         )
 
     @staticmethod
@@ -366,24 +296,12 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> bool:
 
-        quality = _dict(
-            evidence.get(
-                "data_quality"
-            )
-        )
+        quality = _dict(evidence.get("data_quality"))
 
         return (
-            quality.get(
-                "traffic_available"
-            ) is True
-            and
-            quality.get(
-                "traffic_complete"
-            ) is True
-            and
-            quality.get(
-                "traffic_semantics_valid"
-            ) is True
+            quality.get("traffic_available") is True
+            and quality.get("traffic_complete") is True
+            and quality.get("traffic_semantics_valid") is True
         )
 
     @staticmethod
@@ -391,20 +309,11 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> bool:
 
-        quality = _dict(
-            evidence.get(
-                "data_quality"
-            )
-        )
+        quality = _dict(evidence.get("data_quality"))
 
         return (
-            quality.get(
-                "connection_data_available"
-            ) is True
-            and
-            quality.get(
-                "connection_data_complete"
-            ) is True
+            quality.get("connection_data_available") is True
+            and quality.get("connection_data_complete") is True
         )
 
     # ==============================================================
@@ -417,58 +326,30 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        activity = self._activity(
-            evidence
-        )
-        network = self._network(
-            evidence
-        )
+        activity = self._activity(evidence)
+        network = self._network(evidence)
 
-        if not self._traffic_complete(
-            evidence
-        ):
+        if not self._traffic_complete(evidence):
             return None
 
-        if not self._connection_complete(
-            evidence
-        ):
+        if not self._connection_complete(evidence):
             return None
 
-        if activity.get(
-            "traffic_zero"
-        ) is not True:
+        if activity.get("traffic_zero") is not True:
 
             return None
 
-        if activity.get(
-            "connections_zero"
-        ) is not True:
+        if activity.get("connections_zero") is not True:
 
             return None
 
-        route_count = _number(
-            network.get(
-                "nat_route_count"
-            )
-        )
+        route_count = _number(network.get("nat_route_count"))
 
-        route_count = (
-            route_count
-            if route_count is not None
-            else 0.0
-        )
+        route_count = route_count if route_count is not None else 0.0
 
-        severity = (
-            "high"
-            if route_count == 0
-            else "medium"
-        )
+        severity = "high" if route_count == 0 else "medium"
 
-        confidence = (
-            "high"
-            if route_count == 0
-            else "medium"
-        )
+        confidence = "high" if route_count == 0 else "medium"
 
         reason = (
             "No NAT traffic or connections were observed "
@@ -479,18 +360,14 @@ class NatGatewayAnalyzer(Analyzer):
             _statement(
                 name="traffic",
                 value=0,
-                description=(
-                    "Observed NAT traffic indicator."
-                ),
+                description=("Observed NAT traffic indicator."),
                 source=["CloudWatch"],
                 unit="bytes",
             ),
             _statement(
                 name="connections",
                 value=0,
-                description=(
-                    "Observed NAT connections."
-                ),
+                description=("Observed NAT connections."),
                 source=["CloudWatch"],
                 unit="count",
             ),
@@ -502,18 +379,13 @@ class NatGatewayAnalyzer(Analyzer):
                 _statement(
                     name="nat_route_count",
                     value=0,
-                    description=(
-                        "No discovered route references "
-                        "this NAT Gateway."
-                    ),
+                    description=("No discovered route references " "this NAT Gateway."),
                     source=["Topology"],
                     unit="routes",
                 )
             )
 
-            reason += (
-                " No discovered route depends on the gateway."
-            )
+            reason += " No discovered route depends on the gateway."
 
         return self._finding(
             context=context,
@@ -523,9 +395,7 @@ class NatGatewayAnalyzer(Analyzer):
             confidence=confidence,
             reason=reason,
             statements=statements,
-            limitations=LIMITATIONS[
-                "nat_gateway_idle"
-            ],
+            limitations=LIMITATIONS["nat_gateway_idle"],
             metadata={
                 "traffic_zero": True,
                 "connections_zero": True,
@@ -543,25 +413,15 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        network = self._network(
-            evidence
-        )
+        network = self._network(evidence)
 
-        quality = self._quality(
-            evidence
-        )
+        quality = self._quality(evidence)
 
-        if quality.get(
-            "topology_available"
-        ) is not True:
+        if quality.get("topology_available") is not True:
 
             return None
 
-        route_count = _number(
-            network.get(
-                "nat_route_count"
-            )
-        )
+        route_count = _number(network.get("nat_route_count"))
 
         if route_count is None:
             return None
@@ -570,37 +430,21 @@ class NatGatewayAnalyzer(Analyzer):
             return None
 
         # Avoid duplicating the stronger idle finding.
-        activity = self._activity(
-            evidence
-        )
+        activity = self._activity(evidence)
 
         if (
-            activity.get(
-                "traffic_zero"
-            ) is True
-            and
-            activity.get(
-                "connections_zero"
-            ) is True
+            activity.get("traffic_zero") is True
+            and activity.get("connections_zero") is True
         ):
             return None
 
-        subnet_count = _number(
-            network.get(
-                "route_dependent_subnet_count"
-            )
-        ) or 0.0
+        subnet_count = _number(network.get("route_dependent_subnet_count")) or 0.0
 
-        route_table_count = _number(
-            network.get(
-                "route_dependent_route_table_count"
-            )
-        ) or 0.0
-
-        reason = (
-            "No discovered route table currently references "
-            "this NAT Gateway."
+        route_table_count = (
+            _number(network.get("route_dependent_route_table_count")) or 0.0
         )
+
+        reason = "No discovered route table currently references " "this NAT Gateway."
 
         return self._finding(
             context=context,
@@ -613,9 +457,7 @@ class NatGatewayAnalyzer(Analyzer):
                 _statement(
                     name="nat_route_count",
                     value=0,
-                    description=(
-                        "Routes targeting the NAT Gateway."
-                    ),
+                    description=("Routes targeting the NAT Gateway."),
                     source=["Topology"],
                     unit="routes",
                 ),
@@ -623,8 +465,7 @@ class NatGatewayAnalyzer(Analyzer):
                     name="dependent_subnets",
                     value=subnet_count,
                     description=(
-                        "Subnets using routes that target "
-                        "the NAT Gateway."
+                        "Subnets using routes that target " "the NAT Gateway."
                     ),
                     source=["Topology"],
                     unit="subnets",
@@ -632,22 +473,16 @@ class NatGatewayAnalyzer(Analyzer):
                 _statement(
                     name="dependent_route_tables",
                     value=route_table_count,
-                    description=(
-                        "Route tables using the NAT Gateway."
-                    ),
+                    description=("Route tables using the NAT Gateway."),
                     source=["Topology"],
                     unit="route tables",
                 ),
             ],
-            limitations=LIMITATIONS[
-                "nat_gateway_no_route_dependency"
-            ],
+            limitations=LIMITATIONS["nat_gateway_no_route_dependency"],
             metadata={
                 "nat_route_count": 0,
-                "route_dependent_subnet_count":
-                    subnet_count,
-                "route_dependent_route_table_count":
-                    route_table_count,
+                "route_dependent_subnet_count": subnet_count,
+                "route_dependent_route_table_count": route_table_count,
             },
         )
 
@@ -661,36 +496,24 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        if not self._traffic_complete(
-            evidence
-        ):
+        if not self._traffic_complete(evidence):
             return None
 
-        activity = self._activity(
-            evidence
-        )
+        activity = self._activity(evidence)
 
-        if activity.get(
-            "traffic_observed"
-        ) is not True:
+        if activity.get("traffic_observed") is not True:
 
             return None
 
-        traffic_gib = _number(
-            activity.get(
-                "directional_traffic_gib"
-            )
-        )
+        traffic_gib = _number(activity.get("directional_traffic_gib"))
 
         if traffic_gib is None:
             return None
 
-        threshold = (
-            self._threshold(
-                context,
-                "low_traffic_gib",
-                DEFAULT_LOW_TRAFFIC_GIB,
-            )
+        threshold = self._threshold(
+            context,
+            "low_traffic_gib",
+            DEFAULT_LOW_TRAFFIC_GIB,
         )
 
         if traffic_gib <= 0:
@@ -719,31 +542,22 @@ class NatGatewayAnalyzer(Analyzer):
                         traffic_gib,
                         3,
                     ),
-                    description=(
-                        "Observed directional traffic "
-                        "indicator."
-                    ),
+                    description=("Observed directional traffic " "indicator."),
                     source=["CloudWatch"],
                     unit="GiB",
                 ),
                 _statement(
                     name="threshold",
                     value=threshold,
-                    description=(
-                        "Configured low-traffic threshold."
-                    ),
+                    description=("Configured low-traffic threshold."),
                     source=["Analysis profile"],
                     unit="GiB",
                 ),
             ],
-            limitations=LIMITATIONS[
-                "nat_gateway_low_traffic"
-            ],
+            limitations=LIMITATIONS["nat_gateway_low_traffic"],
             metadata={
-                "directional_traffic_gib":
-                    traffic_gib,
-                "threshold_gib":
-                    threshold,
+                "directional_traffic_gib": traffic_gib,
+                "threshold_gib": threshold,
             },
         )
 
@@ -757,27 +571,17 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        network = self._network(
-            evidence
-        )
+        network = self._network(evidence)
 
-        quality = self._quality(
-            evidence
-        )
+        quality = self._quality(evidence)
 
-        if quality.get(
-            "topology_available"
-        ) is not True:
+        if quality.get("topology_available") is not True:
 
             return None
 
-        if quality.get(
-            "traffic_available"
-        ) is not True:
+        if quality.get("traffic_available") is not True:
 
             return None
 
@@ -789,41 +593,22 @@ class NatGatewayAnalyzer(Analyzer):
         # evidence of the classic cross-AZ NAT architecture issue.
         # ----------------------------------------------------------
 
-        if configuration.get(
-            "availability_mode"
-        ) == "regional":
+        if configuration.get("availability_mode") == "regional":
 
             return None
 
-        if (
-            network.get(
-                "has_cross_az_route_dependency"
-            )
-            is not True
-        ):
+        if network.get("has_cross_az_route_dependency") is not True:
             return None
 
-        activity = self._activity(
-            evidence
-        )
+        activity = self._activity(evidence)
 
-        if activity.get(
-            "traffic_observed"
-        ) is not True:
+        if activity.get("traffic_observed") is not True:
 
             return None
 
-        cross_az_count = _number(
-            network.get(
-                "cross_az_subnet_count"
-            )
-        ) or 0.0
+        cross_az_count = _number(network.get("cross_az_subnet_count")) or 0.0
 
-        same_az_count = _number(
-            network.get(
-                "same_az_subnet_count"
-            )
-        ) or 0.0
+        same_az_count = _number(network.get("same_az_subnet_count")) or 0.0
 
         if cross_az_count <= 0:
             return None
@@ -845,10 +630,7 @@ class NatGatewayAnalyzer(Analyzer):
                 _statement(
                     name="cross_az_subnets",
                     value=cross_az_count,
-                    description=(
-                        "Dependent subnets in another "
-                        "Availability Zone."
-                    ),
+                    description=("Dependent subnets in another " "Availability Zone."),
                     source=["Topology"],
                     unit="subnets",
                 ),
@@ -856,35 +638,23 @@ class NatGatewayAnalyzer(Analyzer):
                     name="same_az_subnets",
                     value=same_az_count,
                     description=(
-                        "Dependent subnets in the gateway's "
-                        "Availability Zone."
+                        "Dependent subnets in the gateway's " "Availability Zone."
                     ),
                     source=["Topology"],
                     unit="subnets",
                 ),
                 _statement(
                     name="nat_availability_zone",
-                    value=configuration.get(
-                        "availability_zone"
-                    ),
-                    description=(
-                        "Availability Zone of the NAT Gateway."
-                    ),
+                    value=configuration.get("availability_zone"),
+                    description=("Availability Zone of the NAT Gateway."),
                     source=["Configuration"],
                 ),
             ],
-            limitations=LIMITATIONS[
-                "nat_gateway_cross_az"
-            ],
+            limitations=LIMITATIONS["nat_gateway_cross_az"],
             metadata={
-                "cross_az_subnet_count":
-                    cross_az_count,
-                "same_az_subnet_count":
-                    same_az_count,
-                "nat_availability_zone":
-                    configuration.get(
-                        "availability_zone"
-                    ),
+                "cross_az_subnet_count": cross_az_count,
+                "same_az_subnet_count": same_az_count,
+                "nat_availability_zone": configuration.get("availability_zone"),
             },
         )
 
@@ -898,69 +668,40 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        network = self._network(
-            evidence
-        )
+        network = self._network(evidence)
 
-        quality = self._quality(
-            evidence
-        )
+        quality = self._quality(evidence)
 
-        activity = self._activity(
-            evidence
-        )
+        activity = self._activity(evidence)
 
-        if quality.get(
-            "topology_available"
-        ) is not True:
+        if quality.get("topology_available") is not True:
 
             return None
 
-        if quality.get(
-            "traffic_available"
-        ) is not True:
+        if quality.get("traffic_available") is not True:
 
             return None
 
-        if activity.get(
-            "traffic_observed"
-        ) is not True:
+        if activity.get("traffic_observed") is not True:
 
             return None
 
-        subnet_count = _number(
-            network.get(
-                "route_dependent_subnet_count"
-            )
-        ) or 0.0
+        subnet_count = _number(network.get("route_dependent_subnet_count")) or 0.0
 
-        route_table_count = _number(
-            network.get(
-                "route_dependent_route_table_count"
-            )
-        ) or 0.0
+        route_table_count = (
+            _number(network.get("route_dependent_route_table_count")) or 0.0
+        )
 
-        endpoint_count = _number(
-            network.get(
-                "relevant_endpoint_count"
-            )
-        ) or 0.0
+        endpoint_count = _number(network.get("relevant_endpoint_count")) or 0.0
 
-        if (
-            subnet_count <= 0
-            and route_table_count <= 0
-        ):
+        if subnet_count <= 0 and route_table_count <= 0:
             return None
 
         if endpoint_count > 0:
             return None
 
         # Do not pretend we know the destination service.
-        candidate_services = _list(
-            network.get(
-                "relevant_endpoint_services"
-            )
-        )
+        candidate_services = _list(network.get("relevant_endpoint_services"))
 
         reason = (
             "The NAT Gateway carries observed traffic from "
@@ -980,9 +721,7 @@ class NatGatewayAnalyzer(Analyzer):
                 _statement(
                     name="dependent_subnets",
                     value=subnet_count,
-                    description=(
-                        "Subnets whose routes use the NAT Gateway."
-                    ),
+                    description=("Subnets whose routes use the NAT Gateway."),
                     source=["Topology"],
                     unit="subnets",
                 ),
@@ -997,20 +736,13 @@ class NatGatewayAnalyzer(Analyzer):
                     unit="endpoints",
                 ),
             ],
-            limitations=LIMITATIONS[
-                "nat_gateway_endpoint_opportunity"
-            ],
+            limitations=LIMITATIONS["nat_gateway_endpoint_opportunity"],
             metadata={
-                "route_dependent_subnet_count":
-                    subnet_count,
-                "route_dependent_route_table_count":
-                    route_table_count,
-                "relevant_endpoint_count":
-                    endpoint_count,
-                "candidate_services":
-                    candidate_services,
-                "traffic_service_attribution_available":
-                    False,
+                "route_dependent_subnet_count": subnet_count,
+                "route_dependent_route_table_count": route_table_count,
+                "relevant_endpoint_count": endpoint_count,
+                "candidate_services": candidate_services,
+                "traffic_service_attribution_available": False,
             },
         )
 
@@ -1024,36 +756,24 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        if not self._traffic_complete(
-            evidence
-        ):
+        if not self._traffic_complete(evidence):
             return None
 
-        activity = self._activity(
-            evidence
-        )
+        activity = self._activity(evidence)
 
-        if activity.get(
-            "traffic_observed"
-        ) is not True:
+        if activity.get("traffic_observed") is not True:
 
             return None
 
-        traffic_gib = _number(
-            activity.get(
-                "directional_traffic_gib"
-            )
-        )
+        traffic_gib = _number(activity.get("directional_traffic_gib"))
 
         if traffic_gib is None:
             return None
 
-        threshold = (
-            self._threshold(
-                context,
-                "high_traffic_gib",
-                DEFAULT_HIGH_TRAFFIC_GIB,
-            )
+        threshold = self._threshold(
+            context,
+            "high_traffic_gib",
+            DEFAULT_HIGH_TRAFFIC_GIB,
         )
 
         if traffic_gib <= threshold:
@@ -1079,31 +799,22 @@ class NatGatewayAnalyzer(Analyzer):
                         traffic_gib,
                         3,
                     ),
-                    description=(
-                        "Observed directional traffic "
-                        "indicator."
-                    ),
+                    description=("Observed directional traffic " "indicator."),
                     source=["CloudWatch"],
                     unit="GiB",
                 ),
                 _statement(
                     name="threshold",
                     value=threshold,
-                    description=(
-                        "Configured high-traffic threshold."
-                    ),
+                    description=("Configured high-traffic threshold."),
                     source=["Analysis profile"],
                     unit="GiB",
                 ),
             ],
-            limitations=LIMITATIONS[
-                "nat_gateway_high_data_processing"
-            ],
+            limitations=LIMITATIONS["nat_gateway_high_data_processing"],
             metadata={
-                "directional_traffic_gib":
-                    traffic_gib,
-                "threshold_gib":
-                    threshold,
+                "directional_traffic_gib": traffic_gib,
+                "threshold_gib": threshold,
             },
         )
 
@@ -1117,40 +828,26 @@ class NatGatewayAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        fleet = self._fleet(
-            evidence
-        )
+        fleet = self._fleet(evidence)
 
-        quality = self._quality(
-            evidence
-        )
+        quality = self._quality(evidence)
 
-        if quality.get(
-            "topology_available"
-        ) is not True:
+        if quality.get("topology_available") is not True:
 
             return None
 
-        if fleet.get(
-            "has_multiple_nats_in_same_az"
-        ) is not True:
+        if fleet.get("has_multiple_nats_in_same_az") is not True:
 
             return None
 
-        same_az_ids = _list(
-            fleet.get(
-                "same_az_alternative_nat_ids"
-            )
-        )
+        same_az_ids = _list(fleet.get("same_az_alternative_nat_ids"))
 
         # If there is no concrete alternative for this resource,
         # do not report an architecture finding.
         if not same_az_ids:
             return None
 
-        current_az = fleet.get(
-            "current_nat_availability_zone"
-        )
+        current_az = fleet.get("current_nat_availability_zone")
 
         reason = (
             "Multiple operational NAT Gateways were discovered "
@@ -1168,9 +865,7 @@ class NatGatewayAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="same_az_nat_gateways",
-                    value=len(
-                        same_az_ids
-                    ),
+                    value=len(same_az_ids),
                     description=(
                         "Other operational NAT Gateways "
                         "in the same Availability Zone."
@@ -1180,12 +875,8 @@ class NatGatewayAnalyzer(Analyzer):
                 ),
                 _statement(
                     name="same_vpc_nat_count",
-                    value=fleet.get(
-                        "nat_gateway_count"
-                    ),
-                    description=(
-                        "NAT Gateways discovered in the VPC."
-                    ),
+                    value=fleet.get("nat_gateway_count"),
+                    description=("NAT Gateways discovered in the VPC."),
                     source=["Topology"],
                     unit="gateways",
                 ),
@@ -1193,36 +884,18 @@ class NatGatewayAnalyzer(Analyzer):
                     name="same_az_alternatives",
                     value=same_az_ids,
                     description=(
-                        "Alternative NAT Gateway IDs in the "
-                        "same Availability Zone."
+                        "Alternative NAT Gateway IDs in the " "same Availability Zone."
                     ),
                     source=["Topology"],
                 ),
             ],
-            limitations=LIMITATIONS[
-                "nat_gateway_multiple_az"
-            ],
+            limitations=LIMITATIONS["nat_gateway_multiple_az"],
             metadata={
-                "availability_zone":
-                    current_az,
-
-                "same_az_alternative_nat_ids":
-                    same_az_ids,
-
-                "same_az_alternative_nat_count":
-                    len(
-                        same_az_ids
-                    ),
-
-                "same_vpc_nat_count":
-                    fleet.get(
-                        "nat_gateway_count"
-                    ),
-
-                "operational_nat_count":
-                    fleet.get(
-                        "operational_nat_gateway_count"
-                    ),
+                "availability_zone": current_az,
+                "same_az_alternative_nat_ids": same_az_ids,
+                "same_az_alternative_nat_count": len(same_az_ids),
+                "same_vpc_nat_count": fleet.get("nat_gateway_count"),
+                "operational_nat_count": fleet.get("operational_nat_gateway_count"),
             },
         )
 
@@ -1242,17 +915,9 @@ class NatGatewayAnalyzer(Analyzer):
         # This keeps the analyzer usable even if the collection
         # profile is not copied into AnalysisContext.
         candidates = (
-            context.resource.get(
-                "analysis_profile"
-            ),
-
-            context.resource.get(
-                "optimization_profile"
-            ),
-
-            context.resource.get(
-                "analyzer_config"
-            ),
+            context.resource.get("analysis_profile"),
+            context.resource.get("optimization_profile"),
+            context.resource.get("analyzer_config"),
         )
 
         for candidate in candidates:
@@ -1263,16 +928,9 @@ class NatGatewayAnalyzer(Analyzer):
             ):
                 continue
 
-            value = _number(
-                candidate.get(
-                    name
-                )
-            )
+            value = _number(candidate.get(name))
 
-            if (
-                value is not None
-                and value >= 0
-            ):
+            if value is not None and value >= 0:
 
                 return value
 
@@ -1297,77 +955,33 @@ class NatGatewayAnalyzer(Analyzer):
     ) -> Finding:
 
         final_metadata = {
-            "region":
-                context.region,
-
+            "region": context.region,
             **metadata,
         }
 
         return Finding(
-            finding_type=
+            finding_type=finding_type,
+            title=TITLES.get(
                 finding_type,
-
-            title=
-                TITLES.get(
-                    finding_type,
-                    finding_type,
-                ),
-
-            resource_type=(
-                context.resource_type
-                or "nat_gateway"
+                finding_type,
             ),
-
-            resource_id=(
-                context.resource_id
-                or "unknown"
+            resource_type=(context.resource_type or "nat_gateway"),
+            resource_id=(context.resource_id or "unknown"),
+            analyzer=self.name,
+            analyzer_version=self.version,
+            severity=str(severity).lower(),
+            confidence=str(confidence).lower(),
+            reason=reason,
+            conditions=statements,
+            evidence=self._build_evidence(
+                context,
+                evidence,
             ),
-
-            analyzer=
-                self.name,
-
-            analyzer_version=
-                self.version,
-
-            severity=
-                str(
-                    severity
-                ).lower(),
-
-            confidence=
-                str(
-                    confidence
-                ).lower(),
-
-            reason=
-                reason,
-
-            conditions=
-                statements,
-
-            evidence=
-                self._build_evidence(
-                    context,
-                    evidence,
-                ),
-
-            observation_period=
-                self._observation_period(
-                    context
-                ),
-
-            limitations=
-                list(
-                    limitations
-                ),
-
-            metadata=
-                final_metadata,
-
+            observation_period=self._observation_period(context),
+            limitations=list(limitations),
+            metadata=final_metadata,
             # This analyzer only produces cost-oriented findings.
-            recommendation_eligible=
-                True,
-
+            recommendation_eligible=True,
             impact={},
         )
 
@@ -1382,77 +996,33 @@ class NatGatewayAnalyzer(Analyzer):
     ) -> Evidence:
 
         metrics = {
-            name:
-                context.metric_summary(
-                    name
-                )
-            for name
-            in _dict(
-                context.metrics()
-            )
+            name: context.metric_summary(name) for name in _dict(context.metrics())
         }
 
         configuration = {
-            key:
-                value
-            for key, value
-            in _dict(
-                context.configuration()
-            ).items()
+            key: value
+            for key, value in _dict(context.configuration()).items()
             if key != "tags"
         }
 
-        network = self._network(
-            optimization_evidence
-        )
+        network = self._network(optimization_evidence)
 
-        activity = self._activity(
-            optimization_evidence
-        )
+        activity = self._activity(optimization_evidence)
 
-        fleet = self._fleet(
-            optimization_evidence
-        )
+        fleet = self._fleet(optimization_evidence)
 
         return Evidence(
-            metrics=
-                metrics,
-
-            configuration=
-                configuration,
-
-            topology=
-                _dict(
-                    context.topology()
-                ),
-
-            resource=
-                _dict(
-                    optimization_evidence.get(
-                        "resource"
-                    )
-                ),
-
+            metrics=metrics,
+            configuration=configuration,
+            topology=_dict(context.topology()),
+            resource=_dict(optimization_evidence.get("resource")),
             derived={
-                "activity":
-                    activity,
-
-                "network":
-                    network,
-
-                "fleet":
-                    fleet,
+                "activity": activity,
+                "network": network,
+                "fleet": fleet,
             },
-
-            billing=
-                _dict(
-                    context.billing()
-                ),
-
-            data_quality=
-                self._quality(
-                    optimization_evidence
-                ),
+            billing=_dict(context.billing()),
+            data_quality=self._quality(optimization_evidence),
         )
 
     # ==============================================================
@@ -1464,27 +1034,11 @@ class NatGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> ObservationPeriod | None:
 
-        cloudwatch = _dict(
-            context.cloudwatch()
-        )
+        cloudwatch = _dict(context.cloudwatch())
 
-        start = (
-            cloudwatch.get(
-                "start"
-            )
-            or cloudwatch.get(
-                "metric_start"
-            )
-        )
+        start = cloudwatch.get("start") or cloudwatch.get("metric_start")
 
-        end = (
-            cloudwatch.get(
-                "end"
-            )
-            or cloudwatch.get(
-                "metric_end"
-            )
-        )
+        end = cloudwatch.get("end") or cloudwatch.get("metric_end")
 
         if not start and not end:
             return None

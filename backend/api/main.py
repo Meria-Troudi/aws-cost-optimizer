@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.bootstrap import ensure_project_paths
+
 ensure_project_paths()
 
 from fastapi import FastAPI
@@ -21,13 +22,10 @@ from backend.api.routes.recommendations import (
     router as recommendations_router,
 )
 
-
 app = FastAPI(
     title="AWS Cost Optimizer API",
     version="1.0.0",
-    description=(
-        "AWS FinOps cost optimization platform API."
-    ),
+    description=("AWS FinOps cost optimization platform API."),
 )
 
 

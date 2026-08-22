@@ -53,10 +53,7 @@ class EBSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        resource_type = (
-            context.resource_type
-            or ""
-        ).lower()
+        resource_type = (context.resource_type or "").lower()
 
         return resource_type in {
             "ebs",
@@ -73,17 +70,12 @@ class EBSAnalyzer(Analyzer):
         if not self.supports(context):
             return []
 
-        volume = self._volume(
-            context
-        )
+        volume = self._volume(context)
 
         if not volume:
             return []
 
-        volume_id = (
-            context.resource_id
-            or volume.get("volume_id")
-        )
+        volume_id = context.resource_id or volume.get("volume_id")
 
         if not volume_id:
             return []
@@ -94,79 +86,59 @@ class EBSAnalyzer(Analyzer):
         # 1. Unattached volume
         # ---------------------------------------------------------
 
-        unattached = self._is_unattached(
-            volume
-        )
+        unattached = self._is_unattached(volume)
 
         if unattached:
 
-            finding = (
-                self._unattached_volume_finding(
-                    context,
-                    volume,
-                    str(volume_id),
-                )
+            finding = self._unattached_volume_finding(
+                context,
+                volume,
+                str(volume_id),
             )
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
         # ---------------------------------------------------------
         # 2. gp2 -> gp3
         # ---------------------------------------------------------
 
-        if self._is_gp2(
-            volume
-        ):
+        if self._is_gp2(volume):
 
-            finding = (
-                self._gp2_to_gp3_finding(
-                    context,
-                    volume,
-                    str(volume_id),
-                )
+            finding = self._gp2_to_gp3_finding(
+                context,
+                volume,
+                str(volume_id),
             )
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
         # ---------------------------------------------------------
         # 3. IOPS utilization
         # ---------------------------------------------------------
 
-        finding = (
-            self._iops_finding(
-                context,
-                volume,
-                str(volume_id),
-            )
+        finding = self._iops_finding(
+            context,
+            volume,
+            str(volume_id),
         )
 
         if finding:
-            findings.append(
-                finding
-            )
+            findings.append(finding)
 
         # ---------------------------------------------------------
         # 4. Throughput utilization
         # ---------------------------------------------------------
 
-        finding = (
-            self._throughput_finding(
-                context,
-                volume,
-                str(volume_id),
-            )
+        finding = self._throughput_finding(
+            context,
+            volume,
+            str(volume_id),
         )
 
         if finding:
-            findings.append(
-                finding
-            )
+            findings.append(finding)
 
         return findings
 
@@ -179,23 +151,17 @@ class EBSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        configuration = (
-            context.configuration()
-        )
+        configuration = context.configuration()
 
         if not configuration:
             return {}
 
         # Direct normalized collector document.
-        if configuration.get(
-            "volume_id"
-        ):
+        if configuration.get("volume_id"):
             return configuration
 
         # Some collection flows wrap the resource.
-        volume = configuration.get(
-            "volume"
-        )
+        volume = configuration.get("volume")
 
         if isinstance(
             volume,
@@ -204,14 +170,15 @@ class EBSAnalyzer(Analyzer):
             return volume
 
         # Some collectors expose a single-item list.
-        volumes = configuration.get(
-            "volumes"
-        )
+        volumes = configuration.get("volumes")
 
-        if isinstance(
-            volumes,
-            list,
-        ) and volumes:
+        if (
+            isinstance(
+                volumes,
+                list,
+            )
+            and volumes
+        ):
 
             first = volumes[0]
 
@@ -234,42 +201,25 @@ class EBSAnalyzer(Analyzer):
         volume_id: str,
     ) -> Finding | None:
 
-        size = volume.get(
-            "size_gib"
-        )
+        size = volume.get("size_gib")
 
-        state = volume.get(
-            "state"
-        )
+        state = volume.get("state")
 
         conditions = [
             EvidenceStatement(
                 name="volume attached",
                 value=False,
-                description=(
-                    "The EBS volume has no current "
-                    "EC2 attachment."
-                ),
-                source=[
-                    "EC2 DescribeVolumes"
-                ],
-                evidence_keys=[
-                    "configuration.attached"
-                ],
+                description=("The EBS volume has no current " "EC2 attachment."),
+                source=["EC2 DescribeVolumes"],
+                evidence_keys=["configuration.attached"],
                 observed=True,
             ),
             EvidenceStatement(
                 name="volume state",
                 value=state,
-                description=(
-                    "Current EBS volume state."
-                ),
-                source=[
-                    "EC2 DescribeVolumes"
-                ],
-                evidence_keys=[
-                    "configuration.state"
-                ],
+                description=("Current EBS volume state."),
+                source=["EC2 DescribeVolumes"],
+                evidence_keys=["configuration.state"],
                 observed=state is not None,
             ),
         ]
@@ -287,10 +237,7 @@ class EBSAnalyzer(Analyzer):
         return Finding(
             finding_type="unattached_ebs_volume",
             title="Review unattached EBS volume",
-            resource_type=(
-                context.resource_type
-                or "ebs_volume"
-            ),
+            resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -299,19 +246,11 @@ class EBSAnalyzer(Analyzer):
             reason=(
                 f"EBS volume {volume_id} is not currently "
                 f"attached to an EC2 instance"
-                + (
-                    f" and has {size} GiB provisioned."
-                    if size is not None
-                    else "."
-                )
+                + (f" and has {size} GiB provisioned." if size is not None else ".")
             ),
             conditions=conditions,
             evidence=evidence,
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
+            observation_period=(self._observation_period(context)),
             limitations=[
                 (
                     "Unattached state alone does not prove "
@@ -328,22 +267,11 @@ class EBSAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "region":
-                    context.region,
-                "volume_type":
-                    volume.get(
-                        "volume_type"
-                    ),
-                "size_gib":
-                    size,
-                "encrypted":
-                    volume.get(
-                        "encrypted"
-                    ),
-                "snapshot_id":
-                    volume.get(
-                        "snapshot_id"
-                    ),
+                "region": context.region,
+                "volume_type": volume.get("volume_type"),
+                "size_gib": size,
+                "encrypted": volume.get("encrypted"),
+                "snapshot_id": volume.get("snapshot_id"),
             },
             recommendation_eligible=True,
             aggregation_scope="resource",
@@ -365,34 +293,20 @@ class EBSAnalyzer(Analyzer):
         volume_id: str,
     ) -> Finding | None:
 
-        volume_type = str(
-            volume.get(
-                "volume_type"
-            )
-            or ""
-        ).lower()
+        volume_type = str(volume.get("volume_type") or "").lower()
 
         if volume_type != "gp2":
             return None
 
-        size = volume.get(
-            "size_gib"
-        )
+        size = volume.get("size_gib")
 
         conditions = [
             EvidenceStatement(
                 name="volume type",
                 value="gp2",
-                description=(
-                    "The EBS volume is using the gp2 "
-                    "volume type."
-                ),
-                source=[
-                    "EC2 DescribeVolumes"
-                ],
-                evidence_keys=[
-                    "configuration.volume_type"
-                ],
+                description=("The EBS volume is using the gp2 " "volume type."),
+                source=["EC2 DescribeVolumes"],
+                evidence_keys=["configuration.volume_type"],
                 observed=True,
             ),
             EvidenceStatement(
@@ -402,9 +316,7 @@ class EBSAnalyzer(Analyzer):
                     "gp3 is the recommended general-purpose "
                     "SSD generation for a migration review."
                 ),
-                source=[
-                    "AWS EBS configuration"
-                ],
+                source=["AWS EBS configuration"],
                 evidence_keys=[],
                 observed=True,
             ),
@@ -418,10 +330,7 @@ class EBSAnalyzer(Analyzer):
         return Finding(
             finding_type="ebs_gp2_to_gp3",
             title="Review gp2 EBS volume for gp3 migration",
-            resource_type=(
-                context.resource_type
-                or "ebs_volume"
-            ),
+            resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -429,11 +338,7 @@ class EBSAnalyzer(Analyzer):
             confidence="high",
             reason=(
                 f"EBS volume {volume_id} uses gp2"
-                + (
-                    f" with {size} GiB provisioned."
-                    if size is not None
-                    else "."
-                )
+                + (f" with {size} GiB provisioned." if size is not None else ".")
                 + (
                     " Review migration to gp3 for "
                     "potential storage-cost and flexibility "
@@ -442,35 +347,24 @@ class EBSAnalyzer(Analyzer):
             ),
             conditions=conditions,
             evidence=evidence,
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
+            observation_period=(self._observation_period(context)),
             limitations=[
                 (
                     "Migration suitability depends on the "
                     "volume's IOPS, throughput, workload, "
                     "and application requirements."
                 ),
-                (
-                    "This finding does not claim a specific "
-                    "savings amount."
-                ),
+                ("This finding does not claim a specific " "savings amount."),
                 (
                     "Actual pricing depends on region and "
                     "provisioned gp3 configuration."
                 ),
             ],
             metadata={
-                "region":
-                    context.region,
-                "current_volume_type":
-                    "gp2",
-                "recommended_volume_type":
-                    "gp3",
-                "size_gib":
-                    size,
+                "region": context.region,
+                "current_volume_type": "gp2",
+                "recommended_volume_type": "gp3",
+                "size_gib": size,
             },
             recommendation_eligible=True,
             aggregation_scope="resource",
@@ -491,21 +385,12 @@ class EBSAnalyzer(Analyzer):
         volume_id: str,
     ) -> Finding | None:
 
-        provisioned = self._numeric(
-            volume.get(
-                "iops"
-            )
-        )
+        provisioned = self._numeric(volume.get("iops"))
 
         if provisioned is None:
             return None
 
-        volume_type = str(
-            volume.get(
-                "volume_type"
-            )
-            or ""
-        ).lower()
+        volume_type = str(volume.get("volume_type") or "").lower()
 
         # Avoid applying provisioned-IOPS logic to volume
         # classes where IOPS is not an independently meaningful
@@ -517,40 +402,24 @@ class EBSAnalyzer(Analyzer):
         }:
             return None
 
-        metric_name = (
-            "VolumeReadOps"
-        )
+        metric_name = "VolumeReadOps"
 
-        metric = context.metric(
-            metric_name
-        )
+        metric = context.metric(metric_name)
 
         if not metric:
             return None
 
-        datapoints = (
-            context.metric_datapoints(
-                metric_name
-            )
-        )
+        datapoints = context.metric_datapoints(metric_name)
 
         if datapoints < self.MIN_OBSERVATION_DATAPOINTS:
             return None
 
-        observed = (
-            context.metric_value(
-                metric_name
-            )
-        )
+        observed = context.metric_value(metric_name)
 
         if observed is None:
             return None
 
-        utilization = (
-            observed / provisioned
-            if provisioned > 0
-            else None
-        )
+        utilization = observed / provisioned if provisioned > 0 else None
 
         if utilization is None:
             return None
@@ -562,15 +431,9 @@ class EBSAnalyzer(Analyzer):
             EvidenceStatement(
                 name="provisioned IOPS",
                 value=provisioned,
-                description=(
-                    "IOPS provisioned for the EBS volume."
-                ),
-                source=[
-                    "EC2 DescribeVolumes"
-                ],
-                evidence_keys=[
-                    "configuration.iops"
-                ],
+                description=("IOPS provisioned for the EBS volume."),
+                source=["EC2 DescribeVolumes"],
+                evidence_keys=["configuration.iops"],
                 unit="IOPS",
                 observed=True,
             ),
@@ -581,13 +444,8 @@ class EBSAnalyzer(Analyzer):
                     "Observed CloudWatch read-operation "
                     "value used as utilization evidence."
                 ),
-                source=[
-                    "CloudWatch"
-                ],
-                evidence_keys=[
-                    f"observations.cloudwatch.metrics."
-                    f"{metric_name}"
-                ],
+                source=["CloudWatch"],
+                evidence_keys=[f"observations.cloudwatch.metrics." f"{metric_name}"],
                 unit="operations",
                 observed=True,
             ),
@@ -599,13 +457,8 @@ class EBSAnalyzer(Analyzer):
                     "provisioned IOPS. This is an approximation "
                     "and depends on the metric period."
                 ),
-                source=[
-                    "CloudWatch",
-                    "derived"
-                ],
-                evidence_keys=[
-                    "observations.derived.iops_utilization"
-                ],
+                source=["CloudWatch", "derived"],
+                evidence_keys=["observations.derived.iops_utilization"],
                 unit="ratio",
                 observed=True,
             ),
@@ -616,16 +469,11 @@ class EBSAnalyzer(Analyzer):
             volume,
             extra={
                 "derived": {
-                    "iops_utilization":
-                        utilization,
-                    "provisioned_iops":
-                        provisioned,
-                    "observed_operations":
-                        observed,
-                    "metric":
-                        metric_name,
-                    "datapoints":
-                        datapoints,
+                    "iops_utilization": utilization,
+                    "provisioned_iops": provisioned,
+                    "observed_operations": observed,
+                    "metric": metric_name,
+                    "datapoints": datapoints,
                 }
             },
         )
@@ -633,10 +481,7 @@ class EBSAnalyzer(Analyzer):
         return Finding(
             finding_type="ebs_low_iops_utilization",
             title="Review provisioned EBS IOPS",
-            resource_type=(
-                context.resource_type
-                or "ebs_volume"
-            ),
+            resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -650,39 +495,26 @@ class EBSAnalyzer(Analyzer):
             ),
             conditions=conditions,
             evidence=evidence,
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
+            observation_period=(self._observation_period(context)),
             limitations=[
                 (
                     "The utilization calculation is an "
                     "approximation based on the available "
                     "CloudWatch metric and its period."
                 ),
-                (
-                    "Read operations alone do not represent "
-                    "total I/O demand."
-                ),
+                ("Read operations alone do not represent " "total I/O demand."),
                 (
                     "Peak workload requirements must be "
                     "considered before changing provisioned IOPS."
                 ),
             ],
             metadata={
-                "region":
-                    context.region,
-                "volume_type":
-                    volume_type,
-                "provisioned_iops":
-                    provisioned,
-                "observed_metric":
-                    metric_name,
-                "observed_value":
-                    observed,
-                "utilization":
-                    utilization,
+                "region": context.region,
+                "volume_type": volume_type,
+                "provisioned_iops": provisioned,
+                "observed_metric": metric_name,
+                "observed_value": observed,
+                "utilization": utilization,
             },
             recommendation_eligible=True,
             aggregation_scope="resource",
@@ -703,11 +535,7 @@ class EBSAnalyzer(Analyzer):
         volume_id: str,
     ) -> Finding | None:
 
-        provisioned = self._numeric(
-            volume.get(
-                "throughput_mibps"
-            )
-        )
+        provisioned = self._numeric(volume.get("throughput_mibps"))
 
         if provisioned is None:
             return None
@@ -715,100 +543,58 @@ class EBSAnalyzer(Analyzer):
         if provisioned <= 0:
             return None
 
-        volume_type = str(
-            volume.get(
-                "volume_type"
-            )
-            or ""
-        ).lower()
+        volume_type = str(volume.get("volume_type") or "").lower()
 
         if volume_type != "gp3":
             return None
 
-        metric_name = (
-            "VolumeWriteBytes"
-        )
+        metric_name = "VolumeWriteBytes"
 
-        metric = context.metric(
-            metric_name
-        )
+        metric = context.metric(metric_name)
 
         if not metric:
             return None
 
-        datapoints = (
-            context.metric_datapoints(
-                metric_name
-            )
-        )
+        datapoints = context.metric_datapoints(metric_name)
 
         if datapoints < self.MIN_OBSERVATION_DATAPOINTS:
             return None
 
-        observed = context.metric_value(
-            metric_name
-        )
+        observed = context.metric_value(metric_name)
 
         if observed is None:
             return None
 
         # CloudWatch byte metrics need a period conversion
         # before they can be compared to MiB/s.
-        period_seconds = (
-            self._metric_period_seconds(
-                metric
-            )
-        )
+        period_seconds = self._metric_period_seconds(metric)
 
         if period_seconds is None:
             return None
 
-        observed_mibps = (
-            observed
-            / period_seconds
-            / 1024
-            / 1024
-        )
+        observed_mibps = observed / period_seconds / 1024 / 1024
 
-        utilization = (
-            observed_mibps
-            / provisioned
-        )
+        utilization = observed_mibps / provisioned
 
-        if utilization >= (
-            self.LOW_THROUGHPUT_UTILIZATION
-        ):
+        if utilization >= (self.LOW_THROUGHPUT_UTILIZATION):
             return None
 
         conditions = [
             EvidenceStatement(
                 name="provisioned throughput",
                 value=provisioned,
-                description=(
-                    "Throughput provisioned for the gp3 volume."
-                ),
-                source=[
-                    "EC2 DescribeVolumes"
-                ],
-                evidence_keys=[
-                    "configuration.throughput_mibps"
-                ],
+                description=("Throughput provisioned for the gp3 volume."),
+                source=["EC2 DescribeVolumes"],
+                evidence_keys=["configuration.throughput_mibps"],
                 unit="MiB/s",
                 observed=True,
             ),
             EvidenceStatement(
                 name="observed write bytes",
                 value=observed,
-                description=(
-                    "Observed CloudWatch write-byte value."
-                ),
-                source=[
-                    "CloudWatch"
-                ],
-                evidence_keys=[
-                    f"observations.cloudwatch.metrics."
-                    f"{metric_name}"
-                ],
+                description=("Observed CloudWatch write-byte value."),
+                source=["CloudWatch"],
+                evidence_keys=[f"observations.cloudwatch.metrics." f"{metric_name}"],
                 unit="bytes",
                 observed=True,
             ),
@@ -816,16 +602,10 @@ class EBSAnalyzer(Analyzer):
                 name="estimated throughput utilization",
                 value=utilization,
                 description=(
-                    "Observed throughput divided by "
-                    "provisioned throughput."
+                    "Observed throughput divided by " "provisioned throughput."
                 ),
-                source=[
-                    "CloudWatch",
-                    "derived"
-                ],
-                evidence_keys=[
-                    "observations.derived.throughput_utilization"
-                ],
+                source=["CloudWatch", "derived"],
+                evidence_keys=["observations.derived.throughput_utilization"],
                 unit="ratio",
                 observed=True,
             ),
@@ -836,20 +616,13 @@ class EBSAnalyzer(Analyzer):
             volume,
             extra={
                 "derived": {
-                    "throughput_utilization":
-                        utilization,
-                    "provisioned_throughput_mibps":
-                        provisioned,
-                    "observed_write_bytes":
-                        observed,
-                    "observed_throughput_mibps":
-                        observed_mibps,
-                    "metric_period_seconds":
-                        period_seconds,
-                    "metric":
-                        metric_name,
-                    "datapoints":
-                        datapoints,
+                    "throughput_utilization": utilization,
+                    "provisioned_throughput_mibps": provisioned,
+                    "observed_write_bytes": observed,
+                    "observed_throughput_mibps": observed_mibps,
+                    "metric_period_seconds": period_seconds,
+                    "metric": metric_name,
+                    "datapoints": datapoints,
                 }
             },
         )
@@ -857,10 +630,7 @@ class EBSAnalyzer(Analyzer):
         return Finding(
             finding_type="ebs_low_throughput_utilization",
             title="Review provisioned EBS throughput",
-            resource_type=(
-                context.resource_type
-                or "ebs_volume"
-            ),
+            resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -875,16 +645,9 @@ class EBSAnalyzer(Analyzer):
             ),
             conditions=conditions,
             evidence=evidence,
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
+            observation_period=(self._observation_period(context)),
             limitations=[
-                (
-                    "The calculation depends on the "
-                    "CloudWatch metric period."
-                ),
+                ("The calculation depends on the " "CloudWatch metric period."),
                 (
                     "Write throughput alone does not "
                     "represent total workload throughput."
@@ -895,16 +658,11 @@ class EBSAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "region":
-                    context.region,
-                "volume_type":
-                    volume_type,
-                "provisioned_throughput_mibps":
-                    provisioned,
-                "observed_throughput_mibps":
-                    observed_mibps,
-                "utilization":
-                    utilization,
+                "region": context.region,
+                "volume_type": volume_type,
+                "provisioned_throughput_mibps": provisioned,
+                "observed_throughput_mibps": observed_mibps,
+                "utilization": utilization,
             },
             recommendation_eligible=True,
             aggregation_scope="resource",
@@ -927,42 +685,20 @@ class EBSAnalyzer(Analyzer):
     ) -> Evidence:
 
         resource = {
-            "resource_id":
-                context.resource_id,
-
-            "resource_type":
-                context.resource_type
-                or "ebs_volume",
-
-            "region":
-                context.region,
-
-            "account_id":
-                context.account_id,
-
-            "configuration":
-                dict(volume),
-
-            "data_quality":
-                context.data_quality(),
-
-            "observation_period":
-                context.period(),
+            "resource_id": context.resource_id,
+            "resource_type": context.resource_type or "ebs_volume",
+            "region": context.region,
+            "account_id": context.account_id,
+            "configuration": dict(volume),
+            "data_quality": context.data_quality(),
+            "observation_period": context.period(),
         }
 
         if extra:
 
-            resource.update(
-                extra
-            )
+            resource.update(extra)
 
-        return Evidence(
-            billing=dict(
-                context.billing()
-                or {}
-            ),
-            resource=resource
-        )
+        return Evidence(billing=dict(context.billing() or {}), resource=resource)
 
     # =============================================================
     # Helpers
@@ -973,31 +709,20 @@ class EBSAnalyzer(Analyzer):
         volume: dict[str, Any],
     ) -> bool:
 
-        attached = volume.get(
-            "attached"
-        )
+        attached = volume.get("attached")
 
         if attached is not None:
             return attached is False
 
-        attachments = volume.get(
-            "attachments"
-        )
+        attachments = volume.get("attachments")
 
         if isinstance(
             attachments,
             list,
         ):
-            return len(
-                attachments
-            ) == 0
+            return len(attachments) == 0
 
-        state = str(
-            volume.get(
-                "state"
-            )
-            or ""
-        ).lower()
+        state = str(volume.get("state") or "").lower()
 
         return state == "available"
 
@@ -1006,15 +731,7 @@ class EBSAnalyzer(Analyzer):
         volume: dict[str, Any],
     ) -> bool:
 
-        return (
-            str(
-                volume.get(
-                    "volume_type"
-                )
-                or ""
-            ).lower()
-            == "gp2"
-        )
+        return str(volume.get("volume_type") or "").lower() == "gp2"
 
     @staticmethod
     def _numeric(
@@ -1038,9 +755,7 @@ class EBSAnalyzer(Analyzer):
             if value is None:
                 return None
 
-            return float(
-                str(value).strip()
-            )
+            return float(str(value).strip())
 
         except (
             TypeError,
@@ -1058,34 +773,34 @@ class EBSAnalyzer(Analyzer):
             "period",
         ):
 
-            value = metric.get(
-                key
-            )
+            value = metric.get(key)
 
-            if isinstance(
-                value,
-                (int, float),
-            ) and value > 0:
+            if (
+                isinstance(
+                    value,
+                    (int, float),
+                )
+                and value > 0
+            ):
 
                 return float(value)
 
-        summary = metric.get(
-            "summary"
-        )
+        summary = metric.get("summary")
 
         if isinstance(
             summary,
             dict,
         ):
 
-            value = summary.get(
-                "period_seconds"
-            )
+            value = summary.get("period_seconds")
 
-            if isinstance(
-                value,
-                (int, float),
-            ) and value > 0:
+            if (
+                isinstance(
+                    value,
+                    (int, float),
+                )
+                and value > 0
+            ):
 
                 return float(value)
 
@@ -1102,19 +817,7 @@ class EBSAnalyzer(Analyzer):
             return None
 
         return ObservationPeriod(
-            start=(
-                period.get(
-                    "start"
-                )
-            ),
-            end=(
-                period.get(
-                    "end"
-                )
-            ),
-            duration_seconds=(
-                period.get(
-                    "duration_seconds"
-                )
-            ),
+            start=(period.get("start")),
+            end=(period.get("end")),
+            duration_seconds=(period.get("duration_seconds")),
         )

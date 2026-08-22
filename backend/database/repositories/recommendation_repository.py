@@ -92,78 +92,42 @@ def save_recommendations(
         if not isinstance(data, dict):
             continue
 
-        recommendation_key = str(
-            data.get("recommendation_key")
-            or ""
-        ).strip()
+        recommendation_key = str(data.get("recommendation_key") or "").strip()
 
         if not recommendation_key:
             continue
 
-        recommendation_variant = str(
-            data.get("recommendation_variant")
-            or ""
-        ).strip()
+        recommendation_variant = str(data.get("recommendation_variant") or "").strip()
 
-        recommendation_scope = str(
-            data.get("recommendation_scope")
-            or "region"
-        ).strip().lower()
+        recommendation_scope = (
+            str(data.get("recommendation_scope") or "region").strip().lower()
+        )
 
-        resource_type = str(
-            data.get("resource_type")
-            or "unknown"
-        ).strip()
+        resource_type = str(data.get("resource_type") or "unknown").strip()
 
-        scope = str(
-            data.get("scope")
-            or ""
-        ).strip()
+        scope = str(data.get("scope") or "").strip()
 
         if not scope:
-            raise ValueError(
-                "Recommendation scope identity is required."
-            )
+            raise ValueError("Recommendation scope identity is required.")
 
-        category = str(
-            data.get("category")
-            or "cost_optimization"
-        ).strip()
+        category = str(data.get("category") or "cost_optimization").strip()
 
-        service = str(
-            data.get("service")
-            or "Unknown service"
-        ).strip()
+        service = str(data.get("service") or "Unknown service").strip()
 
-        priority = str(
-            data.get("priority")
-            or "low"
-        ).strip().lower()
+        priority = str(data.get("priority") or "low").strip().lower()
 
-        confidence = str(
-            data.get("confidence")
-            or "low"
-        ).strip().lower()
+        confidence = str(data.get("confidence") or "low").strip().lower()
 
-        status = str(
-            data.get("status")
-            or "requires_validation"
-        ).strip().lower()
+        status = str(data.get("status") or "requires_validation").strip().lower()
 
-        finding_ids = _int_list(
-            data.get("source_finding_ids")
-        )
+        finding_ids = _int_list(data.get("source_finding_ids"))
 
         if not finding_ids:
 
-            legacy_id = data.get(
-                "finding_id"
-            )
+            legacy_id = data.get("finding_id")
 
             if legacy_id is not None:
-                finding_ids = _int_list(
-                    [legacy_id]
-                )
+                finding_ids = _int_list([legacy_id])
 
         source_findings: list[Finding] = []
 
@@ -171,20 +135,12 @@ def save_recommendations(
 
             source_findings = (
                 db.query(Finding)
-                .filter(
-                    Finding.scan_run_id
-                    == scan_run_id
-                )
-                .filter(
-                    Finding.id.in_(finding_ids)
-                )
+                .filter(Finding.scan_run_id == scan_run_id)
+                .filter(Finding.id.in_(finding_ids))
                 .all()
             )
 
-        finding_by_id = {
-            finding.id: finding
-            for finding in source_findings
-        }
+        finding_by_id = {finding.id: finding for finding in source_findings}
 
         ordered_findings = [
             finding_by_id[finding_id]
@@ -194,46 +150,22 @@ def save_recommendations(
 
         if not ordered_findings:
             raise ValueError(
-                "Recommendation must reference at least "
-                "one persisted finding."
+                "Recommendation must reference at least " "one persisted finding."
             )
 
-        affected_resources = _string_list(
-            data.get("affected_resources")
-        )
+        affected_resources = _string_list(data.get("affected_resources"))
 
-        source_finding_types = _string_list(
-            data.get("source_finding_types")
-        )
+        source_finding_types = _string_list(data.get("source_finding_types"))
 
-        primary_finding_id = (
-            ordered_findings[0].id
-            if ordered_findings
-            else None
-        )
+        primary_finding_id = ordered_findings[0].id if ordered_findings else None
 
         recommendation = (
             db.query(Recommendation)
-            .filter(
-                Recommendation.scan_run_id
-                == scan_run_id
-            )
-            .filter(
-                Recommendation.recommendation_key
-                == recommendation_key
-            )
-            .filter(
-                Recommendation.recommendation_variant
-                == recommendation_variant
-            )
-            .filter(
-                Recommendation.resource_type
-                == resource_type
-            )
-            .filter(
-                Recommendation.scope
-                == scope
-            )
+            .filter(Recommendation.scan_run_id == scan_run_id)
+            .filter(Recommendation.recommendation_key == recommendation_key)
+            .filter(Recommendation.recommendation_variant == recommendation_variant)
+            .filter(Recommendation.resource_type == resource_type)
+            .filter(Recommendation.scope == scope)
             .one_or_none()
         )
 
@@ -241,69 +173,23 @@ def save_recommendations(
 
             recommendation = Recommendation(
                 scan_run_id=scan_run_id,
-
                 finding_id=primary_finding_id,
-
-                recommendation_key=(
-                    recommendation_key
-                ),
-
-                recommendation_variant=(
-                    recommendation_variant
-                ),
-
-                recommendation_scope=(
-                    recommendation_scope
-                ),
-
-                resource_type=(
-                    resource_type
-                ),
-
+                recommendation_key=(recommendation_key),
+                recommendation_variant=(recommendation_variant),
+                recommendation_scope=(recommendation_scope),
+                resource_type=(resource_type),
                 scope=scope,
-
                 category=category,
-
                 service=service,
-
-                title=str(
-                    data.get("title")
-                    or "Review resource"
-                ),
-
-                reason=str(
-                    data.get("reason")
-                    or ""
-                ),
-
-                action=str(
-                    data.get("action")
-                    or ""
-                ),
-
+                title=str(data.get("title") or "Review resource"),
+                reason=str(data.get("reason") or ""),
+                action=str(data.get("action") or ""),
                 priority=priority,
-
                 confidence=confidence,
-
-                affected_resources=_json_value(
-                    affected_resources
-                ),
-
-                limitations=_json_value(
-                    data.get("limitations")
-                    or []
-                ),
-
-                evidence=_json_value(
-                    data.get("evidence")
-                    or []
-                ),
-
-                financial_impact=_json_value(
-                    data.get("financial_impact")
-                    or {}
-                ),
-
+                affected_resources=_json_value(affected_resources),
+                limitations=_json_value(data.get("limitations") or []),
+                evidence=_json_value(data.get("evidence") or []),
+                financial_impact=_json_value(data.get("financial_impact") or {}),
                 status=status,
             )
 
@@ -311,73 +197,39 @@ def save_recommendations(
 
         else:
 
-            recommendation.finding_id = (
-                primary_finding_id
-            )
+            recommendation.finding_id = primary_finding_id
 
-            recommendation.recommendation_scope = (
-                recommendation_scope
-            )
+            recommendation.recommendation_scope = recommendation_scope
 
             recommendation.category = category
             recommendation.service = service
 
-            recommendation.title = str(
-                data.get("title")
-                or recommendation.title
-            )
+            recommendation.title = str(data.get("title") or recommendation.title)
 
-            recommendation.reason = str(
-                data.get("reason")
-                or recommendation.reason
-            )
+            recommendation.reason = str(data.get("reason") or recommendation.reason)
 
-            recommendation.action = str(
-                data.get("action")
-                or recommendation.action
-            )
+            recommendation.action = str(data.get("action") or recommendation.action)
 
             recommendation.priority = priority
             recommendation.confidence = confidence
 
-            recommendation.affected_resources = (
-                _json_value(
-                    affected_resources
-                )
-            )
+            recommendation.affected_resources = _json_value(affected_resources)
 
-            recommendation.limitations = (
-                _json_value(
-                    data.get("limitations")
-                    or []
-                )
-            )
+            recommendation.limitations = _json_value(data.get("limitations") or [])
 
-            recommendation.evidence = (
-                _json_value(
-                    data.get("evidence")
-                    or []
-                )
-            )
+            recommendation.evidence = _json_value(data.get("evidence") or [])
 
-            recommendation.financial_impact = (
-                _json_value(
-                    data.get("financial_impact")
-                    or {}
-                )
+            recommendation.financial_impact = _json_value(
+                data.get("financial_impact") or {}
             )
 
             recommendation.status = status
 
         db.flush()
 
-        recommendation.findings = (
-            ordered_findings
-        )
+        recommendation.findings = ordered_findings
 
-        saved.append(
-            recommendation
-        )
+        saved.append(recommendation)
 
     db.flush()
 
@@ -392,14 +244,9 @@ def get_recommendation_by_id(
     return (
         db.query(Recommendation)
         .options(
-            selectinload(
-                Recommendation.primary_finding
-            ),
+            selectinload(Recommendation.primary_finding),
         )
-        .filter(
-            Recommendation.id
-            == recommendation_id
-        )
+        .filter(Recommendation.id == recommendation_id)
         .one_or_none()
     )
 
@@ -422,19 +269,13 @@ def save_recommendation_explanation(
     if recommendation is None:
         return None
 
-    recommendation.ai_explanation = (
-        _json_value(explanation)
-    )
+    recommendation.ai_explanation = _json_value(explanation)
 
     recommendation.ai_provider = provider
     recommendation.ai_model = model
-    recommendation.ai_prompt_version = (
-        prompt_version
-    )
+    recommendation.ai_prompt_version = prompt_version
 
-    recommendation.ai_generated_at = (
-        datetime.utcnow()
-    )
+    recommendation.ai_generated_at = datetime.utcnow()
 
     db.flush()
 
@@ -455,22 +296,13 @@ def get_recommendations_by_scan(
     return (
         db.query(Recommendation)
         .options(
-            selectinload(
-                Recommendation.findings
-            ),
-            selectinload(
-                Recommendation.primary_finding
-            ),
+            selectinload(Recommendation.findings),
+            selectinload(Recommendation.primary_finding),
         )
-        .filter(
-            Recommendation.scan_run_id
-            == scan_run_id
-        )
+        .filter(Recommendation.scan_run_id == scan_run_id)
         .order_by(
             priority_case.desc(),
             Recommendation.id.asc(),
         )
         .all()
     )
-
-

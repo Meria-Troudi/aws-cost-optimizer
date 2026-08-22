@@ -22,13 +22,10 @@ class FindingEngine:
         analyzers=None,
     ) -> None:
 
-        self.analysis_engine = AnalysisEngine(
-            analyzers=analyzers
-        )
+        self.analysis_engine = AnalysisEngine(analyzers=analyzers)
 
-        self.aggregator = (
-            FindingAggregator()
-        )
+        self.aggregator = FindingAggregator()
+
     def evaluate(
         self,
         resources,
@@ -41,26 +38,17 @@ class FindingEngine:
 
         _ = enriched_results
 
-        raw_findings = (
-            self.analysis_engine.analyze(
-                resources,
-                scan_id=scan_id,
-                account_id=account_id,
-            )
+        raw_findings = self.analysis_engine.analyze(
+            resources,
+            scan_id=scan_id,
+            account_id=account_id,
         )
 
-        aggregated = (
-            self.aggregator.aggregate(
-                raw_findings
-            )
-        )
+        aggregated = self.aggregator.aggregate(raw_findings)
 
         result: list[Any] = []
 
-
-        for finding in (
-            pre_findings or []
-        ):
+        for finding in pre_findings or []:
 
             if not isinstance(
                 finding,
@@ -68,9 +56,7 @@ class FindingEngine:
             ):
                 continue
 
-            normalized = dict(
-                finding
-            )
+            normalized = dict(finding)
 
             normalized.setdefault(
                 "category",
@@ -92,14 +78,11 @@ class FindingEngine:
                 [],
             )
 
-            result.append(
-                normalized
-            )
-        result.extend(
-            aggregated
-        )
+            result.append(normalized)
+        result.extend(aggregated)
 
         return result
+
     def evaluate_and_persist(
         self,
         db,
@@ -112,21 +95,16 @@ class FindingEngine:
         _ = enriched_results
 
         if scan is None:
-            raise ValueError(
-                "scan is required."
-            )
-        raw_findings = (
-            self.analysis_engine.analyze(
-                resources,
-                scan_id=scan.id,
-                account_id=getattr(
-                    scan,
-                    "account_id",
-                    None,
-                ),
-            )
+            raise ValueError("scan is required.")
+        raw_findings = self.analysis_engine.analyze(
+            resources,
+            scan_id=scan.id,
+            account_id=getattr(
+                scan,
+                "account_id",
+                None,
+            ),
         )
-
 
         saved_raw = self._persist_raw_findings(
             db=db,
@@ -140,14 +118,12 @@ class FindingEngine:
         )
 
         raw_database_id_by_stable_id = {
-            finding.finding_id:
-                getattr(
-                    persisted,
-                    "id",
-                    None,
-                )
-            for finding, persisted
-            in zip(
+            finding.finding_id: getattr(
+                persisted,
+                "id",
+                None,
+            )
+            for finding, persisted in zip(
                 raw_findings,
                 saved_raw,
             )
@@ -157,18 +133,12 @@ class FindingEngine:
                     persisted,
                     "id",
                     None,
-                ) is not None
+                )
+                is not None
             )
         }
 
-      
-        aggregated = (
-            self.aggregator.aggregate(
-                raw_findings
-            )
-        )
-
-
+        aggregated = self.aggregator.aggregate(raw_findings)
 
         self._attach_source_database_ids(
             aggregated,
@@ -182,21 +152,13 @@ class FindingEngine:
         # (built above) stay a separate, reporting-only view: they
         # collapse many resources into one summary row and must never
         # be fed back into recommendation generation.
-        raw_finding_dicts = [
-            finding.to_dict()
-            for finding in raw_findings
-        ]
+        raw_finding_dicts = [finding.to_dict() for finding in raw_findings]
 
         result: list[Any] = []
 
-      
-        normalized_pre_findings: list[
-            dict[str, Any]
-        ] = []
+        normalized_pre_findings: list[dict[str, Any]] = []
 
-        for finding in (
-            pre_findings or []
-        ):
+        for finding in pre_findings or []:
 
             if not isinstance(
                 finding,
@@ -204,9 +166,7 @@ class FindingEngine:
             ):
                 continue
 
-            normalized = dict(
-                finding
-            )
+            normalized = dict(finding)
 
             normalized.setdefault(
                 "category",
@@ -228,9 +188,7 @@ class FindingEngine:
                 [],
             )
 
-            normalized_pre_findings.append(
-                normalized
-            )
+            normalized_pre_findings.append(normalized)
 
         if normalized_pre_findings:
 
@@ -244,20 +202,14 @@ class FindingEngine:
                 findings=normalized_pre_findings,
             )
 
-        result.extend(
-            normalized_pre_findings
-        )
-        result.extend(
-            aggregated
-        )
+        result.extend(normalized_pre_findings)
+        result.extend(aggregated)
 
         return {
-            "raw_findings":
-                raw_finding_dicts,
-
-            "aggregated_findings":
-                result,
+            "raw_findings": raw_finding_dicts,
+            "aggregated_findings": result,
         }
+
     @staticmethod
     def _persist_raw_findings(
         db,
@@ -307,9 +259,10 @@ class FindingEngine:
             )
 
         return saved
+
     @staticmethod
     def _attach_database_ids_to_raw_findings(
-         findings: list[Finding],
+        findings: list[Finding],
         saved,
     ) -> None:
 
@@ -332,13 +285,10 @@ class FindingEngine:
             )
 
             if database_id is None:
-                raise RuntimeError(
-                    "Persisted raw finding has no database ID."
-                )
+                raise RuntimeError("Persisted raw finding has no database ID.")
 
-            finding.database_id = int(
-                database_id
-            )
+            finding.database_id = int(database_id)
+
     @staticmethod
     def _attach_source_database_ids(
         aggregated: list[dict[str, Any]],
@@ -353,11 +303,7 @@ class FindingEngine:
             ):
                 continue
 
-            source_stable_ids = (
-                finding.get(
-                    "source_finding_stable_ids"
-                )
-            )
+            source_stable_ids = finding.get("source_finding_stable_ids")
 
             if not isinstance(
                 source_stable_ids,
@@ -370,40 +316,28 @@ class FindingEngine:
 
             for stable_id in source_stable_ids:
 
-                database_id = (
-                    raw_database_id_by_stable_id.get(
-                        stable_id
-                    )
-                )
+                database_id = raw_database_id_by_stable_id.get(stable_id)
 
                 if database_id is None:
                     continue
 
-                database_id = int(
-                    database_id
-                )
+                database_id = int(database_id)
 
                 if database_id in seen:
                     continue
 
-                seen.add(
-                    database_id
-                )
+                seen.add(database_id)
 
-                database_ids.append(
-                    database_id
-                )
+                database_ids.append(database_id)
 
-            finding[
-                "source_finding_ids"
-            ] = database_ids
+            finding["source_finding_ids"] = database_ids
+
     @staticmethod
     def _persist(
         db,
         scan,
         findings,
     ):
-
 
         raw_findings = [
             finding

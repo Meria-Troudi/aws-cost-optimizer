@@ -18,7 +18,6 @@ def parse_json_field(
     default: Any = None,
 ) -> Any:
 
-
     if value is None:
         return default
 

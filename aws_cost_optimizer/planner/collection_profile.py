@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+
 class CollectionProfile:
 
     REQUIRED_SECTIONS = {
@@ -29,17 +30,13 @@ class CollectionProfile:
         path = Path(__file__).parent / "collection_profiles.yaml"
 
         if not path.exists():
-            raise FileNotFoundError(
-                f"Collection profile not found: {path}"
-            )
+            raise FileNotFoundError(f"Collection profile not found: {path}")
 
         with open(path, "r", encoding="utf-8") as file:
             data = yaml.safe_load(file)
 
         if not isinstance(data, dict):
-            raise ValueError(
-                "collection_profiles.yaml must contain a mapping"
-            )
+            raise ValueError("collection_profiles.yaml must contain a mapping")
 
         self.profiles: dict[str, dict[str, Any]] = data
 
@@ -48,9 +45,7 @@ class CollectionProfile:
     def _validate(self) -> None:
         for resource_type, profile in self.profiles.items():
             if not isinstance(profile, dict):
-                raise ValueError(
-                    f"Invalid profile for '{resource_type}'"
-                )
+                raise ValueError(f"Invalid profile for '{resource_type}'")
 
             for section in self.REQUIRED_SECTIONS:
 
@@ -60,18 +55,14 @@ class CollectionProfile:
                 value = profile[section]
 
                 if not isinstance(value, dict):
-                    raise ValueError(
-                        f"{resource_type}.{section} "
-                        f"must be a mapping"
-                    )
+                    raise ValueError(f"{resource_type}.{section} " f"must be a mapping")
 
                 if "enabled" in value and not isinstance(
                     value["enabled"],
                     bool,
                 ):
                     raise ValueError(
-                        f"{resource_type}.{section}.enabled "
-                        f"must be boolean"
+                        f"{resource_type}.{section}.enabled " f"must be boolean"
                     )
 
     def get(self, resource_type: str) -> dict[str, Any]:
@@ -88,17 +79,13 @@ class CollectionProfile:
 
     def describe(self, resource_type: str) -> dict[str, Any]:
 
-
         profile = self.get(resource_type)
 
         if not profile:
             return {}
 
         return {
-            section: bool(
-                isinstance(config, dict)
-                and config.get("enabled", False)
-            )
+            section: bool(isinstance(config, dict) and config.get("enabled", False))
             for section, config in profile.items()
             if isinstance(config, dict)
         }

@@ -34,9 +34,7 @@ class CollectorPersistence:
     ):
 
         if not isinstance(resource, dict):
-            raise TypeError(
-                "Collector resource must be a dictionary"
-            )
+            raise TypeError("Collector resource must be a dictionary")
 
         resource_id = self._required_resource_id(resource)
 
@@ -45,34 +43,19 @@ class CollectorPersistence:
             default="unknown",
         )
 
-        identity = self._safe_dict(
-            resource.get("identity")
-        )
+        identity = self._safe_dict(resource.get("identity"))
 
-        configuration = self._safe_dict(
-            resource.get("configuration")
-        )
+        configuration = self._safe_dict(resource.get("configuration"))
 
-        topology = self._safe_dict(
-            resource.get("topology")
-        )
+        topology = self._safe_dict(resource.get("topology"))
 
-        relationships = self._safe_dict(
-            resource.get("relationships")
-        )
+        relationships = self._safe_dict(resource.get("relationships"))
 
-        raw = self._safe_dict(
-            resource.get("raw")
-        )
+        raw = self._safe_dict(resource.get("raw"))
 
-        optimization_evidence = self._safe_dict(
-            resource.get("optimization_evidence")
-        )
+        optimization_evidence = self._safe_dict(resource.get("optimization_evidence"))
 
-        state = (
-            identity.get("state")
-            or configuration.get("state")
-        )
+        state = identity.get("state") or configuration.get("state")
 
         name = (
             identity.get("name")
@@ -84,23 +67,17 @@ class CollectorPersistence:
             or resource_id
         )
 
-        tags = self._safe_dict(
-            identity.get("tags")
-        )
+        tags = self._safe_dict(identity.get("tags"))
 
         account_id = (
-            resource.get("account_id")
-            or getattr(scan, "account_id", None)
-            or "unknown"
+            resource.get("account_id") or getattr(scan, "account_id", None) or "unknown"
         )
 
         obj = get_or_create_resource(
             db=db,
             account_id=str(account_id),
             aws_resource_id=resource_id,
-            service=self._infer_service(
-                resource_type
-            ),
+            service=self._infer_service(resource_type),
             resource_type=resource_type,
             region=resource.get("region"),
             name=name,
@@ -109,9 +86,7 @@ class CollectorPersistence:
 
         db.flush()
 
-        snapshot_relationships = dict(
-            relationships
-        )
+        snapshot_relationships = dict(relationships)
 
         if any(
             (
@@ -132,10 +107,7 @@ class CollectorPersistence:
                 raw_response=raw,
                 topology=topology,
                 relationships=snapshot_relationships,
-                optimization_evidence=(
-                    optimization_evidence
-                    or {}
-                ),
+                optimization_evidence=(optimization_evidence or {}),
                 state=state,
                 availability_zone=(
                     configuration.get("availability_zone")
@@ -151,6 +123,7 @@ class CollectorPersistence:
         )
 
         return obj
+
     def _save_observations(
         self,
         db,
@@ -159,13 +132,9 @@ class CollectorPersistence:
         resource: dict,
     ) -> int:
 
-        observations = self._safe_dict(
-            resource.get("observations")
-        )
+        observations = self._safe_dict(resource.get("observations"))
 
-        cloudwatch = self._safe_dict(
-            observations.get("cloudwatch")
-        )
+        cloudwatch = self._safe_dict(observations.get("cloudwatch"))
 
         if not cloudwatch:
             return 0
@@ -193,33 +162,23 @@ class CollectorPersistence:
                 saved += 1
 
         return saved
+
     def metric_counts(
         self,
         resource: dict,
     ) -> dict[str, int]:
 
-        observations = self._safe_dict(
-            resource.get("observations")
-        )
+        observations = self._safe_dict(resource.get("observations"))
 
-        cloudwatch = self._safe_dict(
-            observations.get("cloudwatch")
-        )
+        cloudwatch = self._safe_dict(observations.get("cloudwatch"))
 
         metrics = cloudwatch.get("metrics")
 
         return {
-            "queried":
-                count_queried_metrics(metrics),
-
-            "observed":
-                count_observed_metrics(metrics),
-
-            "no_data":
-                count_missing_metrics(metrics),
-
-            "errors":
-                count_metric_errors(metrics),
+            "queried": count_queried_metrics(metrics),
+            "observed": count_observed_metrics(metrics),
+            "no_data": count_missing_metrics(metrics),
+            "errors": count_metric_errors(metrics),
         }
 
     def count_metrics(
@@ -227,36 +186,29 @@ class CollectorPersistence:
         resource: dict,
     ) -> int:
 
-        return self.metric_counts(
-            resource
-        )["observed"]
+        return self.metric_counts(resource)["observed"]
 
     def count_queried_metrics(
         self,
         resource: dict,
     ) -> int:
 
-        return self.metric_counts(
-            resource
-        )["queried"]
+        return self.metric_counts(resource)["queried"]
 
     def count_missing_metrics(
         self,
         resource: dict,
     ) -> int:
 
-        return self.metric_counts(
-            resource
-        )["no_data"]
+        return self.metric_counts(resource)["no_data"]
 
     def count_metric_errors(
         self,
         resource: dict,
     ) -> int:
 
-        return self.metric_counts(
-            resource
-        )["errors"]
+        return self.metric_counts(resource)["errors"]
+
     @staticmethod
     def _iter_metrics(
         metrics: Any,
@@ -277,75 +229,37 @@ class CollectorPersistence:
 
                 if isinstance(metric, dict):
                     yield metric
+
     @staticmethod
     def _infer_service(
         resource_type: str,
     ) -> str:
 
         return {
-            "nat_gateway":
-                "Amazon Virtual Private Cloud",
-
-            "transit_gateway":
-                "Amazon Virtual Private Cloud",
-
-            "vpc_endpoint":
-                "Amazon Virtual Private Cloud",
-
-            "public_ipv4":
-                "Amazon Virtual Private Cloud",
-
-            "elastic_ip":
-                "Amazon Virtual Private Cloud",
-
-            "vpc_peering":
-                "Amazon Virtual Private Cloud",
-
-            "internet_gateway":
-                "Amazon Virtual Private Cloud",
-
-            "carrier_gateway":
-                "Amazon Virtual Private Cloud",
-
-            "egress_only_internet_gateway":
-                "Amazon Virtual Private Cloud",
-
-            "local_gateway":
-                "Amazon Virtual Private Cloud",
-
-            "rds_instance":
-                "Amazon Relational Database Service",
-
-            "rds_cluster":
-                "Amazon Relational Database Service",
-
-            "rds_snapshot":
-                "Amazon Relational Database Service",
-
-            "ec2_instance":
-                "Amazon Elastic Compute Cloud - Compute",
-
-            "ebs_volume":
-                "Amazon Elastic Compute Cloud - Compute",
-
-            "eks_cluster":
-                (
-                    "Amazon Elastic Container Service "
-                    "for Kubernetes"
-                ),
-
-            "load_balancer":
-                "Amazon Elastic Load Balancing",
-
-            "s3_bucket":
-                "Amazon Simple Storage Service",
-
-            "lambda_function":
-                "AWS Lambda",
+            "nat_gateway": "Amazon Virtual Private Cloud",
+            "transit_gateway": "Amazon Virtual Private Cloud",
+            "vpc_endpoint": "Amazon Virtual Private Cloud",
+            "public_ipv4": "Amazon Virtual Private Cloud",
+            "elastic_ip": "Amazon Virtual Private Cloud",
+            "vpc_peering": "Amazon Virtual Private Cloud",
+            "internet_gateway": "Amazon Virtual Private Cloud",
+            "carrier_gateway": "Amazon Virtual Private Cloud",
+            "egress_only_internet_gateway": "Amazon Virtual Private Cloud",
+            "local_gateway": "Amazon Virtual Private Cloud",
+            "rds_instance": "Amazon Relational Database Service",
+            "rds_cluster": "Amazon Relational Database Service",
+            "rds_snapshot": "Amazon Relational Database Service",
+            "ec2_instance": "Amazon Elastic Compute Cloud - Compute",
+            "ebs_volume": "Amazon Elastic Compute Cloud - Compute",
+            "eks_cluster": ("Amazon Elastic Container Service " "for Kubernetes"),
+            "load_balancer": "Amazon Elastic Load Balancing",
+            "s3_bucket": "Amazon Simple Storage Service",
+            "lambda_function": "AWS Lambda",
         }.get(
             resource_type,
             "Unknown",
         )
+
     @staticmethod
     def _safe_dict(
         value: Any,
@@ -371,23 +285,14 @@ class CollectorPersistence:
         resource: Dict[str, Any],
     ) -> str:
 
-        value = (
-            resource.get("resource_id")
-            or resource.get("id")
-        )
+        value = resource.get("resource_id") or resource.get("id")
 
         if value is None:
-            raise ValueError(
-                "Collector resource is missing "
-                "'resource_id'"
-            )
+            raise ValueError("Collector resource is missing " "'resource_id'")
 
         value = str(value).strip()
 
         if not value:
-            raise ValueError(
-                "Collector resource has an empty "
-                "'resource_id'"
-            )
+            raise ValueError("Collector resource has an empty " "'resource_id'")
 
         return value

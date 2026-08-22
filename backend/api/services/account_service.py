@@ -23,17 +23,13 @@ def discover_current_account() -> dict[str, Any]:
     account_id = identity.get("Account")
 
     if not account_id:
-        raise RuntimeError(
-            "Unable to determine AWS account from STS"
-        )
+        raise RuntimeError("Unable to determine AWS account from STS")
 
     return {
         "account_id": account_id,
         "arn": identity.get("Arn"),
         "user_id": identity.get("UserId"),
-        "discovered_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "discovered_at": datetime.now(timezone.utc).isoformat(),
         "source": "sts_get_caller_identity",
         "region": CE_REGION,
     }

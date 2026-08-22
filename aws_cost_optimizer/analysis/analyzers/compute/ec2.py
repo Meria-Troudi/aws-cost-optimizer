@@ -62,10 +62,24 @@ class EC2Analyzer(Analyzer):
 
     # Maintained review list, not an attempt to encode every AWS
     # generation -- deliberately conservative.
-    OLD_GENERATION_PREFIXES = frozenset({
-        "t2", "m1", "m2", "m3", "m4", "c1", "c3", "c4",
-        "r3", "r4", "x1", "x1e", "i2", "i3",
-    })
+    OLD_GENERATION_PREFIXES = frozenset(
+        {
+            "t2",
+            "m1",
+            "m2",
+            "m3",
+            "m4",
+            "c1",
+            "c3",
+            "c4",
+            "r3",
+            "r4",
+            "x1",
+            "x1e",
+            "i2",
+            "i3",
+        }
+    )
 
     def supports(self, context: AnalysisContext) -> bool:
         return context.resource_type == "ec2_instance"
@@ -90,9 +104,12 @@ class EC2Analyzer(Analyzer):
             tags = {}
 
         required_metrics = [
-            "CPUUtilization", "CPUUtilization_max",
-            "NetworkIn", "NetworkOut",
-            "EBSReadOps", "EBSWriteOps",
+            "CPUUtilization",
+            "CPUUtilization_max",
+            "NetworkIn",
+            "NetworkOut",
+            "EBSReadOps",
+            "EBSWriteOps",
         ]
 
         coverage = self._coverage(metrics, required_metrics)
@@ -165,10 +182,17 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_idle(
-        self, *, context, configuration, metrics, coverage,
+        self,
+        *,
+        context,
+        configuration,
+        metrics,
+        coverage,
     ) -> Finding | None:
 
-        if coverage < self._threshold(context, "minimum_metric_coverage", self.DEFAULT_MIN_COVERAGE):
+        if coverage < self._threshold(
+            context, "minimum_metric_coverage", self.DEFAULT_MIN_COVERAGE
+        ):
             return None
 
         cpu_average = self._value(metrics, "CPUUtilization")
@@ -191,19 +215,20 @@ class EC2Analyzer(Analyzer):
             duration,
         )
 
-        cpu_ok = (
-            cpu_average <= self._threshold(context, "idle_average_cpu_max_percent", self.IDLE_CPU_AVERAGE)
-            and cpu_max <= self._threshold(context, "idle_maximum_cpu_max_percent", self.IDLE_CPU_MAX)
+        cpu_ok = cpu_average <= self._threshold(
+            context, "idle_average_cpu_max_percent", self.IDLE_CPU_AVERAGE
+        ) and cpu_max <= self._threshold(
+            context, "idle_maximum_cpu_max_percent", self.IDLE_CPU_MAX
         )
 
-        network_ok = (
-            network_bps is None
-            or network_bps <= self._threshold(context, "idle_network_bytes_per_second_max", self.IDLE_NETWORK_BYTES_PER_SECOND)
+        network_ok = network_bps is None or network_bps <= self._threshold(
+            context,
+            "idle_network_bytes_per_second_max",
+            self.IDLE_NETWORK_BYTES_PER_SECOND,
         )
 
-        io_ok = (
-            ebs_iops is None
-            or ebs_iops <= self._threshold(context, "idle_ebs_iops_max", self.IDLE_EBS_IOPS)
+        io_ok = ebs_iops is None or ebs_iops <= self._threshold(
+            context, "idle_ebs_iops_max", self.IDLE_EBS_IOPS
         )
 
         if not (cpu_ok and network_ok and io_ok):
@@ -220,9 +245,16 @@ class EC2Analyzer(Analyzer):
                 "activity over the observation period."
             ),
             conditions=[
-                self._statement("average CPU utilization", cpu_average, "Percent", True),
+                self._statement(
+                    "average CPU utilization", cpu_average, "Percent", True
+                ),
                 self._statement("maximum CPU utilization", cpu_max, "Percent", True),
-                self._statement("network throughput", network_bps, "Bytes/Second", network_bps is not None),
+                self._statement(
+                    "network throughput",
+                    network_bps,
+                    "Bytes/Second",
+                    network_bps is not None,
+                ),
                 self._statement("EBS IOPS", ebs_iops, "IOPS", ebs_iops is not None),
             ],
             metrics=metrics,
@@ -236,10 +268,17 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_underutilization(
-        self, *, context, configuration, metrics, coverage,
+        self,
+        *,
+        context,
+        configuration,
+        metrics,
+        coverage,
     ) -> Finding | None:
 
-        if coverage < self._threshold(context, "minimum_metric_coverage", self.DEFAULT_MIN_COVERAGE):
+        if coverage < self._threshold(
+            context, "minimum_metric_coverage", self.DEFAULT_MIN_COVERAGE
+        ):
             return None
 
         cpu_average = self._value(metrics, "CPUUtilization")
@@ -248,10 +287,14 @@ class EC2Analyzer(Analyzer):
         if cpu_average is None or cpu_max is None:
             return None
 
-        if cpu_average > self._threshold(context, "average_cpu_max_percent", self.UNDERUTILIZED_CPU_AVERAGE):
+        if cpu_average > self._threshold(
+            context, "average_cpu_max_percent", self.UNDERUTILIZED_CPU_AVERAGE
+        ):
             return None
 
-        if cpu_max > self._threshold(context, "maximum_cpu_max_percent", self.UNDERUTILIZED_CPU_MAX):
+        if cpu_max > self._threshold(
+            context, "maximum_cpu_max_percent", self.UNDERUTILIZED_CPU_MAX
+        ):
             return None
 
         memory = self._value(metrics, "mem_used_percent")
@@ -286,10 +329,19 @@ class EC2Analyzer(Analyzer):
                 "peak CPU demand is also limited."
             ),
             conditions=[
-                self._statement("average CPU utilization", cpu_average, "Percent", True),
+                self._statement(
+                    "average CPU utilization", cpu_average, "Percent", True
+                ),
                 self._statement("maximum CPU utilization", cpu_max, "Percent", True),
-                self._statement("memory utilization", memory, "Percent", memory_available),
-                self._statement("network activity", network_bps, "Bytes/Second", network_bps is not None),
+                self._statement(
+                    "memory utilization", memory, "Percent", memory_available
+                ),
+                self._statement(
+                    "network activity",
+                    network_bps,
+                    "Bytes/Second",
+                    network_bps is not None,
+                ),
                 self._statement("EBS IOPS", ebs_iops, "IOPS", ebs_iops is not None),
             ],
             metrics=metrics,
@@ -303,10 +355,17 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_overutilization(
-        self, *, context, configuration, metrics, coverage,
+        self,
+        *,
+        context,
+        configuration,
+        metrics,
+        coverage,
     ) -> Finding | None:
 
-        if coverage < self._threshold(context, "minimum_metric_coverage", self.DEFAULT_MIN_COVERAGE):
+        if coverage < self._threshold(
+            context, "minimum_metric_coverage", self.DEFAULT_MIN_COVERAGE
+        ):
             return None
 
         cpu_average = self._value(metrics, "CPUUtilization")
@@ -315,17 +374,27 @@ class EC2Analyzer(Analyzer):
         if cpu_average is None or cpu_max is None:
             return None
 
-        average_threshold = self._threshold(context, "overutilized_average_cpu_percent", self.OVERUTILIZED_CPU_AVERAGE)
-        max_threshold = self._threshold(context, "overutilized_maximum_cpu_percent", self.OVERUTILIZED_CPU_MAX)
+        average_threshold = self._threshold(
+            context, "overutilized_average_cpu_percent", self.OVERUTILIZED_CPU_AVERAGE
+        )
+        max_threshold = self._threshold(
+            context, "overutilized_maximum_cpu_percent", self.OVERUTILIZED_CPU_MAX
+        )
 
         if not (cpu_average >= average_threshold or cpu_max >= max_threshold):
             return None
 
         memory = self._value(metrics, "mem_used_percent")
 
-        severity = "high" if (
-            cpu_average >= 85.0 or cpu_max >= 95.0 or (memory is not None and memory >= 90.0)
-        ) else "medium"
+        severity = (
+            "high"
+            if (
+                cpu_average >= 85.0
+                or cpu_max >= 95.0
+                or (memory is not None and memory >= 90.0)
+            )
+            else "medium"
+        )
 
         return self._finding(
             context=context,
@@ -335,9 +404,13 @@ class EC2Analyzer(Analyzer):
             confidence="high",
             reason="Observed CPU demand reaches or exceeds the capacity-review threshold.",
             conditions=[
-                self._statement("average CPU utilization", cpu_average, "Percent", True),
+                self._statement(
+                    "average CPU utilization", cpu_average, "Percent", True
+                ),
                 self._statement("maximum CPU utilization", cpu_max, "Percent", True),
-                self._statement("memory utilization", memory, "Percent", memory is not None),
+                self._statement(
+                    "memory utilization", memory, "Percent", memory is not None
+                ),
             ],
             metrics=metrics,
             configuration=configuration,
@@ -350,7 +423,14 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_spot_candidate(
-        self, *, context, configuration, identity, tags, metrics, coverage,
+        self,
+        *,
+        context,
+        configuration,
+        identity,
+        tags,
+        metrics,
+        coverage,
     ) -> Finding | None:
 
         lifecycle = str(identity.get("instance_lifecycle") or "").lower()
@@ -389,7 +469,9 @@ class EC2Analyzer(Analyzer):
             conditions=[
                 self._statement("workload classification", workload, None, True),
                 self._statement("environment", environment, None, True),
-                self._statement("CPU average", cpu_average, "Percent", cpu_average is not None),
+                self._statement(
+                    "CPU average", cpu_average, "Percent", cpu_average is not None
+                ),
                 self._statement("CPU maximum", cpu_max, "Percent", cpu_max is not None),
             ],
             metrics=metrics,
@@ -407,7 +489,13 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_stable_long_running(
-        self, *, context, configuration, identity, metrics, coverage,
+        self,
+        *,
+        context,
+        configuration,
+        identity,
+        metrics,
+        coverage,
     ) -> Finding | None:
 
         if coverage < 0.80:
@@ -420,9 +508,13 @@ class EC2Analyzer(Analyzer):
         if launch_time is None:
             return None
 
-        runtime_days = (datetime.now(timezone.utc) - launch_time).total_seconds() / 86400.0
+        runtime_days = (
+            datetime.now(timezone.utc) - launch_time
+        ).total_seconds() / 86400.0
 
-        if runtime_days < self._threshold(context, "minimum_runtime_days", self.MIN_STABLE_RUNTIME_DAYS):
+        if runtime_days < self._threshold(
+            context, "minimum_runtime_days", self.MIN_STABLE_RUNTIME_DAYS
+        ):
             return None
 
         if str(configuration.get("state") or "").lower() != "running":
@@ -454,11 +546,16 @@ class EC2Analyzer(Analyzer):
             ),
             conditions=[
                 self._statement("runtime", round(runtime_days, 1), "days", True),
-                self._statement("average CPU utilization", cpu_average, "Percent", True),
+                self._statement(
+                    "average CPU utilization", cpu_average, "Percent", True
+                ),
             ],
             metrics=metrics,
             configuration=configuration,
-            metadata={"analysis_role": "pricing_model", "runtime_days": round(runtime_days, 1)},
+            metadata={
+                "analysis_role": "pricing_model",
+                "runtime_days": round(runtime_days, 1),
+            },
             limitations=[
                 "Stable runtime does not by itself prove a Savings Plan or "
                 "Reserved Instance will be economically beneficial.",
@@ -472,7 +569,13 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_autoscaling(
-        self, *, context, configuration, relationships, metrics, coverage,
+        self,
+        *,
+        context,
+        configuration,
+        relationships,
+        metrics,
+        coverage,
     ) -> Finding | None:
 
         asg = relationships.get("autoscaling", {})
@@ -487,7 +590,9 @@ class EC2Analyzer(Analyzer):
 
         duration_days = self._duration_seconds(context.period()) / 86400.0
 
-        if duration_days < self._threshold(context, "minimum_observation_days", self.MIN_AUTOSCALING_OBSERVATION_DAYS):
+        if duration_days < self._threshold(
+            context, "minimum_observation_days", self.MIN_AUTOSCALING_OBSERVATION_DAYS
+        ):
             return None
 
         variation = self._cpu_variation(context)
@@ -501,8 +606,12 @@ class EC2Analyzer(Analyzer):
             return None
 
         if not (
-            peak_to_average >= self._threshold(context, "peak_to_average_ratio", self.AUTOSCALING_PEAK_TO_AVERAGE)
-            and cpu_range >= self._threshold(context, "cpu_range_percent", self.AUTOSCALING_CPU_RANGE)
+            peak_to_average
+            >= self._threshold(
+                context, "peak_to_average_ratio", self.AUTOSCALING_PEAK_TO_AVERAGE
+            )
+            and cpu_range
+            >= self._threshold(context, "cpu_range_percent", self.AUTOSCALING_CPU_RANGE)
         ):
             return None
 
@@ -518,7 +627,9 @@ class EC2Analyzer(Analyzer):
                 "Auto Scaling Group."
             ),
             conditions=[
-                self._statement("CPU peak-to-average ratio", peak_to_average, None, True),
+                self._statement(
+                    "CPU peak-to-average ratio", peak_to_average, None, True
+                ),
                 self._statement("CPU range", cpu_range, "Percentage points", True),
                 self._statement("Auto Scaling management", False, None, True),
             ],
@@ -537,7 +648,12 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     def _analyze_scheduling(
-        self, *, context, configuration, tags, metrics,
+        self,
+        *,
+        context,
+        configuration,
+        tags,
+        metrics,
     ) -> Finding | None:
 
         environment = self._classify_environment(tags)
@@ -568,7 +684,12 @@ class EC2Analyzer(Analyzer):
             ),
             conditions=[
                 self._statement("environment", environment, None, True),
-                self._statement("low CPU observation ratio", round(low_ratio * 100.0, 2), "Percent", True),
+                self._statement(
+                    "low CPU observation ratio",
+                    round(low_ratio * 100.0, 2),
+                    "Percent",
+                    True,
+                ),
             ],
             metrics=metrics,
             configuration=configuration,
@@ -687,7 +808,11 @@ class EC2Analyzer(Analyzer):
             evidence=evidence,
             observation_period=observation_period,
             limitations=limitations,
-            metadata={**metadata, "region": context.region, "account_id": context.account_id},
+            metadata={
+                **metadata,
+                "region": context.region,
+                "account_id": context.account_id,
+            },
             recommendation_eligible=True,
             aggregation_scope="resource",
             category="optimization",
@@ -702,7 +827,9 @@ class EC2Analyzer(Analyzer):
     def _coverage(cls, metrics: dict[str, Any], names: list[str]) -> float:
         if not names:
             return 0.0
-        observed = sum(1 for name in names if metric_has_observed_data(metrics.get(name)))
+        observed = sum(
+            1 for name in names if metric_has_observed_data(metrics.get(name))
+        )
         return observed / len(names)
 
     @staticmethod
@@ -780,7 +907,10 @@ class EC2Analyzer(Analyzer):
         if any(m in values for m in ("production", "prod")):
             return "production"
 
-        if any(m in values for m in ("development", "dev", "testing", "test", "staging", "stage", "qa")):
+        if any(
+            m in values
+            for m in ("development", "dev", "testing", "test", "staging", "stage", "qa")
+        ):
             return "non_production"
 
         return "unknown"
@@ -789,7 +919,10 @@ class EC2Analyzer(Analyzer):
     def _classify_workload(tags: dict[str, Any]) -> str:
         values = " ".join(f"{k} {v}".lower() for k, v in tags.items())
 
-        if any(m in values for m in ("batch", "worker", "ci", "cd", "cicd", "build", "etl", "ml")):
+        if any(
+            m in values
+            for m in ("batch", "worker", "ci", "cd", "cicd", "build", "etl", "ml")
+        ):
             return "batch_or_interruptible"
 
         if any(m in values for m in ("database", "db", "payment", "critical")):
@@ -802,7 +935,9 @@ class EC2Analyzer(Analyzer):
     # --------------------------------------------------------------
 
     @staticmethod
-    def _common_limitations(context: AnalysisContext, *, memory_required: bool) -> list[str]:
+    def _common_limitations(
+        context: AnalysisContext, *, memory_required: bool
+    ) -> list[str]:
 
         limitations = [
             "CloudWatch utilization evidence describes observed workload "

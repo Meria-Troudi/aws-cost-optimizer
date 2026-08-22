@@ -103,9 +103,7 @@ def _run_scan_in_background(
                     if hasattr(scan, "finished_at"):
                         from datetime import datetime, timezone
 
-                        scan.finished_at = datetime.now(
-                            timezone.utc
-                        )
+                        scan.finished_at = datetime.now(timezone.utc)
 
                     db.commit()
 
@@ -138,10 +136,7 @@ def create_scan(
     if request.start_date >= request.end_date:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "start_date must be earlier "
-                "than end_date."
-            ),
+            detail=("start_date must be earlier " "than end_date."),
         )
 
     try:
@@ -150,29 +145,20 @@ def create_scan(
             CE_REGION,
         )
 
-        identity = (
-            sts.get_caller_identity()
-        )
+        identity = sts.get_caller_identity()
 
-        account_id = identity.get(
-            "Account"
-        )
+        account_id = identity.get("Account")
 
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Unable to identify AWS account: "
-                f"{exc}"
-            ),
+            detail=("Unable to identify AWS account: " f"{exc}"),
         ) from exc
 
     if not account_id:
         raise HTTPException(
             status_code=502,
-            detail=(
-                "AWS account ID could not be determined."
-            ),
+            detail=("AWS account ID could not be determined."),
         )
 
     try:
@@ -193,22 +179,15 @@ def create_scan(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Unable to create scan: "
-                f"{exc}"
-            ),
+            detail=("Unable to create scan: " f"{exc}"),
         ) from exc
 
-    _run_scan_in_background(
-        scan.id
-    )
+    _run_scan_in_background(scan.id)
 
     return ScanResponse(
         scan_id=scan.id,
         status="running",
-        result=get_scan_summary(
-            scan
-        ),
+        result=get_scan_summary(scan),
     )
 
 
@@ -218,10 +197,7 @@ def list_scans(
 ):
     scans = get_scan_runs(db)
 
-    return [
-        get_scan_summary(scan)
-        for scan in scans
-    ]
+    return [get_scan_summary(scan) for scan in scans]
 
 
 @router.get("/latest")
@@ -233,9 +209,7 @@ def get_latest_scan(
     if scan is None:
         return None
 
-    return get_scan_summary(
-        scan
-    )
+    return get_scan_summary(scan)
 
 
 @router.get("/{scan_id}")
@@ -251,14 +225,10 @@ def get_scan(
     if scan is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Scan {scan_id} not found."
-            ),
+            detail=(f"Scan {scan_id} not found."),
         )
 
-    return get_scan_summary(
-        scan
-    )
+    return get_scan_summary(scan)
 
 
 @router.delete("/{scan_id}")
@@ -274,9 +244,7 @@ def delete_scan(
     if scan is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Scan {scan_id} not found."
-            ),
+            detail=(f"Scan {scan_id} not found."),
         )
 
     try:
@@ -290,9 +258,7 @@ def delete_scan(
 
             raise HTTPException(
                 status_code=404,
-                detail=(
-                    f"Scan {scan_id} not found."
-                ),
+                detail=(f"Scan {scan_id} not found."),
             )
 
         db.commit()
@@ -310,8 +276,5 @@ def delete_scan(
 
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Unable to delete scan: "
-                f"{exc}"
-            ),
+            detail=("Unable to delete scan: " f"{exc}"),
         ) from exc

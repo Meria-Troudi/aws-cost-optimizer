@@ -1,6 +1,7 @@
 """
 Collector registry
 """
+
 from __future__ import annotations
 
 import importlib
@@ -23,7 +24,7 @@ _COLLECTOR_FILE_OVERRIDES: Dict[str, str] = {
 
 
 def register(cls):
-    
+
     COLLECTORS[cls.key] = cls
     return cls
 
@@ -53,10 +54,7 @@ def _collector_module_path(
 
     parts.append(f"{file_name}.py")
 
-    return (
-        Path(__file__).parent
-        / Path(*parts)
-    )
+    return Path(__file__).parent / Path(*parts)
 
 
 def _catalog_collector_entry(
@@ -98,9 +96,7 @@ def load_collectors() -> None:
                 .as_posix()
                 .replace("/", ".")
             )
-            importlib.import_module(
-                f"collection.{relative}"
-            )
+            importlib.import_module(f"collection.{relative}")
         except ImportError as exc:
             IMPORT_ERRORS[collector_key] = str(exc)
 

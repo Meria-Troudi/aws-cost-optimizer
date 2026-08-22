@@ -28,6 +28,7 @@ from ...metrics import (
     metric_summary,
 )
 from ...registry import register
+
 DEFAULT_STALE_DAYS = 180
 
 DEFAULT_SPICE_HIGH_UTILIZATION_RATIO = 0.90
@@ -39,6 +40,8 @@ DEFAULT_FAILED_STATUS_VALUES = {
 }
 SPICE_LIMIT_METRIC = "SPICECapacityLimitInMB"
 SPICE_CONSUMED_METRIC = "SPICECapacityConsumedInMB"
+
+
 def _analyzer_config(
     context: AnalysisContext,
 ) -> dict[str, Any]:
@@ -51,9 +54,7 @@ def _analyzer_config(
         "config",
     ):
 
-        root = resource.get(
-            root_name
-        )
+        root = resource.get(root_name)
 
         if not isinstance(
             root,
@@ -61,9 +62,7 @@ def _analyzer_config(
         ):
             continue
 
-        value = root.get(
-            "quicksight"
-        )
+        value = root.get("quicksight")
 
         if isinstance(
             value,
@@ -80,32 +79,18 @@ def _threshold(
     default: float | int | None,
 ) -> float | None:
 
-    value = _analyzer_config(
-        context
-    ).get(
-        key
-    )
+    value = _analyzer_config(context).get(key)
 
     if value is None:
 
-        return (
-            float(default)
-            if default is not None
-            else None
-        )
+        return float(default) if default is not None else None
 
     try:
 
-        value = float(
-            value
-        )
+        value = float(value)
 
         if value < 0:
-            return (
-                float(default)
-                if default is not None
-                else None
-            )
+            return float(default) if default is not None else None
 
         return value
 
@@ -114,11 +99,9 @@ def _threshold(
         ValueError,
     ):
 
-        return (
-            float(default)
-            if default is not None
-            else None
-        )
+        return float(default) if default is not None else None
+
+
 def _configuration(
     context: AnalysisContext,
 ) -> dict[str, Any]:
@@ -171,9 +154,7 @@ def _cloudwatch(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    value = _observations(
-        context
-    ).get(
+    value = _observations(context).get(
         "cloudwatch",
         {},
     )
@@ -192,9 +173,7 @@ def _cloudtrail(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    value = _observations(
-        context
-    ).get(
+    value = _observations(context).get(
         "cloudtrail",
         {},
     )
@@ -213,23 +192,11 @@ def _asset_type(
     context: AnalysisContext,
 ) -> str:
 
-    configuration = _configuration(
-        context
-    )
+    configuration = _configuration(context)
 
-    value = (
-        configuration.get(
-            "asset_type"
-        )
-        or context.resource.get(
-            "asset_type"
-        )
-        or ""
-    )
+    value = configuration.get("asset_type") or context.resource.get("asset_type") or ""
 
-    return str(
-        value
-    ).strip().lower()
+    return str(value).strip().lower()
 
 
 def _metric_value(
@@ -237,9 +204,7 @@ def _metric_value(
     name: str,
 ) -> float | None:
 
-    return context.metric_value(
-        name
-    )
+    return context.metric_value(name)
 
 
 def _metric_ready(
@@ -247,13 +212,9 @@ def _metric_ready(
     name: str,
 ) -> bool:
 
-    metric = context.metric(
-        name
-    )
+    metric = context.metric(name)
 
-    return metric_has_observed_data(
-        metric
-    )
+    return metric_has_observed_data(metric)
 
 
 def _observation_period(
@@ -268,28 +229,16 @@ def _observation_period(
     ):
 
         return ObservationPeriod(
-            start=value.get(
-                "start"
-            ),
-            end=value.get(
-                "end"
-            ),
-            duration_seconds=value.get(
-                "duration_seconds"
-            ),
+            start=value.get("start"),
+            end=value.get("end"),
+            duration_seconds=value.get("duration_seconds"),
         )
 
-    cloudwatch = _cloudwatch(
-        context
-    )
+    cloudwatch = _cloudwatch(context)
 
-    start = cloudwatch.get(
-        "start"
-    )
+    start = cloudwatch.get("start")
 
-    end = cloudwatch.get(
-        "end"
-    )
+    end = cloudwatch.get("end")
 
     if not start and not end:
         return None
@@ -298,6 +247,8 @@ def _observation_period(
         start=start,
         end=end,
     )
+
+
 def _parse_datetime(
     value: Any,
 ) -> datetime | None:
@@ -311,9 +262,7 @@ def _parse_datetime(
     if not value:
         return None
 
-    text = str(
-        value
-    ).strip()
+    text = str(value).strip()
 
     if not text:
         return None
@@ -337,31 +286,26 @@ def _age_days(
     now: datetime | None = None,
 ) -> float | None:
 
-    timestamp = _parse_datetime(
-        value
-    )
+    timestamp = _parse_datetime(value)
 
     if timestamp is None:
         return None
 
     if now is None:
-        now = datetime.now(
-            timestamp.tzinfo
-        )
+        now = datetime.now(timestamp.tzinfo)
 
     try:
 
         return max(
             0.0,
-            (
-                now - timestamp
-            ).total_seconds()
-            / 86400.0,
+            (now - timestamp).total_seconds() / 86400.0,
         )
 
     except TypeError:
 
         return None
+
+
 @register
 class QuickSightAnalyzer(Analyzer):
 
@@ -378,122 +322,72 @@ class QuickSightAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        return (
-            context.resource_type
-            in self.SUPPORTED_RESOURCE_TYPES
-        )
+        return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
     def analyze(
         self,
         context: AnalysisContext,
     ) -> list[Finding]:
 
-        if not self.supports(
-            context
-        ):
+        if not self.supports(context):
             return []
 
-        findings: list[
-            Finding
-        ] = []
+        findings: list[Finding] = []
 
-        asset_type = _asset_type(
-            context
-        )
+        asset_type = _asset_type(context)
         if asset_type == "account":
 
-            finding = (
-                self._check_spice_capacity(
-                    context
-                )
-            )
+            finding = self._check_spice_capacity(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
             return findings
         if asset_type == "dashboard":
 
-            finding = (
-                self._check_stale_dashboard(
-                    context
-                )
-            )
+            finding = self._check_stale_dashboard(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
-            finding = (
-                self._check_dashboard_errors(
-                    context
-                )
-            )
+            finding = self._check_dashboard_errors(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
             return findings
         if asset_type == "dataset":
 
-            finding = (
-                self._check_orphaned_dataset(
-                    context
-                )
-            )
+            finding = self._check_orphaned_dataset(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
-            finding = (
-                self._check_unused_spice_dataset(
-                    context
-                )
-            )
+            finding = self._check_unused_spice_dataset(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
             return findings
         if asset_type == "data_source":
 
-            finding = (
-                self._check_data_source_failure(
-                    context
-                )
-            )
+            finding = self._check_data_source_failure(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
             return findings
         if asset_type == "analysis":
 
-            finding = (
-                self._check_stale_analysis(
-                    context
-                )
-            )
+            finding = self._check_stale_analysis(context)
 
             if finding:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
             return findings
 
         return findings
+
     def _check_spice_capacity(
         self,
         context: AnalysisContext,
@@ -521,17 +415,10 @@ class QuickSightAnalyzer(Analyzer):
             SPICE_CONSUMED_METRIC,
         )
 
-        if (
-            limit_mb is None
-            or consumed_mb is None
-            or limit_mb <= 0
-        ):
+        if limit_mb is None or consumed_mb is None or limit_mb <= 0:
             return None
 
-        ratio = (
-            consumed_mb
-            / limit_mb
-        )
+        ratio = consumed_mb / limit_mb
 
         if ratio < (
             _threshold(
@@ -545,12 +432,8 @@ class QuickSightAnalyzer(Analyzer):
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_spice_capacity_pressure"
-            ),
-            title=(
-                "QuickSight SPICE capacity is highly utilized"
-            ),
+            finding_type=("quicksight_spice_capacity_pressure"),
+            title=("QuickSight SPICE capacity is highly utilized"),
             severity="medium",
             confidence="high",
             reason=(
@@ -571,39 +454,27 @@ class QuickSightAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "spice_capacity_limit_mb":
-                    limit_mb,
-
-                "spice_capacity_consumed_mb":
-                    consumed_mb,
-
-                "spice_utilization_ratio":
-                    round(
-                        ratio,
-                        4,
-                    ),
-
-                "region":
-                    context.region,
+                "spice_capacity_limit_mb": limit_mb,
+                "spice_capacity_consumed_mb": consumed_mb,
+                "spice_utilization_ratio": round(
+                    ratio,
+                    4,
+                ),
+                "region": context.region,
             },
             recommendation_eligible=False,
         )
+
     def _check_stale_dashboard(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
 
-        configuration = _configuration(
-            context
-        )
+        configuration = _configuration(context)
 
-        last_published = configuration.get(
-            "last_published_time"
-        )
+        last_published = configuration.get("last_published_time")
 
-        age = _age_days(
-            last_published
-        )
+        age = _age_days(last_published)
 
         threshold = _threshold(
             context,
@@ -611,16 +482,10 @@ class QuickSightAnalyzer(Analyzer):
             DEFAULT_STALE_DAYS,
         )
 
-        if (
-            age is None
-            or threshold is None
-            or age < threshold
-        ):
+        if age is None or threshold is None or age < threshold:
             return None
 
-        activity = _cloudtrail(
-            context
-        )
+        activity = _cloudtrail(context)
 
         events = activity.get(
             "events",
@@ -640,12 +505,8 @@ class QuickSightAnalyzer(Analyzer):
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_stale_dashboard"
-            ),
-            title=(
-                "QuickSight dashboard appears stale"
-            ),
+            finding_type=("quicksight_stale_dashboard"),
+            title=("QuickSight dashboard appears stale"),
             severity="low",
             confidence="medium",
             reason=(
@@ -667,36 +528,24 @@ class QuickSightAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "last_published_time":
-                    last_published,
-
-                "age_days":
-                    round(
-                        age,
-                        1,
-                    ),
-
-                "cloudtrail_event_count":
-                    len(
-                        events
-                    ),
-
-                "review_threshold_days":
-                    threshold,
-
-                "region":
-                    context.region,
+                "last_published_time": last_published,
+                "age_days": round(
+                    age,
+                    1,
+                ),
+                "cloudtrail_event_count": len(events),
+                "review_threshold_days": threshold,
+                "region": context.region,
             },
             recommendation_eligible=True,
         )
+
     def _check_dashboard_errors(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
 
-        configuration = _configuration(
-            context
-        )
+        configuration = _configuration(context)
 
         errors = configuration.get(
             "version_errors",
@@ -723,12 +572,8 @@ class QuickSightAnalyzer(Analyzer):
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_dashboard_errors"
-            ),
-            title=(
-                "QuickSight dashboard has configuration errors"
-            ),
+            finding_type=("quicksight_dashboard_errors"),
+            title=("QuickSight dashboard has configuration errors"),
             severity="medium",
             confidence="high",
             reason=(
@@ -746,33 +591,23 @@ class QuickSightAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "error_count":
-                    len(
-                        errors
-                    ),
-
-                "errors":
-                    errors,
-
-                "region":
-                    context.region,
+                "error_count": len(errors),
+                "errors": errors,
+                "region": context.region,
             },
             recommendation_eligible=False,
         )
+
     def _check_orphaned_dataset(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
 
-        relationships = _relationships(
-            context
-        )
+        relationships = _relationships(context)
 
-        dashboard_arns = (
-            relationships.get(
-                "dashboard_arns",
-                [],
-            )
+        dashboard_arns = relationships.get(
+            "dashboard_arns",
+            [],
         )
 
         if dashboard_arns:
@@ -780,9 +615,7 @@ class QuickSightAnalyzer(Analyzer):
 
         # CloudTrail activity can prove that the dataset itself has
         # been modified/refreshed, but it does not prove dashboard use.
-        activity = _cloudtrail(
-            context
-        )
+        activity = _cloudtrail(context)
 
         events = activity.get(
             "events",
@@ -795,20 +628,12 @@ class QuickSightAnalyzer(Analyzer):
         ):
             events = []
 
-        dataset_id = _configuration(
-            context
-        ).get(
-            "dataset_id"
-        )
+        dataset_id = _configuration(context).get("dataset_id")
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_potentially_orphaned_dataset"
-            ),
-            title=(
-                "QuickSight dataset has no discovered dashboard dependency"
-            ),
+            finding_type=("quicksight_potentially_orphaned_dataset"),
+            title=("QuickSight dataset has no discovered dashboard dependency"),
             severity="low",
             confidence="medium",
             reason=(
@@ -836,30 +661,20 @@ class QuickSightAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "dataset_id":
-                    dataset_id,
-
-                "dashboard_dependencies":
-                    dashboard_arns,
-
-                "cloudtrail_event_count":
-                    len(
-                        events
-                    ),
-
-                "region":
-                    context.region,
+                "dataset_id": dataset_id,
+                "dashboard_dependencies": dashboard_arns,
+                "cloudtrail_event_count": len(events),
+                "region": context.region,
             },
             recommendation_eligible=True,
         )
+
     def _check_unused_spice_dataset(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
 
-        configuration = _configuration(
-            context
-        )
+        configuration = _configuration(context)
 
         import_mode = str(
             configuration.get(
@@ -871,14 +686,10 @@ class QuickSightAnalyzer(Analyzer):
         if import_mode != "SPICE":
             return None
 
-        consumed = configuration.get(
-            "consumed_spice_capacity_bytes"
-        )
+        consumed = configuration.get("consumed_spice_capacity_bytes")
 
         try:
-            consumed = float(
-                consumed
-            )
+            consumed = float(consumed)
 
         except (
             TypeError,
@@ -889,18 +700,14 @@ class QuickSightAnalyzer(Analyzer):
         if consumed <= 0:
             return None
 
-        relationships = _relationships(
-            context
-        )
+        relationships = _relationships(context)
 
         dashboard_arns = relationships.get(
             "dashboard_arns",
             [],
         )
 
-        activity = _cloudtrail(
-            context
-        )
+        activity = _cloudtrail(context)
 
         events = activity.get(
             "events",
@@ -920,13 +727,8 @@ class QuickSightAnalyzer(Analyzer):
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_spice_dataset_review"
-            ),
-            title=(
-                "QuickSight SPICE dataset may be consuming "
-                "unnecessary capacity"
-            ),
+            finding_type=("quicksight_spice_dataset_review"),
+            title=("QuickSight SPICE dataset may be consuming " "unnecessary capacity"),
             severity="low",
             confidence="medium",
             reason=(
@@ -958,39 +760,24 @@ class QuickSightAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "consumed_spice_capacity_bytes":
-                    consumed,
-
-                "consumed_spice_capacity_gib":
-                    round(
-                        consumed
-                        / (1024 ** 3),
-                        3,
-                    ),
-
-                "dashboard_dependency_count":
-                    len(
-                        dashboard_arns
-                    ),
-
-                "cloudtrail_event_count":
-                    len(
-                        events
-                    ),
-
-                "region":
-                    context.region,
+                "consumed_spice_capacity_bytes": consumed,
+                "consumed_spice_capacity_gib": round(
+                    consumed / (1024**3),
+                    3,
+                ),
+                "dashboard_dependency_count": len(dashboard_arns),
+                "cloudtrail_event_count": len(events),
+                "region": context.region,
             },
             recommendation_eligible=True,
         )
+
     def _check_data_source_failure(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
 
-        configuration = _configuration(
-            context
-        )
+        configuration = _configuration(context)
 
         status = str(
             configuration.get(
@@ -999,19 +786,13 @@ class QuickSightAnalyzer(Analyzer):
             )
         ).upper()
 
-        if status not in (
-            DEFAULT_FAILED_STATUS_VALUES
-        ):
+        if status not in (DEFAULT_FAILED_STATUS_VALUES):
             return None
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_data_source_failure"
-            ),
-            title=(
-                "QuickSight data source is in a failed state"
-            ),
+            finding_type=("quicksight_data_source_failure"),
+            title=("QuickSight data source is in a failed state"),
             severity="medium",
             confidence="high",
             reason=(
@@ -1028,35 +809,23 @@ class QuickSightAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "status":
-                    status,
-
-                "data_source_type":
-                    configuration.get(
-                        "type"
-                    ),
-
-                "region":
-                    context.region,
+                "status": status,
+                "data_source_type": configuration.get("type"),
+                "region": context.region,
             },
             recommendation_eligible=False,
         )
+
     def _check_stale_analysis(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
 
-        configuration = _configuration(
-            context
-        )
+        configuration = _configuration(context)
 
-        last_updated = configuration.get(
-            "last_updated_time"
-        )
+        last_updated = configuration.get("last_updated_time")
 
-        age = _age_days(
-            last_updated
-        )
+        age = _age_days(last_updated)
 
         threshold = _threshold(
             context,
@@ -1064,16 +833,10 @@ class QuickSightAnalyzer(Analyzer):
             DEFAULT_STALE_DAYS,
         )
 
-        if (
-            age is None
-            or threshold is None
-            or age < threshold
-        ):
+        if age is None or threshold is None or age < threshold:
             return None
 
-        activity = _cloudtrail(
-            context
-        )
+        activity = _cloudtrail(context)
 
         events = activity.get(
             "events",
@@ -1091,12 +854,8 @@ class QuickSightAnalyzer(Analyzer):
 
         return self._build_finding(
             context=context,
-            finding_type=(
-                "quicksight_stale_analysis"
-            ),
-            title=(
-                "QuickSight analysis appears stale"
-            ),
+            finding_type=("quicksight_stale_analysis"),
+            title=("QuickSight analysis appears stale"),
             severity="low",
             confidence="medium",
             reason=(
@@ -1117,22 +876,16 @@ class QuickSightAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "age_days":
-                    round(
-                        age,
-                        1,
-                    ),
-
-                "cloudtrail_event_count":
-                    len(
-                        events
-                    ),
-
-                "region":
-                    context.region,
+                "age_days": round(
+                    age,
+                    1,
+                ),
+                "cloudtrail_event_count": len(events),
+                "region": context.region,
             },
             recommendation_eligible=True,
         )
+
     def _build_finding(
         self,
         *,
@@ -1142,51 +895,27 @@ class QuickSightAnalyzer(Analyzer):
         severity: str,
         confidence: str,
         reason: str,
-        statements: list[
-            EvidenceStatement
-        ],
+        statements: list[EvidenceStatement],
         metadata: dict[str, Any],
         recommendation_eligible: bool,
     ) -> Finding:
 
         return Finding(
             finding_type=finding_type,
-
             title=title,
-
-            resource_type=(
-                context.resource_type
-                or "quicksight_asset"
-            ),
-
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
-
+            resource_type=(context.resource_type or "quicksight_asset"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
-
             analyzer_version=self.version,
-
             severity=severity.lower(),
-
             confidence=confidence.lower(),
-
             reason=reason,
-
             conditions=statements,
-
             evidence=self._build_evidence(
                 context,
                 metadata,
             ),
-
-            observation_period=(
-                _observation_period(
-                    context
-                )
-            ),
-
+            observation_period=(_observation_period(context)),
             limitations=[
                 (
                     "QuickSight CloudTrail activity is evidence of "
@@ -1194,96 +923,49 @@ class QuickSightAnalyzer(Analyzer):
                     "of an event does not prove that an asset is "
                     "unused."
                 ),
-
                 (
                     "Business, compliance, disaster-recovery and "
                     "reporting requirements are not inferred by "
                     "this analyzer."
                 ),
             ],
-
-            metadata=dict(
-                metadata
-            ),
-
-            recommendation_eligible=(
-                recommendation_eligible
-            ),
+            metadata=dict(metadata),
+            recommendation_eligible=(recommendation_eligible),
         )
+
     def _build_evidence(
         self,
         context: AnalysisContext,
         metadata: dict[str, Any],
     ) -> Evidence:
 
-        configuration = _configuration(
-            context
-        )
+        configuration = _configuration(context)
 
         metrics = {
-            name:
-                context.metric_summary(
-                    name
-                )
-            for name in (
-                context.metrics()
-                or {}
-            )
+            name: context.metric_summary(name) for name in (context.metrics() or {})
         }
 
         return Evidence(
             metrics=metrics,
-
-            configuration=dict(
-                configuration
-            ),
-
+            configuration=dict(configuration),
             topology=context.topology(),
-
             resource={
-                "resource_id":
-                    context.resource_id,
-
-                "resource_type":
-                    context.resource_type,
-
-                "region":
-                    context.region,
-
-                "asset_type":
-                    _asset_type(
-                        context
-                    ),
+                "resource_id": context.resource_id,
+                "resource_type": context.resource_type,
+                "region": context.region,
+                "asset_type": _asset_type(context),
             },
-
-            derived=dict(
-                metadata
-            ),
-
+            derived=dict(metadata),
             data_quality={
                 **context.data_quality(),
-
-                "cloudwatch_metrics":
-                    len(
-                        metrics
-                    ),
-
-                "cloudtrail_available":
-                    bool(
-                        _cloudtrail(
-                            context
-                        )
-                    ),
-
-                "observation_period_available":
-                    (
-                        _observation_period(
-                            context
-                        )
-                        is not None
-                    ),
+                "cloudwatch_metrics": len(metrics),
+                "cloudtrail_available": bool(_cloudtrail(context)),
+                "observation_period_available": (
+                    _observation_period(context) is not None
+                ),
             },
         )
+
     @staticmethod
     def _configuration_evidence(
         context: AnalysisContext,
@@ -1293,17 +975,9 @@ class QuickSightAnalyzer(Analyzer):
 
         return EvidenceStatement(
             name=name,
-
             value=value,
-
-            description=(
-                "Current QuickSight configuration: "
-                f"{name}={value}."
-            ),
-
-            source=[
-                "QuickSight configuration"
-            ],
+            description=("Current QuickSight configuration: " f"{name}={value}."),
+            source=["QuickSight configuration"],
         )
 
     @staticmethod
@@ -1314,19 +988,9 @@ class QuickSightAnalyzer(Analyzer):
 
         return EvidenceStatement(
             name=name,
-
-            value=context.metric_summary(
-                name
-            ),
-
-            description=(
-                f"CloudWatch QuickSight metric "
-                f"{name}."
-            ),
-
-            source=[
-                f"CloudWatch.{name}"
-            ],
+            value=context.metric_summary(name),
+            description=(f"CloudWatch QuickSight metric " f"{name}."),
+            source=[f"CloudWatch.{name}"],
         )
 
     @staticmethod
@@ -1337,23 +1001,13 @@ class QuickSightAnalyzer(Analyzer):
 
         return EvidenceStatement(
             name="cloudtrail_activity",
-
             value={
-                "event_count":
-                    len(
-                        events
-                    ),
-
-                "events":
-                    events,
+                "event_count": len(events),
+                "events": events,
             },
-
             description=(
                 "Observed QuickSight CloudTrail activity "
                 "during the collected analysis period."
             ),
-
-            source=[
-                "CloudTrail.quicksight.amazonaws.com"
-            ],
+            source=["CloudTrail.quicksight.amazonaws.com"],
         )

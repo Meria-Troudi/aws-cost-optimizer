@@ -19,9 +19,7 @@ def ensure_project_paths() -> None:
         return
 
     # backend/bootstrap.py → backend → fin
-    project_root = os.path.dirname(
-        os.path.dirname(os.path.abspath(__file__))
-    )
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     optimizer_root = os.path.join(project_root, "aws_cost_optimizer")
 
     for path in (project_root, optimizer_root):

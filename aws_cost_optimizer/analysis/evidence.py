@@ -20,29 +20,15 @@ from typing import Any
 
 @dataclass(slots=True)
 class Evidence:
-    metrics: dict[str, Any] = field(
-        default_factory=dict
-    )
-    configuration: dict[str, Any] = field(
-        default_factory=dict
-    )
-    topology: dict[str, Any] = field(
-        default_factory=dict
-    )
-    resource: dict[str, Any] = field(
-        default_factory=dict
-    )
-    derived: dict[str, Any] = field(
-        default_factory=dict
-    )
+    metrics: dict[str, Any] = field(default_factory=dict)
+    configuration: dict[str, Any] = field(default_factory=dict)
+    topology: dict[str, Any] = field(default_factory=dict)
+    resource: dict[str, Any] = field(default_factory=dict)
+    derived: dict[str, Any] = field(default_factory=dict)
 
+    billing: dict[str, Any] = field(default_factory=dict)
+    data_quality: dict[str, Any] = field(default_factory=dict)
 
-    billing: dict[str, Any] = field(
-        default_factory=dict
-    )
-    data_quality: dict[str, Any] = field(
-        default_factory=dict
-    )
     def to_dict(
         self,
     ) -> dict[str, Any]:
@@ -56,12 +42,13 @@ class Evidence:
             "billing": self.billing,
             "data_quality": self.data_quality,
         }
+
     def get_path(
         self,
         path: str,
         default: Any = None,
     ) -> Any:
-        
+
         if not path:
             return default
 
@@ -83,6 +70,7 @@ class Evidence:
             return default
 
         return current
+
     def find_key(
         self,
         key: str,
@@ -91,9 +79,7 @@ class Evidence:
         if not key:
             return []
 
-        result: list[
-            tuple[str, Any]
-        ] = []
+        result: list[tuple[str, Any]] = []
 
         self._find_key_recursive(
             value=self.to_dict(),
@@ -121,11 +107,7 @@ class Evidence:
 
             for key, child in value.items():
 
-                child_path = (
-                    f"{path}.{key}"
-                    if path
-                    else str(key)
-                )
+                child_path = f"{path}.{key}" if path else str(key)
 
                 if str(key) == target:
 
@@ -148,15 +130,9 @@ class Evidence:
             list,
         ):
 
-            for index, child in enumerate(
-                value
-            ):
+            for index, child in enumerate(value):
 
-                child_path = (
-                    f"{path}[{index}]"
-                    if path
-                    else f"[{index}]"
-                )
+                child_path = f"{path}[{index}]" if path else f"[{index}]"
 
                 cls._find_key_recursive(
                     value=child,

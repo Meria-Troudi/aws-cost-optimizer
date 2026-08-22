@@ -24,7 +24,6 @@ from ...evidence import Evidence
 from ...finding import Finding, ObservationPeriod
 from ...registry import register
 
-
 RDS_CONFIGURATION_FIELDS = (
     "instance_class",
     "engine",
@@ -62,7 +61,6 @@ DEFAULT_POLICY = {
             "require_class_stability": True,
         },
     },
-
     # Idle detection is intentionally stricter.
     "idle": {
         "enabled": True,
@@ -73,47 +71,38 @@ DEFAULT_POLICY = {
         "read_iops_max": 1.0,
         "write_iops_max": 1.0,
     },
-
     # A stopped instance still incurs storage and backup cost.
     "stopped": {
         "enabled": True,
     },
-
     # Policy/configuration checks.
     "multi_az": {
         "enabled": True,
     },
-
     "backup_retention": {
         "enabled": True,
         "minimum_days": 14,
     },
-
     "performance_insights": {
         "enabled": True,
     },
-
     # Operational context.
     "old_generation": {
         "enabled": True,
     },
-
     "aurora": {
         "enabled": True,
     },
-
     "read_replica": {
         "enabled": True,
         "minimum_metric_coverage": 0.80,
         "connections_max": 2.0,
         "network_bytes_per_second_max": 1024.0,
     },
-
     # Security finding, not automatically a cost recommendation.
     "public_accessibility": {
         "enabled": True,
     },
-
     # Capacity signal, not automatically a cost recommendation.
     "io_pressure": {
         "enabled": True,
@@ -161,32 +150,22 @@ class RDSAnalyzer(Analyzer):
         if not self.supports(context):
             return []
 
-        if not self._is_rds_resource(
-            context.resource
-        ):
+        if not self._is_rds_resource(context.resource):
             return []
 
         findings: list[Finding] = []
 
         # Strong cost findings.
-        if self._rightsizing_eligible(
-            context
-        ):
-            finding = self._check_idle_instance(
-                context
-            )
+        if self._rightsizing_eligible(context):
+            finding = self._check_idle_instance(context)
             if finding:
                 findings.append(finding)
 
-            finding = self._check_oversized_instance(
-                context
-            )
+            finding = self._check_oversized_instance(context)
             if finding:
                 findings.append(finding)
 
-            finding = self._check_read_replica(
-                context
-            )
+            finding = self._check_read_replica(context)
             if finding:
                 findings.append(finding)
 
@@ -194,52 +173,36 @@ class RDSAnalyzer(Analyzer):
         # _rightsizing_eligible), so nothing above reports it -- but it
         # still incurs storage and backup cost, which is a cost finding
         # in its own right.
-        finding = self._check_stopped_instance(
-            context
-        )
+        finding = self._check_stopped_instance(context)
         if finding:
             findings.append(finding)
 
         # Configuration/context findings.
-        finding = self._check_multi_az(
-            context
-        )
+        finding = self._check_multi_az(context)
         if finding:
             findings.append(finding)
 
-        finding = self._check_backup_retention(
-            context
-        )
+        finding = self._check_backup_retention(context)
         if finding:
             findings.append(finding)
 
-        finding = self._check_performance_insights(
-            context
-        )
+        finding = self._check_performance_insights(context)
         if finding:
             findings.append(finding)
 
-        finding = self._check_old_generation(
-            context
-        )
+        finding = self._check_old_generation(context)
         if finding:
             findings.append(finding)
 
-        finding = self._check_aurora_context(
-            context
-        )
+        finding = self._check_aurora_context(context)
         if finding:
             findings.append(finding)
 
-        finding = self._check_public_accessibility(
-            context
-        )
+        finding = self._check_public_accessibility(context)
         if finding:
             findings.append(finding)
 
-        finding = self._check_io_pressure(
-            context
-        )
+        finding = self._check_io_pressure(context)
         if finding:
             findings.append(finding)
 
@@ -256,11 +219,9 @@ class RDSAnalyzer(Analyzer):
 
         policy = DEFAULT_POLICY.copy()
 
-        resource_policy = (
-            context.resource.get(
-                "analysis_policy",
-                {},
-            )
+        resource_policy = context.resource.get(
+            "analysis_policy",
+            {},
         )
 
         if not isinstance(
@@ -317,14 +278,14 @@ class RDSAnalyzer(Analyzer):
         resource: dict[str, Any],
     ) -> bool:
 
-        return resource.get(
-            "resource_type"
-        ) in {
-            "rds_instance",
-            "rds",
-        } or resource.get(
-            "type"
-        ) == "rds_instance"
+        return (
+            resource.get("resource_type")
+            in {
+                "rds_instance",
+                "rds",
+            }
+            or resource.get("type") == "rds_instance"
+        )
 
     @staticmethod
     def _configuration(
@@ -350,10 +311,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> str:
 
-        return (
-            context.resource_id
-            or "unknown"
-        )
+        return context.resource_id or "unknown"
 
     @classmethod
     def _instance_status(
@@ -361,20 +319,12 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> str:
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
         value = (
-            configuration.get(
-                "status"
-            )
-            or context.resource.get(
-                "status"
-            )
-            or context.resource.get(
-                "DBInstanceStatus"
-            )
+            configuration.get("status")
+            or context.resource.get("status")
+            or context.resource.get("DBInstanceStatus")
             or ""
         )
 
@@ -386,9 +336,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        status = cls._instance_status(
-            context
-        )
+        status = cls._instance_status(context)
 
         return status in {
             "available",
@@ -437,7 +385,9 @@ class RDSAnalyzer(Analyzer):
                 "history": history,
             }
 
-        change_count = int(history.get("change_count", history.get("event_count", 0)) or 0)
+        change_count = int(
+            history.get("change_count", history.get("event_count", 0)) or 0
+        )
         max_changes = int(cloudtrail_policy.get("max_resizes_in_window", 1))
         suppress_multiple = bool(
             cloudtrail_policy.get("suppress_if_multiple_resizes", True)
@@ -454,13 +404,9 @@ class RDSAnalyzer(Analyzer):
                 "history": history,
             }
 
-        minimum_stable_days = float(
-            cloudtrail_policy.get("minimum_stable_days", 14)
-        )
+        minimum_stable_days = float(cloudtrail_policy.get("minimum_stable_days", 14))
         days_since_last_change = history.get("days_since_last_change")
-        suppress_recent = bool(
-            cloudtrail_policy.get("suppress_if_recent_resize", True)
-        )
+        suppress_recent = bool(cloudtrail_policy.get("suppress_if_recent_resize", True))
 
         if (
             suppress_recent
@@ -517,7 +463,9 @@ class RDSAnalyzer(Analyzer):
             "cloudtrail_resize_history",
             {
                 "status": guard.get("status"),
-                "change_count": history.get("change_count", history.get("event_count", 0)),
+                "change_count": history.get(
+                    "change_count", history.get("event_count", 0)
+                ),
                 "last_change_at": history.get("last_change_at"),
                 "last_changed_to_class": history.get("last_changed_to_class"),
                 "days_since_last_change": history.get("days_since_last_change"),
@@ -539,9 +487,7 @@ class RDSAnalyzer(Analyzer):
         name: str,
     ) -> dict[str, Any]:
 
-        return context.metric_summary(
-            name
-        )
+        return context.metric_summary(name)
 
     @staticmethod
     def _metric_observed(
@@ -553,13 +499,9 @@ class RDSAnalyzer(Analyzer):
                 metric,
                 dict,
             )
-            and metric.get(
-                "observed"
-            ) is True
+            and metric.get("observed") is True
             and isinstance(
-                metric.get(
-                    "value"
-                ),
+                metric.get("value"),
                 (int, float),
             )
         )
@@ -569,28 +511,20 @@ class RDSAnalyzer(Analyzer):
         metric: dict[str, Any],
     ) -> float | None:
 
-        if not RDSAnalyzer._metric_observed(
-            metric
-        ):
+        if not RDSAnalyzer._metric_observed(metric):
             return None
 
-        return float(
-            metric["value"]
-        )
+        return float(metric["value"])
 
     @staticmethod
     def _metric_average(
         metric: dict[str, Any],
     ) -> float | None:
 
-        if not RDSAnalyzer._metric_observed(
-            metric
-        ):
+        if not RDSAnalyzer._metric_observed(metric):
             return None
 
-        value = metric.get(
-            "value"
-        )
+        value = metric.get("value")
 
         return (
             float(value)
@@ -612,9 +546,7 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        value = metric.get(
-            "maximum"
-        )
+        value = metric.get("maximum")
 
         if isinstance(
             value,
@@ -688,15 +620,10 @@ class RDSAnalyzer(Analyzer):
                 name,
             )
 
-            if not cls._metric_observed(
-                metric
-            ):
+            if not cls._metric_observed(metric):
                 return False
 
-            if (
-                cls._metric_coverage(metric)
-                < minimum_coverage
-            ):
+            if cls._metric_coverage(metric) < minimum_coverage:
                 return False
 
         return True
@@ -711,9 +638,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "idle",
             {},
         )
@@ -769,21 +694,11 @@ class RDSAnalyzer(Analyzer):
             "WriteIOPS",
         )
 
-        cpu_average = cls._metric_average(
-            cpu
-        )
-        cpu_maximum = cls._metric_maximum(
-            cpu
-        )
-        connection_value = cls._metric_value(
-            connections
-        )
-        read_value = cls._metric_value(
-            read_iops
-        )
-        write_value = cls._metric_value(
-            write_iops
-        )
+        cpu_average = cls._metric_average(cpu)
+        cpu_maximum = cls._metric_maximum(cpu)
+        connection_value = cls._metric_value(connections)
+        read_value = cls._metric_value(read_iops)
+        write_value = cls._metric_value(write_iops)
 
         if (
             cpu_average is None
@@ -840,15 +755,10 @@ class RDSAnalyzer(Analyzer):
             cls._statement(
                 "cpu",
                 {
-                    "average_percent":
-                        round(cpu_average, 2),
-                    "maximum_percent":
-                        round(cpu_maximum, 2),
+                    "average_percent": round(cpu_average, 2),
+                    "maximum_percent": round(cpu_maximum, 2),
                 },
-                (
-                    "CPU remained very low across "
-                    "the observation period."
-                ),
+                ("CPU remained very low across " "the observation period."),
                 ["CloudWatch.CPUUtilization"],
             ),
             cls._statement(
@@ -860,10 +770,8 @@ class RDSAnalyzer(Analyzer):
             cls._statement(
                 "io",
                 {
-                    "read_iops":
-                        round(read_value, 2),
-                    "write_iops":
-                        round(write_value, 2),
+                    "read_iops": round(read_value, 2),
+                    "write_iops": round(write_value, 2),
                 },
                 "Read and write I/O remained very low.",
                 [
@@ -887,30 +795,24 @@ class RDSAnalyzer(Analyzer):
             reason=reason,
             statements=statements,
             metadata={
-                "category":
-                    "rightsizing",
-                "cloudtrail_resize_change_count":
-                    cls._cloudtrail(context).get("change_count", 0),
-                "cloudtrail_last_change_at":
-                    cls._cloudtrail(context).get("last_change_at"),
-                "cloudtrail_days_since_last_change":
-                    cls._cloudtrail(context).get("days_since_last_change"),
-                "instance_class":
-                    cls._configuration(
-                        context.resource
-                    ).get(
-                        "instance_class"
-                    ),
-                "cpu_average_percent":
-                    cpu_average,
-                "cpu_maximum_percent":
-                    cpu_maximum,
-                "database_connections":
-                    connection_value,
-                "read_iops":
-                    read_value,
-                "write_iops":
-                    write_value,
+                "category": "rightsizing",
+                "cloudtrail_resize_change_count": cls._cloudtrail(context).get(
+                    "change_count", 0
+                ),
+                "cloudtrail_last_change_at": cls._cloudtrail(context).get(
+                    "last_change_at"
+                ),
+                "cloudtrail_days_since_last_change": cls._cloudtrail(context).get(
+                    "days_since_last_change"
+                ),
+                "instance_class": cls._configuration(context.resource).get(
+                    "instance_class"
+                ),
+                "cpu_average_percent": cpu_average,
+                "cpu_maximum_percent": cpu_maximum,
+                "database_connections": connection_value,
+                "read_iops": read_value,
+                "write_iops": write_value,
             },
             recommendation_eligible=True,
             limitations=[
@@ -924,9 +826,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "rightsizing",
             {},
         )
@@ -982,21 +882,11 @@ class RDSAnalyzer(Analyzer):
             "WriteIOPS",
         )
 
-        cpu_average = cls._metric_average(
-            cpu
-        )
-        cpu_maximum = cls._metric_maximum(
-            cpu
-        )
-        connection_value = cls._metric_value(
-            connections
-        )
-        read_value = cls._metric_value(
-            read_iops
-        )
-        write_value = cls._metric_value(
-            write_iops
-        )
+        cpu_average = cls._metric_average(cpu)
+        cpu_maximum = cls._metric_maximum(cpu)
+        connection_value = cls._metric_value(connections)
+        read_value = cls._metric_value(read_iops)
+        write_value = cls._metric_value(write_iops)
 
         if (
             cpu_average is None
@@ -1009,114 +899,61 @@ class RDSAnalyzer(Analyzer):
 
         # Idle is handled by the stronger idle finding.
         if (
-            cpu_average
-            <= float(
-                DEFAULT_POLICY["idle"][
-                    "average_cpu_max_percent"
-                ]
-            )
-            and cpu_maximum
-            <= float(
-                DEFAULT_POLICY["idle"][
-                    "maximum_cpu_max_percent"
-                ]
-            )
-            and connection_value
-            <= float(
-                DEFAULT_POLICY["idle"][
-                    "connections_max"
-                ]
-            )
-            and read_value
-            <= float(
-                DEFAULT_POLICY["idle"][
-                    "read_iops_max"
-                ]
-            )
-            and write_value
-            <= float(
-                DEFAULT_POLICY["idle"][
-                    "write_iops_max"
-                ]
-            )
+            cpu_average <= float(DEFAULT_POLICY["idle"]["average_cpu_max_percent"])
+            and cpu_maximum <= float(DEFAULT_POLICY["idle"]["maximum_cpu_max_percent"])
+            and connection_value <= float(DEFAULT_POLICY["idle"]["connections_max"])
+            and read_value <= float(DEFAULT_POLICY["idle"]["read_iops_max"])
+            and write_value <= float(DEFAULT_POLICY["idle"]["write_iops_max"])
         ):
             return None
 
-        low_cpu = (
-            cpu_average
-            <= float(
-                policy.get(
-                    "average_cpu_max_percent",
-                    15.0,
-                )
+        low_cpu = cpu_average <= float(
+            policy.get(
+                "average_cpu_max_percent",
+                15.0,
             )
         )
 
-        safe_peak = (
-            cpu_maximum
-            <= float(
-                policy.get(
-                    "maximum_cpu_max_percent",
-                    70.0,
-                )
+        safe_peak = cpu_maximum <= float(
+            policy.get(
+                "maximum_cpu_max_percent",
+                70.0,
             )
         )
 
-        low_connections = (
-            connection_value
-            <= float(
-                policy.get(
-                    "connections_max",
-                    2.0,
-                )
+        low_connections = connection_value <= float(
+            policy.get(
+                "connections_max",
+                2.0,
             )
         )
 
-        low_io = (
-            read_value
-            <= float(
-                policy.get(
-                    "read_iops_max",
-                    10.0,
-                )
+        low_io = read_value <= float(
+            policy.get(
+                "read_iops_max",
+                10.0,
             )
-            and write_value
-            <= float(
-                policy.get(
-                    "write_iops_max",
-                    10.0,
-                )
+        ) and write_value <= float(
+            policy.get(
+                "write_iops_max",
+                10.0,
             )
         )
 
-        if not (
-            low_cpu
-            and safe_peak
-            and low_connections
-            and low_io
-        ):
+        if not (low_cpu and safe_peak and low_connections and low_io):
             return None
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
-        instance_class = (
-            configuration.get(
-                "instance_class"
-            )
-            or "current instance"
-        )
+        instance_class = configuration.get("instance_class") or "current instance"
 
         statements = [
             cls._rightsizing_history_statement(context),
             cls._statement(
                 "cpu",
                 {
-                    "average_percent":
-                        round(cpu_average, 2),
-                    "maximum_percent":
-                        round(cpu_maximum, 2),
+                    "average_percent": round(cpu_average, 2),
+                    "maximum_percent": round(cpu_maximum, 2),
                 },
                 "CPU utilization remained low and peak CPU stayed below the review limit.",
                 ["CloudWatch.CPUUtilization"],
@@ -1133,10 +970,8 @@ class RDSAnalyzer(Analyzer):
             cls._statement(
                 "io",
                 {
-                    "read_iops":
-                        round(read_value, 2),
-                    "write_iops":
-                        round(write_value, 2),
+                    "read_iops": round(read_value, 2),
+                    "write_iops": round(write_value, 2),
                 },
                 "Read and write I/O remained low.",
                 [
@@ -1156,35 +991,29 @@ class RDSAnalyzer(Analyzer):
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_instance_possible_oversized"
-            ),
+            finding_type=("rds_instance_possible_oversized"),
             title="RDS instance may be oversized",
             severity="medium",
             confidence="medium",
             reason=reason,
             statements=statements,
             metadata={
-                "category":
-                    "rightsizing",
-                "cloudtrail_resize_change_count":
-                    cls._cloudtrail(context).get("change_count", 0),
-                "cloudtrail_last_change_at":
-                    cls._cloudtrail(context).get("last_change_at"),
-                "cloudtrail_days_since_last_change":
-                    cls._cloudtrail(context).get("days_since_last_change"),
-                "instance_class":
-                    instance_class,
-                "cpu_average_percent":
-                    cpu_average,
-                "cpu_maximum_percent":
-                    cpu_maximum,
-                "database_connections":
-                    connection_value,
-                "read_iops":
-                    read_value,
-                "write_iops":
-                    write_value,
+                "category": "rightsizing",
+                "cloudtrail_resize_change_count": cls._cloudtrail(context).get(
+                    "change_count", 0
+                ),
+                "cloudtrail_last_change_at": cls._cloudtrail(context).get(
+                    "last_change_at"
+                ),
+                "cloudtrail_days_since_last_change": cls._cloudtrail(context).get(
+                    "days_since_last_change"
+                ),
+                "instance_class": instance_class,
+                "cpu_average_percent": cpu_average,
+                "cpu_maximum_percent": cpu_maximum,
+                "database_connections": connection_value,
+                "read_iops": read_value,
+                "write_iops": write_value,
             },
             recommendation_eligible=True,
             limitations=[
@@ -1198,9 +1027,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "read_replica",
             {},
         )
@@ -1211,17 +1038,10 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
-        replica_source = (
-            configuration.get(
-                "read_replica_source"
-            )
-            or configuration.get(
-                "replica_source_identifier"
-            )
+        replica_source = configuration.get("read_replica_source") or configuration.get(
+            "replica_source_identifier"
         )
 
         if not replica_source:
@@ -1268,11 +1088,7 @@ class RDSAnalyzer(Analyzer):
             )
         )
 
-        if (
-            connections is None
-            or network_rx is None
-            or network_tx is None
-        ):
+        if connections is None or network_rx is None or network_tx is None:
             return None
 
         connection_limit = float(
@@ -1290,12 +1106,9 @@ class RDSAnalyzer(Analyzer):
         )
 
         if not (
-            connections
-            <= connection_limit
-            and network_rx
-            <= network_limit
-            and network_tx
-            <= network_limit
+            connections <= connection_limit
+            and network_rx <= network_limit
+            and network_tx <= network_limit
         ):
             return None
 
@@ -1312,10 +1125,8 @@ class RDSAnalyzer(Analyzer):
             cls._statement(
                 "network",
                 {
-                    "receive_bytes_per_second":
-                        round(network_rx, 2),
-                    "transmit_bytes_per_second":
-                        round(network_tx, 2),
+                    "receive_bytes_per_second": round(network_rx, 2),
+                    "transmit_bytes_per_second": round(network_tx, 2),
                 },
                 "Observed network activity remained low.",
                 [
@@ -1337,16 +1148,11 @@ class RDSAnalyzer(Analyzer):
             ),
             statements=statements,
             metadata={
-                "category":
-                    "replica_utilization",
-                "replica_source":
-                    replica_source,
-                "database_connections":
-                    connections,
-                "network_receive_bytes_per_second":
-                    network_rx,
-                "network_transmit_bytes_per_second":
-                    network_tx,
+                "category": "replica_utilization",
+                "replica_source": replica_source,
+                "database_connections": connections,
+                "network_receive_bytes_per_second": network_rx,
+                "network_transmit_bytes_per_second": network_tx,
             },
             recommendation_eligible=True,
             limitations=[
@@ -1374,9 +1180,7 @@ class RDSAnalyzer(Analyzer):
         only that its retention should be reviewed.
         """
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "stopped",
             {},
         )
@@ -1387,29 +1191,18 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        status = cls._instance_status(
-            context
-        )
+        status = cls._instance_status(context)
 
         if status != "stopped":
             return None
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
         engine = configuration.get("engine")
-        instance_class = configuration.get(
-            "instance_class"
-        )
-        cluster_identifier = (
-            configuration.get(
-                "db_cluster_identifier"
-            )
-            or configuration.get(
-                "db_cluster_id"
-            )
-        )
+        instance_class = configuration.get("instance_class")
+        cluster_identifier = configuration.get(
+            "db_cluster_identifier"
+        ) or configuration.get("db_cluster_id")
 
         statements = [
             cls._statement(
@@ -1444,9 +1237,7 @@ class RDSAnalyzer(Analyzer):
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_stopped_instance"
-            ),
+            finding_type=("rds_stopped_instance"),
             title="RDS instance is stopped",
             severity="medium",
             confidence="high",
@@ -1481,9 +1272,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "multi_az",
             {},
         )
@@ -1494,13 +1283,9 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
-        if configuration.get(
-            "multi_az"
-        ) is not True:
+        if configuration.get("multi_az") is not True:
             return None
 
         return cls._build_finding(
@@ -1523,15 +1308,11 @@ class RDSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "category":
-                    "configuration_review",
-                "multi_az":
-                    True,
+                "category": "configuration_review",
+                "multi_az": True,
             },
             recommendation_eligible=False,
-            limitations=[
-                "Cost optimization must not reduce required availability."
-            ],
+            limitations=["Cost optimization must not reduce required availability."],
         )
 
     @classmethod
@@ -1540,9 +1321,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "backup_retention",
             {},
         )
@@ -1553,19 +1332,13 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        retention = cls._configuration(
-            context.resource
-        ).get(
-            "backup_retention_days"
-        )
+        retention = cls._configuration(context.resource).get("backup_retention_days")
 
         if retention is None:
             return None
 
         try:
-            retention = int(
-                retention
-            )
+            retention = int(retention)
         except (
             TypeError,
             ValueError,
@@ -1584,9 +1357,7 @@ class RDSAnalyzer(Analyzer):
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_backup_retention_review"
-            ),
+            finding_type=("rds_backup_retention_review"),
             title="RDS backup retention is high",
             severity="low",
             confidence="medium",
@@ -1599,20 +1370,16 @@ class RDSAnalyzer(Analyzer):
                 cls._statement(
                     "backup_retention",
                     {
-                        "days":
-                            retention,
-                        "review_threshold_days":
-                            minimum_days,
+                        "days": retention,
+                        "review_threshold_days": minimum_days,
                     },
                     "Configured backup retention exceeds the review threshold.",
                     ["RDS configuration"],
                 )
             ],
             metadata={
-                "category":
-                    "backup_configuration",
-                "backup_retention_days":
-                    retention,
+                "category": "backup_configuration",
+                "backup_retention_days": retention,
             },
             recommendation_eligible=False,
             limitations=[
@@ -1626,9 +1393,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "performance_insights",
             {},
         )
@@ -1639,9 +1404,7 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        enabled = cls._configuration(
-            context.resource
-        ).get(
+        enabled = cls._configuration(context.resource).get(
             "performance_insights_enabled"
         )
 
@@ -1650,9 +1413,7 @@ class RDSAnalyzer(Analyzer):
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_performance_insights_review"
-            ),
+            finding_type=("rds_performance_insights_review"),
             title="RDS Performance Insights enabled",
             severity="info",
             confidence="high",
@@ -1670,10 +1431,8 @@ class RDSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "category":
-                    "configuration_review",
-                "performance_insights_enabled":
-                    True,
+                "category": "configuration_review",
+                "performance_insights_enabled": True,
             },
             recommendation_eligible=False,
         )
@@ -1684,9 +1443,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "old_generation",
             {},
         )
@@ -1697,28 +1454,19 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        instance_class = cls._configuration(
-            context.resource
-        ).get(
-            "instance_class"
-        )
+        instance_class = cls._configuration(context.resource).get("instance_class")
 
         if not instance_class:
             return None
 
         if not any(
-            str(instance_class).startswith(
-                family
-            )
-            for family in OLD_INSTANCE_FAMILIES
+            str(instance_class).startswith(family) for family in OLD_INSTANCE_FAMILIES
         ):
             return None
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_old_instance_generation"
-            ),
+            finding_type=("rds_old_instance_generation"),
             title="RDS uses an older instance generation",
             severity="low",
             confidence="high",
@@ -1736,10 +1484,8 @@ class RDSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "category":
-                    "generation_review",
-                "instance_class":
-                    instance_class,
+                "category": "generation_review",
+                "instance_class": instance_class,
             },
             recommendation_eligible=False,
             limitations=[
@@ -1753,9 +1499,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "aurora",
             {},
         )
@@ -1766,9 +1510,7 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
         engine = str(
             configuration.get(
@@ -1777,35 +1519,23 @@ class RDSAnalyzer(Analyzer):
             )
         ).lower()
 
-        if not engine.startswith(
-            "aurora"
-        ):
+        if not engine.startswith("aurora"):
             return None
 
-        cluster_id = (
-            configuration.get(
-                "db_cluster_identifier"
-            )
-            or configuration.get(
-                "db_cluster_id"
-            )
+        cluster_id = configuration.get("db_cluster_identifier") or configuration.get(
+            "db_cluster_id"
         )
 
         value = {
-            "engine":
-                engine,
+            "engine": engine,
         }
 
         if cluster_id:
-            value["cluster_identifier"] = (
-                cluster_id
-            )
+            value["cluster_identifier"] = cluster_id
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_aurora_cluster_context"
-            ),
+            finding_type=("rds_aurora_cluster_context"),
             title="Aurora cluster context",
             severity="info",
             confidence="high",
@@ -1823,8 +1553,7 @@ class RDSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "category":
-                    "optimization_context",
+                "category": "optimization_context",
                 **value,
             },
             recommendation_eligible=False,
@@ -1836,9 +1565,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "public_accessibility",
             {},
         )
@@ -1849,9 +1576,7 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        publicly_accessible = cls._configuration(
-            context.resource
-        ).get(
+        publicly_accessible = cls._configuration(context.resource).get(
             "publicly_accessible"
         )
 
@@ -1860,9 +1585,7 @@ class RDSAnalyzer(Analyzer):
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_public_accessibility"
-            ),
+            finding_type=("rds_public_accessibility"),
             title="RDS instance is publicly accessible",
             severity="low",
             confidence="high",
@@ -1879,10 +1602,8 @@ class RDSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "category":
-                    "security_review",
-                "publicly_accessible":
-                    True,
+                "category": "security_review",
+                "publicly_accessible": True,
             },
             recommendation_eligible=False,
         )
@@ -1897,9 +1618,7 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = cls._policy(
-            context
-        ).get(
+        policy = cls._policy(context).get(
             "io_pressure",
             {},
         )
@@ -1943,10 +1662,7 @@ class RDSAnalyzer(Analyzer):
             )
         )
 
-        if (
-            read_value is None
-            or write_value is None
-        ):
+        if read_value is None or write_value is None:
             return None
 
         total_iops = read_value + write_value
@@ -1963,9 +1679,7 @@ class RDSAnalyzer(Analyzer):
 
         return cls._build_finding(
             context=context,
-            finding_type=(
-                "rds_io_pressure"
-            ),
+            finding_type=("rds_io_pressure"),
             title="RDS I/O pressure",
             severity="medium",
             confidence="medium",
@@ -1978,12 +1692,9 @@ class RDSAnalyzer(Analyzer):
                 cls._statement(
                     "io",
                     {
-                        "read_iops":
-                            round(read_value, 2),
-                        "write_iops":
-                            round(write_value, 2),
-                        "total_iops":
-                            round(total_iops, 2),
+                        "read_iops": round(read_value, 2),
+                        "write_iops": round(write_value, 2),
+                        "total_iops": round(total_iops, 2),
                     },
                     "Sustained I/O throughput indicates the "
                     "instance is under IOPS pressure.",
@@ -1994,16 +1705,11 @@ class RDSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "category":
-                    "capacity_review",
-                "read_iops":
-                    read_value,
-                "write_iops":
-                    write_value,
-                "total_iops":
-                    total_iops,
-                "region":
-                    context.region,
+                "category": "capacity_review",
+                "read_iops": read_value,
+                "write_iops": write_value,
+                "total_iops": total_iops,
+                "region": context.region,
             },
             recommendation_eligible=False,
         )
@@ -2042,8 +1748,7 @@ class RDSAnalyzer(Analyzer):
         metrics = context.metrics()
 
         metric_evidence = {
-            name:
-                context.metric_summary(name)
+            name: context.metric_summary(name)
             for name in metrics
             if isinstance(
                 metrics.get(name),
@@ -2051,13 +1756,10 @@ class RDSAnalyzer(Analyzer):
             )
         }
 
-        configuration = cls._configuration(
-            context.resource
-        )
+        configuration = cls._configuration(context.resource)
 
         filtered_configuration = {
-            key:
-                configuration.get(key)
+            key: configuration.get(key)
             for key in RDS_CONFIGURATION_FIELDS
             if key in configuration
         }
@@ -2080,92 +1782,43 @@ class RDSAnalyzer(Analyzer):
 
         evidence = Evidence(
             metrics=metric_evidence,
-
             configuration=filtered_configuration,
-
             topology=context.topology(),
-
             billing=dict(billing),
-
             resource={
-                "resource_id":
-                    context.resource_id,
-                "resource_type":
-                    context.resource_type,
-                "region":
-                    context.region,
-                "instance_class":
-                    configuration.get(
-                        "instance_class"
-                    ),
-                "engine":
-                    configuration.get(
-                        "engine"
-                    ),
+                "resource_id": context.resource_id,
+                "resource_type": context.resource_type,
+                "region": context.region,
+                "instance_class": configuration.get("instance_class"),
+                "engine": configuration.get("engine"),
             },
-
             derived={
                 **derived,
                 "cloudtrail_resize_history": cls._cloudtrail(context),
-                "analysis_category":
-                    metadata.get(
-                        "category"
-                    ),
+                "analysis_category": metadata.get("category"),
             },
-
             data_quality={
                 **context.collector_data_quality(),
-                "metric_count":
-                    len(metric_evidence),
+                "metric_count": len(metric_evidence),
             },
         )
 
         return Finding(
             finding_type=finding_type,
-
             title=title,
-
-            resource_type=(
-                context.resource_type
-                or cls.resource_type
-            ),
-
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
-
+            resource_type=(context.resource_type or cls.resource_type),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=cls.name,
-
             analyzer_version=cls.version,
-
             severity=severity.lower(),
-
             confidence=confidence.lower(),
-
             reason=reason,
-
             conditions=statements,
-
             evidence=evidence,
-
-            observation_period=(
-                cls._observation_period(
-                    context
-                )
-            ),
-
-            limitations=(
-                limitations
-                or []
-            ),
-
+            observation_period=(cls._observation_period(context)),
+            limitations=(limitations or []),
             metadata=metadata,
-
-            recommendation_eligible=(
-                recommendation_eligible
-            ),
-
+            recommendation_eligible=(recommendation_eligible),
             aggregation_scope="resource",
         )
 
@@ -2174,24 +1827,16 @@ class RDSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> ObservationPeriod | None:
 
-        observation = (
-            context.observation_period
-        )
+        observation = context.observation_period
 
         if isinstance(
             observation,
             dict,
         ):
             return ObservationPeriod(
-                start=observation.get(
-                    "start"
-                ),
-                end=observation.get(
-                    "end"
-                ),
-                duration_seconds=observation.get(
-                    "duration_seconds"
-                ),
+                start=observation.get("start"),
+                end=observation.get("end"),
+                duration_seconds=observation.get("duration_seconds"),
             )
 
         cloudwatch = context.cloudwatch()
@@ -2202,15 +1847,9 @@ class RDSAnalyzer(Analyzer):
         ):
             return None
 
-        start = (
-            cloudwatch.get("start")
-            or cloudwatch.get("metric_start")
-        )
+        start = cloudwatch.get("start") or cloudwatch.get("metric_start")
 
-        end = (
-            cloudwatch.get("end")
-            or cloudwatch.get("metric_end")
-        )
+        end = cloudwatch.get("end") or cloudwatch.get("metric_end")
 
         if not start and not end:
             return None
