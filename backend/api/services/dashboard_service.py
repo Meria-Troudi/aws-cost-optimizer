@@ -38,8 +38,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 import time
 from calendar import monthrange
+from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
@@ -53,9 +55,38 @@ from backend.api.services.analytics_constants import (
 # Cache
 # ---------------------------------------------------------------------
 
-_QUERY_CACHE: dict[str, tuple[float | None, Any]] = {}
+# Cost Explorer responses, keyed by query shape.
+#
+# Bounded LRU with a lock. All three properties matter here:
+#
+#   size    -- this is a module-level dict in a long-running process,
+#              keyed by query parameters, so an unbounded version grows
+#              with every distinct date range a user ever picks.
+#
+#   TTL     -- windows that have already ended used to be stored with
+#              expires_at=None, meaning cached for the lifetime of the
+#              process. Historical data is stable, not immutable
+#              (Cost Explorer restates recent months), so even those
+#              entries now expire, just far more slowly.
+#
+#   lock    -- request threads and background scan threads both reach
+#              this. dict operations are individually atomic under the
+#              GIL, but check-then-act sequences (get, decide, evict,
+#              set) are not, and eviction can race a concurrent read.
+_QUERY_CACHE: "OrderedDict[str, tuple[float, Any]]" = OrderedDict()
 
+_CACHE_LOCK = threading.Lock()
+
+# TTL for windows that include today: the figures are still moving.
 CACHE_TTL_SECONDS = 300
+
+# TTL for windows that have already closed. Long, but finite -- see
+# the note above about restatement.
+CLOSED_WINDOW_TTL_SECONDS = 24 * 60 * 60
+
+# Entry ceiling. Each entry is one Cost Explorer response, so this is
+# a bound on memory as much as on count.
+CACHE_MAX_ENTRIES = 256
 
 
 def _cache_key(*parts: Any) -> str:
@@ -71,21 +102,25 @@ def _cache_get(
     key: str,
 ) -> Any | None:
 
-    entry = _QUERY_CACHE.get(key)
+    with _CACHE_LOCK:
+        entry = _QUERY_CACHE.get(key)
 
-    if entry is None:
-        return None
+        if entry is None:
+            return None
 
-    expires_at, value = entry
+        expires_at, value = entry
 
-    if expires_at is not None and time.time() >= expires_at:
-        _QUERY_CACHE.pop(
-            key,
-            None,
-        )
-        return None
+        if time.time() >= expires_at:
+            _QUERY_CACHE.pop(
+                key,
+                None,
+            )
+            return None
 
-    return value
+        # Refresh recency for LRU eviction.
+        _QUERY_CACHE.move_to_end(key)
+
+        return value
 
 
 def _cache_set(
@@ -96,12 +131,25 @@ def _cache_set(
     today: date,
 ) -> None:
 
-    expires_at = None if end <= today else time.time() + CACHE_TTL_SECONDS
+    ttl = CLOSED_WINDOW_TTL_SECONDS if end <= today else CACHE_TTL_SECONDS
 
-    _QUERY_CACHE[key] = (
-        expires_at,
-        value,
-    )
+    with _CACHE_LOCK:
+        _QUERY_CACHE[key] = (
+            time.time() + ttl,
+            value,
+        )
+
+        _QUERY_CACHE.move_to_end(key)
+
+        while len(_QUERY_CACHE) > CACHE_MAX_ENTRIES:
+            _QUERY_CACHE.popitem(last=False)
+
+
+def _cache_clear() -> None:
+    """Drop every cached entry. Used by tests."""
+
+    with _CACHE_LOCK:
+        _QUERY_CACHE.clear()
 
 
 # ---------------------------------------------------------------------
