@@ -1,0 +1,17 @@
+# Development and test dependencies for the AWS Cost Optimizer.
+#
+# Runtime dependencies live in requirements.txt. Install both with:
+#
+#     pip install -r requirements.txt -r requirements-dev.txt
+#
+# Ranges follow the same convention as requirements.txt: pinned to the
+# currently-used major version so a fresh clone reproduces a working
+# environment without freezing transitive packages.
+
+# Test runner. The suite in tests/ is resource-independent -- it makes
+# no live AWS calls and needs no running Ollama instance.
+pytest>=8.4,<9.0
+
+# Formatter. The codebase is formatted with `black -l 88`; CI enforces
+# it with `black --check`. See the `fmt` / `fmt-check` make targets.
+black>=26.0,<27.0
