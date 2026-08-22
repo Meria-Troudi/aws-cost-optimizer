@@ -21,6 +21,28 @@ def register(
     return analyzer_class
 
 
+def registered_analyzer_classes() -> list[type[Analyzer]]:
+    """Registered analyzer classes, de-duplicated, in registration order.
+
+    get_analyzers() returns instances; this returns the classes, which
+    is what analyzers/__init__.py needs to re-export them by name.
+    """
+
+    classes: list[type[Analyzer]] = []
+    seen: set[type] = set()
+
+    for registered in _ANALYZERS:
+        analyzer_type = registered if isinstance(registered, type) else type(registered)
+
+        if analyzer_type in seen:
+            continue
+
+        seen.add(analyzer_type)
+        classes.append(analyzer_type)
+
+    return classes
+
+
 def get_analyzers() -> list[Analyzer]:
 
     instances: list[Analyzer] = []
