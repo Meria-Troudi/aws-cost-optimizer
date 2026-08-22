@@ -9,6 +9,7 @@ rather than raising -- the API must keep working with Ollama absent.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -18,6 +19,12 @@ from aws_cost_optimizer.recommendations.explanation import (
 )
 from aws_cost_optimizer.recommendations.llm.ollama import (
     OllamaProvider,
+)
+from aws_cost_optimizer.recommendations.catalog import (
+    get_definition,
+)
+from aws_cost_optimizer.recommendations.llm.guard import (
+    violations,
 )
 from aws_cost_optimizer.recommendations.llm.prompt import (
     PROMPT_VERSION,
@@ -33,6 +40,8 @@ from backend.database.repositories.recommendation_repository import (
     get_recommendation_by_id,
     save_recommendation_explanation,
 )
+
+logger = logging.getLogger(__name__)
 
 PROVIDER_NAME = "ollama"
 
@@ -83,6 +92,33 @@ class RecommendationExplanationService:
 
             return presented
 
+        # The route's never_invent list is passed to the model as
+        # guidance, but guidance is a request, not a guarantee. Check
+        # the generated text before it is persisted: an explanation
+        # asserting a concrete savings figure the deterministic layer
+        # refused to compute is worse than no explanation at all.
+        forbidden = violations(
+            explanation.model_dump(),
+            self._never_invent(presented),
+        )
+
+        if forbidden:
+            logger.warning(
+                "Rejecting generated explanation for recommendation %s: %s",
+                recommendation_id,
+                "; ".join(forbidden),
+            )
+
+            # Same fail-safe contract as an unreachable provider: never
+            # raise, never persist, surface it as unavailable.
+            presented["ai_status"] = "unavailable"
+            presented["ai_error"] = (
+                "Generated explanation asserted content the "
+                "recommendation policy forbids."
+            )
+
+            return presented
+
         save_recommendation_explanation(
             self.db,
             recommendation_id,
@@ -100,3 +136,20 @@ class RecommendationExplanationService:
                 recommendation_id,
             )
         )
+
+    @staticmethod
+    def _never_invent(presented: dict[str, Any]) -> tuple[str, ...]:
+        """The forbidden-assertion list for this recommendation's route.
+
+        Resolved from the catalog by recommendation_key. An unknown key
+        yields an empty tuple, which means the guard checks nothing --
+        acceptable only because a recommendation cannot be persisted
+        with a key the catalog does not contain in the first place.
+        """
+
+        definition = get_definition(presented.get("recommendation_key"))
+
+        if definition is None:
+            return ()
+
+        return tuple(getattr(definition, "never_invent", ()) or ())
