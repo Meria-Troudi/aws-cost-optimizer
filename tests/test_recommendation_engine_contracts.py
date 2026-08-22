@@ -42,10 +42,33 @@ def _nat_finding(index: int) -> dict:
             "savings_basis": "cost_not_resource_attributed",
             "currency": "USD",
         },
+        # Mirrors the evidence shape a real nat_gateway_idle finding
+        # carries (verified against persisted scan output), so this
+        # fixture passes the required_evidence gate the same way a real
+        # finding does rather than bypassing it.
         "evidence": {
             "billing": {
                 "attribution_scope": "collection_plan",
                 "amount": 350.40,
+            },
+            "metrics": {
+                "BytesInFromSource": {"value": 0, "has_data": True},
+                "ActiveConnectionCount": {"value": 0, "has_data": True},
+            },
+            "configuration": {
+                "nat_gateway_id": resource_id,
+                "state": "available",
+            },
+            "derived": {
+                "traffic": {
+                    "directional_traffic_bytes": 0,
+                    "observed": False,
+                    "complete": True,
+                },
+            },
+            "topology": {
+                "nat_routes": [{"route_table_id": "rtb-1"}],
+                "route_dependent_subnet_ids": ["subnet-1"],
             },
         },
     }
@@ -78,12 +101,30 @@ def _elb_idle_with_cost_finding() -> dict:
             "savings_basis": "full_resource_elimination",
             "currency": "USD",
         },
+        # As above: real elb_idle_with_cost evidence, so the gate is
+        # exercised rather than sidestepped.
         "evidence": {
             "billing": {
                 "attribution_scope": "resource",
                 "amount": 38.10,
             },
+            "metrics": {
+                "request_count": {"value": 0, "has_data": True},
+                "processed_bytes": {"value": 0, "has_data": True},
+            },
+            "configuration": {
+                "load_balancer_name": "alb-1",
+                "state": "active",
+            },
+            "topology": {
+                "subnets": ["subnet-1"],
+                "route_tables": ["rtb-1"],
+            },
         },
+        "conditions": [
+            {"name": "target_count", "value": 0},
+            {"name": "target_health_complete", "value": True},
+        ],
     }
 
 

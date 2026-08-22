@@ -113,12 +113,23 @@ class RecommendationEngine:
         if definition is None:
             return None
 
-        allowed, _errors = validate_policy(
+        allowed, errors = validate_policy(
             finding,
             definition,
         )
 
         if not allowed:
+            # A withheld recommendation is invisible in the output, so
+            # the reason has to be logged or the catalog's evidence
+            # contract becomes untraceable in the other direction:
+            # "why did this finding produce nothing?"
+            logger.warning(
+                "Withholding %s recommendation for %s: %s",
+                finding.get("finding_type", "unknown"),
+                finding.get("resource_id", "unknown"),
+                "; ".join(errors),
+            )
+
             return None
 
         finding_id = self._finding_id(finding)
