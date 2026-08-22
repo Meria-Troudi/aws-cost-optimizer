@@ -24,3 +24,10 @@ boto3>=1.43,<2.0
 
 # The planner and collection profiles are YAML-driven
 PyYAML>=6.0,<7.0
+
+# HTTP client for the optional local-LLM (Ollama) explanation layer.
+# recommendations/llm/ollama.py talks to Ollama's native /api/chat
+# endpoint directly. Required at import time even when Ollama itself
+# is not running -- the explanation layer degrades gracefully at call
+# time, not at import time.
+httpx>=0.28,<1.0
