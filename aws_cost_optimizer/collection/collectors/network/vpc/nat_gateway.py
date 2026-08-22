@@ -14,6 +14,34 @@ Collect stable NAT Gateway evidence for cost optimization:
     endpoint coverage
     optimization evidence
 
+AWS APIs called
+---------------
+EC2         describe_nat_gateways (paginated, discovery)
+            describe_subnets (Availability Zone resolution)
+CloudWatch  GetMetricData, via collection.metrics.cloudwatch --
+            AWS/NATGateway namespace, batched across the whole fleet
+            in discover() rather than per resource
+Shared      collection.shared.topology (VPC route tables, subnets,
+            VPC endpoints) and collection.shared.relationships
+            (route -> target resolution)
+
+Handed to the analyzer
+----------------------
+Consumed by analysis/analyzers/network/vpc/nat_gateway.py
+(analyzer name "nat_gateway") as:
+
+    observations.cloudwatch.metrics   raw per-metric results
+    observations.derived              traffic / connections /
+                                      performance / errors summaries,
+                                      each carrying explicit
+                                      available / complete / observed
+                                      / zero flags
+    topology                          route dependency, same- and
+                                      cross-AZ subnets, endpoint
+                                      coverage, NAT fleet context
+    optimization_evidence             the flattened view the analyzer
+                                      rules read
+
 Important
 ---------
 This collector does NOT attribute Cost Explorer spend to an individual
@@ -22,6 +50,10 @@ NAT Gateway.
 CloudWatch traffic is operational evidence.
 
 Billing attribution must come from the billing/reconciliation layer.
+
+Missing telemetry is never reported as zero: every derived block
+distinguishes "not collected" from "collected and genuinely zero", so
+the analyzer can refuse to claim evidence it does not have.
 """
 
 from __future__ import annotations

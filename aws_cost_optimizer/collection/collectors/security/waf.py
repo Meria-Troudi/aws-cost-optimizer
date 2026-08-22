@@ -20,6 +20,35 @@ Cost drivers represented by this collector:
 - logging configuration
 - rule-level CloudWatch metrics
 
+AWS APIs called
+---------------
+WAFv2       list_web_acls (paginated, discovery)
+            get_web_acl (full rule set, WCU capacity, visibility and
+            body-inspection configuration)
+            list_resources_for_web_acl (protected resources)
+            get_logging_configuration
+            list_tags_for_resource
+CloudWatch  GetMetricData, via collection.metrics.cloudwatch --
+            AWS/WAFV2 namespace, at Web ACL level and per rule
+
+Handed to the analyzer
+----------------------
+Consumed by analysis/analyzers/security/waf.py (analyzer name "waf")
+as:
+
+    configuration       rule counts by kind, WCU capacity, default
+                        action, associations and association_count,
+                        logging state, premium feature usage, body
+                        inspection limits
+    observations        request-volume and per-rule metrics, with the
+                        usual observed / no_data distinction
+    relationships       protected-resource list backing the "no
+                        discovered association" rules
+
+An unassociated Web ACL still bills, so association_count == 0 is a
+cost signal here rather than merely a configuration observation --
+but the analyzer, not this collector, decides that.
+
 This collector intentionally does NOT build VPC/network topology.
 
 WAF relationships are represented through:
