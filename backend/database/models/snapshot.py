@@ -5,7 +5,7 @@ Resource snapshot model.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     DateTime,
@@ -21,6 +21,12 @@ from sqlalchemy.orm import (
 )
 
 from ..base import Base
+
+
+def _utcnow() -> datetime:
+    """Timezone-aware UTC now, as a callable column default."""
+
+    return datetime.now(timezone.utc)
 
 
 class ResourceSnapshot(Base):
@@ -91,7 +97,7 @@ class ResourceSnapshot(Base):
 
     collected_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=_utcnow,
         nullable=False,
     )
 

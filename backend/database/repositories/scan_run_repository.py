@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -114,7 +114,7 @@ def complete_scan_run(
 
     scan.status = "completed"
     scan.progress_percent = 100.0
-    scan.finished_at = datetime.utcnow()
+    scan.finished_at = datetime.now(timezone.utc)
     scan.error_message = None
 
     if outcome is not None:
@@ -139,7 +139,7 @@ def fail_scan_run(
 
     scan.status = "failed"
     scan.error_message = str(error_message)
-    scan.finished_at = datetime.utcnow()
+    scan.finished_at = datetime.now(timezone.utc)
 
     if outcome is not None:
         scan.outcome = outcome

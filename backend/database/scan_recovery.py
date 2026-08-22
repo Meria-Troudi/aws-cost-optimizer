@@ -4,7 +4,7 @@ Recover scans left in 'running' after server reload or crash.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -69,7 +69,7 @@ def recover_stuck_scans(db: Session) -> int:
         scan.status = "failed"
 
         if hasattr(scan, "finished_at") and not scan.finished_at:
-            scan.finished_at = datetime.utcnow()
+            scan.finished_at = datetime.now(timezone.utc)
 
         if hasattr(scan, "error_message"):
             scan.error_message = (
