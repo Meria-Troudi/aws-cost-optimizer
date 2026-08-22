@@ -7,7 +7,7 @@ ResourceSnapshot = state during one scan.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -29,7 +29,7 @@ def get_or_create_resource(
     tags: dict[str, str] | None = None,
 ) -> Resource:
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     resource = (
         db.query(Resource)

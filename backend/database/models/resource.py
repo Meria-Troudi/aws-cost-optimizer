@@ -4,7 +4,7 @@ Stable AWS resource model.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import (
     DateTime,
@@ -16,6 +16,12 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..base import Base
+
+
+def _utcnow() -> datetime:
+    """Timezone-aware UTC now, as a callable column default."""
+
+    return datetime.now(timezone.utc)
 
 
 class Resource(Base):
@@ -77,13 +83,13 @@ class Resource(Base):
 
     first_seen: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=_utcnow,
         nullable=False,
     )
 
     last_seen: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=_utcnow,
         nullable=False,
     )
 

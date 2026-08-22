@@ -4,7 +4,7 @@ Recommendation persistence.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import case
@@ -275,7 +275,7 @@ def save_recommendation_explanation(
     recommendation.ai_model = model
     recommendation.ai_prompt_version = prompt_version
 
-    recommendation.ai_generated_at = datetime.utcnow()
+    recommendation.ai_generated_at = datetime.now(timezone.utc)
 
     db.flush()
 

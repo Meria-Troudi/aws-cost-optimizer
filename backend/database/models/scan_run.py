@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     Date,
@@ -15,6 +15,12 @@ from sqlalchemy.orm import (
 )
 
 from ..base import Base
+
+
+def _utcnow() -> datetime:
+    """Timezone-aware UTC now, as a callable column default."""
+
+    return datetime.now(timezone.utc)
 
 
 class ScanRun(Base):
@@ -82,7 +88,7 @@ class ScanRun(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime,
-        default=datetime.utcnow,
+        default=_utcnow,
         nullable=False,
     )
 
