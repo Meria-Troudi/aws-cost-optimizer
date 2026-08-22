@@ -1627,6 +1627,10 @@ export default function UnifiedFindingRecommendationModal({
       cancelled = true
     }
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above:
+    // adding aiLoading/aiExplanation/recommendation.ai_explanation here
+    // re-triggers this effect mid-flight and cancels the in-progress
+    // request, which is the bug this keying exists to avoid.
   }, [recommendationId])
 
   function handleRegenerateExplanation() {

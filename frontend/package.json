@@ -8,7 +8,9 @@
     "dev:preview": "vite build && vite preview --port 5173",
     "dev:chrome": "vite build && vite preview --port 5173",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix"
   },
   "dependencies": {
     "react": "^19.2.8",
@@ -20,6 +22,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
     "esbuild": "^0.28.2",
+    "oxlint": "^1.79.0",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"
   }
