@@ -19,6 +19,47 @@ The collector separates:
 
 CloudWatch series are never collapsed solely by metric name.
 
+AWS APIs called
+---------------
+EKS         list_clusters / describe_cluster (discovery)
+            list_nodegroups / describe_nodegroup
+            list_fargate_profiles / describe_fargate_profile
+            list_addons / describe_addon
+EC2         describe_auto_scaling_groups, describe_instances
+            (resolving node groups down to actual worker instances)
+CloudWatch  list_metrics -- used to DISCOVER which node/pod dimension
+            sets actually exist before querying them
+            GetMetricData, via collection.metrics.cloudwatch --
+            ContainerInsights namespace
+
+Node and pod metrics are only queried for dimension sets that
+list_metrics confirmed exist. If that discovery returns nothing, the
+metric is skipped entirely -- it is never re-queried with a
+ClusterName-only dimension, because a cluster-wide series is not a
+node or pod series and treating it as one fabricates evidence.
+
+Handed to the analyzer
+----------------------
+Consumed by analysis/analyzers/compute/eks/cluster.py (analyzer name
+"eks") as:
+
+    observations.cloudwatch.cluster / .nodes / .pods
+                        each with per-metric aggregates AND the
+                        underlying per-series list, plus a
+                        data_quality block (queried / observed /
+                        no_data / error counts, identified series
+                        count)
+    configuration.compute
+                        node groups, Fargate profiles, resolved EC2
+                        workers, and an inventory_status of
+                        complete / partial
+    optimization_evidence
+                        capacity, utilization and signals views
+
+Coverage percentages on aggregates are the weakest observed series,
+not the mean, so a partially-covered fleet cannot present as fully
+measured.
+
 Evidence collected:
 
 Cluster

@@ -15,6 +15,40 @@ Collect reliable evidence for:
 
 The collector does NOT calculate savings.
 
+AWS APIs called
+---------------
+EC2         describe_transit_gateways (discovery, and owner lookup)
+            describe_transit_gateway_vpc_attachments
+            describe_transit_gateway_attachments (non-VPC types)
+            describe_transit_gateway_peering_attachments
+            describe_transit_gateway_route_tables
+            search_transit_gateway_routes
+            get_transit_gateway_route_table_associations
+            get_transit_gateway_route_table_propagations
+CloudWatch  GetMetricData, via collection.metrics.cloudwatch --
+            AWS/TransitGateway namespace, at both TGW level and
+            per-attachment level (TransitGatewayAttachment dimension)
+Shared      collection.shared.topology / .relationships for the
+            VPC-side view of routes pointing at the TGW
+
+Route-table inspection is skipped with status "inaccessible" when the
+TGW is owned by another account, rather than reported as empty.
+
+Handed to the analyzer
+----------------------
+Consumed by analysis/analyzers/network/vpc/transit_gateway.py
+(analyzer name "transit_gateway") as:
+
+    relationships       attachment inventory (VPC / peering / other),
+                        route tables, routes, associations,
+                        propagations, plus a collection_status block
+                        recording which of those are complete
+    observations        cloudwatch.traffic (TGW-level bytes in/out)
+                        and cloudwatch.attachment_traffic (per
+                        attachment, for source analysis)
+    topology            VPC-side routes targeting the TGW, including
+                        blackhole counts
+
 Important semantics
 -------------------
 Successful empty collection:
