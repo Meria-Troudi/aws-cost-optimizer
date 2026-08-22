@@ -29,12 +29,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ....base import Analyzer
-from ....condition import EvidenceStatement
-from ....context import AnalysisContext
-from ....evidence import Evidence
-from ....finding import Finding, ObservationPeriod
-from ....registry import register
+from ...base import Analyzer
+from ...condition import EvidenceStatement
+from ...context import AnalysisContext
+from ...evidence import Evidence
+from ...finding import Finding, ObservationPeriod
+from ...registry import register
 
 # ======================================================================
 # DEFAULT POLICY

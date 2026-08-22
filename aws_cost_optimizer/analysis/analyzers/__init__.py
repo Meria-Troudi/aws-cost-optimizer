@@ -14,6 +14,7 @@ from .load_balancing.load_balancer import ElbAnalyzer
 from .compute.eks.cluster import EKSAnalyzer
 from .compute.ec2 import EC2Analyzer
 from .database.instance import RDSAnalyzer
+from .database.aurora import AuroraAnalyzer
 from .database.dynamodb import DynamoDBAnalyzer
 from .analytics.quicksight import QuickSightAnalyzer
 from .storage.ebs import EBSAnalyzer
@@ -28,6 +29,7 @@ __all__ = [
     "EKSAnalyzer",
     "EC2Analyzer",
     "RDSAnalyzer",
+    "AuroraAnalyzer",
     "DynamoDBAnalyzer",
     "QuickSightAnalyzer",
     "EBSAnalyzer",

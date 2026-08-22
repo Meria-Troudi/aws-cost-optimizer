@@ -262,19 +262,33 @@ routes:
   # Use these exact route names when the Aurora analyzer is implemented.
   # Keep the catalog independent of long explanatory prose.
 
-  aurora_provisioned_underutilized:
-    recommendation_key: review_rightsizing
+  # Route keys must match the finding_type the analyzer actually emits
+  # (analysis/analyzers/database/aurora.py). Four of these previously
+  # did not, so every Aurora route was dead configuration.
 
-  aurora_serverless_suitability:
+  # Cluster shows near-zero CPU, connections AND I/O -- an idle
+  # cluster, not a right-sizing candidate, so this routes to
+  # review_unused rather than review_rightsizing.
+  aurora_no_observed_activity:
+    recommendation_key: review_unused
+
+  # Provisioned cluster with sustained low activity -> evaluate
+  # Serverless v2. (Not aurora_serverless_capacity_pressure, which is
+  # an already-serverless cluster under HIGH load -- the opposite
+  # condition, and diagnostic rather than recommendation-eligible.)
+  aurora_serverless_v2_suitability_review:
     recommendation_key: review_serverless
 
+  # One specific reader is underused -> review that replica.
   aurora_reader_underutilized:
     recommendation_key: review_replica
 
-  aurora_reader_scaling_review:
+  # The cluster carries more readers than the workload uses ->
+  # review the reader-scaling policy rather than any one replica.
+  aurora_reader_count_review:
     recommendation_key: review_autoscaling
 
-  aurora_global_database_review:
+  aurora_global_database_cost_review:
     recommendation_key: review_global_replication
 
   aurora_backup_retention_review:
