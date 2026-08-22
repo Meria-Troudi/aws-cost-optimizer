@@ -42,7 +42,6 @@ from ....finding import (
 )
 from ....registry import register
 
-
 # ======================================================================
 # DEFAULT THRESHOLDS
 # ======================================================================
@@ -93,18 +92,12 @@ GPU_RESERVED = "node_gpu_reserved_capacity"
 GPU_UTILIZATION = "node_gpu_utilization"
 
 POD_CPU_UTILIZATION = "pod_cpu_utilization"
-POD_CPU_OVER_LIMIT = (
-    "pod_cpu_utilization_over_pod_limit"
-)
+POD_CPU_OVER_LIMIT = "pod_cpu_utilization_over_pod_limit"
 POD_CPU_RESERVED = "pod_cpu_reserved_capacity"
 
 POD_MEMORY_UTILIZATION = "pod_memory_utilization"
-POD_MEMORY_OVER_LIMIT = (
-    "pod_memory_utilization_over_pod_limit"
-)
-POD_MEMORY_RESERVED = (
-    "pod_memory_reserved_capacity"
-)
+POD_MEMORY_OVER_LIMIT = "pod_memory_utilization_over_pod_limit"
+POD_MEMORY_RESERVED = "pod_memory_reserved_capacity"
 
 POD_GPU_LIMIT = "pod_gpu_limit"
 POD_GPU_USAGE = "pod_gpu_usage_total"
@@ -115,6 +108,7 @@ POD_GPU_UTILIZATION = "pod_gpu_utilization"
 # ======================================================================
 # HELPERS
 # ======================================================================
+
 
 def _dict(
     value: Any,
@@ -155,9 +149,7 @@ def _number(
         value,
         bool,
     ):
-        return float(
-            int(value)
-        )
+        return float(int(value))
 
     try:
         return float(value)
@@ -172,42 +164,26 @@ def _number_or_zero(
     value: Any,
 ) -> float:
 
-    value = _number(
-        value
-    )
+    value = _number(value)
 
-    return (
-        value
-        if value is not None
-        else 0.0
-    )
+    return value if value is not None else 0.0
 
 
 def _coverage_percent(
     metric: dict[str, Any],
 ) -> float | None:
 
-    value = _number(
-        metric.get(
-            "coverage_percent"
-        )
-    )
+    value = _number(metric.get("coverage_percent"))
 
     if value is not None:
         return value
 
-    ratio = _number(
-        metric.get(
-            "coverage_ratio"
-        )
-    )
+    ratio = _number(metric.get("coverage_ratio"))
 
     if ratio is None:
         return None
 
-    return (
-        ratio * 100.0
-    )
+    return ratio * 100.0
 
 
 def _statement(
@@ -226,10 +202,7 @@ def _statement(
         value=value,
         description=description,
         source=list(source),
-        evidence_keys=list(
-            evidence_keys
-            or []
-        ),
+        evidence_keys=list(evidence_keys or []),
         unit=unit,
         observed=observed,
     )
@@ -238,6 +211,7 @@ def _statement(
 # ======================================================================
 # CONFIGURATION
 # ======================================================================
+
 
 def _config(
     context: AnalysisContext,
@@ -251,9 +225,7 @@ def _config(
         "analysis_profile",
     ):
 
-        root = context.resource.get(
-            root_name
-        )
+        root = context.resource.get(root_name)
 
         if not isinstance(
             root,
@@ -281,20 +253,11 @@ def _threshold(
     default: float,
 ) -> float:
 
-    value = _config(
-        context
-    ).get(
-        key
-    )
+    value = _config(context).get(key)
 
-    parsed = _number(
-        value
-    )
+    parsed = _number(value)
 
-    if (
-        parsed is None
-        or parsed < 0
-    ):
+    if parsed is None or parsed < 0:
         return default
 
     return parsed
@@ -304,51 +267,33 @@ def _threshold(
 # RESOURCE DATA
 # ======================================================================
 
+
 def _configuration(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.configuration()
-    )
+    return _dict(context.configuration())
 
 
 def _compute(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        _configuration(
-            context
-        ).get(
-            "compute"
-        )
-    )
+    return _dict(_configuration(context).get("compute"))
 
 
 def _cluster(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        _configuration(
-            context
-        ).get(
-            "cluster"
-        )
-    )
+    return _dict(_configuration(context).get("cluster"))
 
 
 def _cluster_status(
     context: AnalysisContext,
 ) -> str:
 
-    return str(
-        _cluster(context).get(
-            "status"
-        )
-        or "unknown"
-    ).strip().lower()
+    return str(_cluster(context).get("status") or "unknown").strip().lower()
 
 
 def _nodegroups(
@@ -357,11 +302,7 @@ def _nodegroups(
 
     return [
         value
-        for value in _list(
-            _compute(context).get(
-                "nodegroups"
-            )
-        )
+        for value in _list(_compute(context).get("nodegroups"))
         if isinstance(
             value,
             dict,
@@ -375,11 +316,7 @@ def _ec2_instances(
 
     return [
         value
-        for value in _list(
-            _compute(context).get(
-                "ec2_instances"
-            )
-        )
+        for value in _list(_compute(context).get("ec2_instances"))
         if isinstance(
             value,
             dict,
@@ -391,16 +328,13 @@ def _ec2_instances(
 # CLOUDWATCH GROUPS
 # ======================================================================
 
+
 def _cloudwatch_group(
     context: AnalysisContext,
     group: str,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.cloudwatch().get(
-            group
-        )
-    )
+    return _dict(context.cloudwatch().get(group))
 
 
 def _metric_aggregate(
@@ -413,14 +347,10 @@ def _metric_aggregate(
         _cloudwatch_group(
             context,
             group,
-        ).get(
-            "metrics"
-        )
+        ).get("metrics")
     )
 
-    metric = metrics.get(
-        name
-    )
+    metric = metrics.get(name)
 
     return (
         metric
@@ -429,23 +359,12 @@ def _metric_aggregate(
             dict,
         )
         else {
-            "status":
-                "missing",
-
-            "has_data":
-                False,
-
-            "average":
-                None,
-
-            "minimum":
-                None,
-
-            "maximum":
-                None,
-
-            "coverage_percent":
-                None,
+            "status": "missing",
+            "has_data": False,
+            "average": None,
+            "minimum": None,
+            "maximum": None,
+            "coverage_percent": None,
         }
     )
 
@@ -464,33 +383,16 @@ def _metric_ready(
         group,
     )
 
-    if (
-        metric.get(
-            "has_data"
-        )
-        is not True
-    ):
+    if metric.get("has_data") is not True:
         return False
 
-    if (
-        metric.get(
-            "average"
-        )
-        is None
-    ):
+    if metric.get("average") is None:
         return False
 
-    if require_maximum and (
-        metric.get(
-            "maximum"
-        )
-        is None
-    ):
+    if require_maximum and (metric.get("maximum") is None):
         return False
 
-    coverage = _coverage_percent(
-        metric
-    )
+    coverage = _coverage_percent(metric)
 
     if coverage is None:
         return False
@@ -502,6 +404,7 @@ def _metric_ready(
 # NODE SERIES
 # ======================================================================
 
+
 def _node_series(
     context: AnalysisContext,
     metric_name: str,
@@ -512,20 +415,11 @@ def _node_series(
         "nodes",
     )
 
-    series = _dict(
-        group.get(
-            "series"
-        )
-    ).get(
-        metric_name,
-        []
-    )
+    series = _dict(group.get("series")).get(metric_name, [])
 
     return [
         value
-        for value in _list(
-            series
-        )
+        for value in _list(series)
         if isinstance(
             value,
             dict,
@@ -544,9 +438,7 @@ def _series_dimensions(
 
     result = {}
 
-    for dimension in _list(
-        dimensions
-    ):
+    for dimension in _list(dimensions):
 
         if not isinstance(
             dimension,
@@ -554,33 +446,21 @@ def _series_dimensions(
         ):
             continue
 
-        name = dimension.get(
-            "Name"
-        )
+        name = dimension.get("Name")
 
-        value = dimension.get(
-            "Value"
-        )
+        value = dimension.get("Value")
 
         if name and value is not None:
-            result[
-                str(name)
-            ] = str(value)
+            result[str(name)] = str(value)
 
     return result
 
 
 def _node_series_index(
     context: AnalysisContext,
-) -> dict[
-    str,
-    dict[str, list[dict[str, Any]]]
-]:
+) -> dict[str, dict[str, list[dict[str, Any]]]]:
 
-    result: dict[
-        str,
-        dict[str, list[dict[str, Any]]]
-    ] = defaultdict(
+    result: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(
         lambda: defaultdict(list)
     )
 
@@ -606,26 +486,14 @@ def _node_series_index(
             metric_name,
         ):
 
-            dimensions = _series_dimensions(
-                series
-            )
+            dimensions = _series_dimensions(series)
 
-            instance_id = (
-                dimensions.get(
-                    "InstanceId"
-                )
-            )
+            instance_id = dimensions.get("InstanceId")
 
             if not instance_id:
                 continue
 
-            result[
-                instance_id
-            ][
-                metric_name
-            ].append(
-                series
-            )
+            result[instance_id][metric_name].append(series)
 
     return result
 
@@ -633,6 +501,7 @@ def _node_series_index(
 # ======================================================================
 # POD SERIES
 # ======================================================================
+
 
 def _pod_series(
     context: AnalysisContext,
@@ -644,20 +513,11 @@ def _pod_series(
         "pods",
     )
 
-    series = _dict(
-        group.get(
-            "series"
-        )
-    ).get(
-        metric_name,
-        []
-    )
+    series = _dict(group.get("series")).get(metric_name, [])
 
     return [
         value
-        for value in _list(
-            series
-        )
+        for value in _list(series)
         if isinstance(
             value,
             dict,
@@ -669,22 +529,17 @@ def _pod_series(
 # SERIES VALUE HELPERS
 # ======================================================================
 
+
 def _series_average(
     series: dict[str, Any],
 ) -> float | None:
 
-    summary = _dict(
-        series.get(
-            "summary"
-        )
-    )
+    summary = _dict(series.get("summary"))
 
     return _number(
         summary.get(
             "average",
-            series.get(
-                "average"
-            ),
+            series.get("average"),
         )
     )
 
@@ -693,18 +548,12 @@ def _series_maximum(
     series: dict[str, Any],
 ) -> float | None:
 
-    summary = _dict(
-        series.get(
-            "summary"
-        )
-    )
+    summary = _dict(series.get("summary"))
 
     return _number(
         summary.get(
             "maximum",
-            series.get(
-                "maximum"
-            ),
+            series.get("maximum"),
         )
     )
 
@@ -713,89 +562,50 @@ def _series_coverage(
     series: dict[str, Any],
 ) -> float | None:
 
-    value = _number(
-        series.get(
-            "coverage_percent"
-        )
-    )
+    value = _number(series.get("coverage_percent"))
 
     if value is not None:
         return value
 
-    return _coverage_percent(
-        series
-    )
+    return _coverage_percent(series)
 
 
 def _series_has_data(
     series: dict[str, Any],
 ) -> bool:
 
-    return (
-        series.get(
-            "status"
-        )
-        == "ok"
-        and series.get(
-            "has_data"
-        )
-        is True
-    )
+    return series.get("status") == "ok" and series.get("has_data") is True
 
 
 # ======================================================================
 # NODEGROUP UTILIZATION
 # ======================================================================
 
+
 def _instance_to_nodegroup(
     context: AnalysisContext,
 ) -> dict[str, str]:
 
     return {
-        str(instance.get("instance_id")):
-            str(instance.get("nodegroup"))
-        for instance
-        in _ec2_instances(context)
-        if (
-            instance.get("instance_id")
-            and instance.get("nodegroup")
-        )
+        str(instance.get("instance_id")): str(instance.get("nodegroup"))
+        for instance in _ec2_instances(context)
+        if (instance.get("instance_id") and instance.get("nodegroup"))
     }
 
 
 def _nodegroup_metrics(
     context: AnalysisContext,
-) -> dict[
-    str,
-    dict[str, Any]
-]:
+) -> dict[str, dict[str, Any]]:
 
-    instance_to_nodegroup = (
-        _instance_to_nodegroup(
-            context
-        )
-    )
+    instance_to_nodegroup = _instance_to_nodegroup(context)
 
-    node_index = (
-        _node_series_index(
-            context
-        )
-    )
+    node_index = _node_series_index(context)
 
-    result: dict[
-        str,
-        dict[str, Any]
-    ] = {}
+    result: dict[str, dict[str, Any]] = {}
 
-    for instance_id, metrics in (
-        node_index.items()
-    ):
+    for instance_id, metrics in node_index.items():
 
-        nodegroup = (
-            instance_to_nodegroup.get(
-                instance_id
-            )
-        )
+        nodegroup = instance_to_nodegroup.get(instance_id)
 
         if not nodegroup:
             continue
@@ -808,85 +618,51 @@ def _nodegroup_metrics(
                 "memory": [],
                 "cpu_max": [],
                 "memory_max": [],
-            }
+            },
         )
 
-        entry[
-            "instance_ids"
-        ].append(
-            instance_id
-        )
+        entry["instance_ids"].append(instance_id)
 
         cpu_values = [
-            _series_average(
-                value
-            )
-            for value
-            in metrics.get(
+            _series_average(value)
+            for value in metrics.get(
                 CPU_UTILIZATION,
                 [],
             )
         ]
 
         memory_values = [
-            _series_average(
-                value
-            )
-            for value
-            in metrics.get(
+            _series_average(value)
+            for value in metrics.get(
                 MEMORY_UTILIZATION,
                 [],
             )
         ]
 
         cpu_max_values = [
-            _series_maximum(
-                value
-            )
-            for value
-            in metrics.get(
+            _series_maximum(value)
+            for value in metrics.get(
                 CPU_UTILIZATION,
                 [],
             )
         ]
 
         memory_max_values = [
-            _series_maximum(
-                value
-            )
-            for value
-            in metrics.get(
+            _series_maximum(value)
+            for value in metrics.get(
                 MEMORY_UTILIZATION,
                 [],
             )
         ]
 
-        entry["cpu"].extend(
-            value
-            for value
-            in cpu_values
-            if value is not None
-        )
+        entry["cpu"].extend(value for value in cpu_values if value is not None)
 
-        entry["memory"].extend(
-            value
-            for value
-            in memory_values
-            if value is not None
-        )
+        entry["memory"].extend(value for value in memory_values if value is not None)
 
-        entry["cpu_max"].extend(
-            value
-            for value
-            in cpu_max_values
-            if value is not None
-        )
+        entry["cpu_max"].extend(value for value in cpu_max_values if value is not None)
 
         entry["memory_max"].extend(
-            value
-            for value
-            in memory_max_values
-            if value is not None
+            value for value in memory_max_values if value is not None
         )
 
     return result
@@ -896,22 +672,18 @@ def _mean(
     values: Iterable[float],
 ) -> float | None:
 
-    values = list(
-        values
-    )
+    values = list(values)
 
     if not values:
         return None
 
-    return (
-        sum(values)
-        / len(values)
-    )
+    return sum(values) / len(values)
 
 
 # ======================================================================
 # OBSERVATION PERIOD
 # ======================================================================
+
 
 def _observation_period(
     context: AnalysisContext,
@@ -919,23 +691,9 @@ def _observation_period(
 
     cloudwatch = context.cloudwatch()
 
-    start = (
-        cloudwatch.get(
-            "analysis_start"
-        )
-        or cloudwatch.get(
-            "start"
-        )
-    )
+    start = cloudwatch.get("analysis_start") or cloudwatch.get("start")
 
-    end = (
-        cloudwatch.get(
-            "analysis_end"
-        )
-        or cloudwatch.get(
-            "end"
-        )
-    )
+    end = cloudwatch.get("analysis_end") or cloudwatch.get("end")
 
     if start or end:
 
@@ -944,9 +702,7 @@ def _observation_period(
             end=end,
         )
 
-    value = (
-        context.observation_period
-    )
+    value = context.observation_period
 
     if not isinstance(
         value,
@@ -955,15 +711,9 @@ def _observation_period(
         return None
 
     return ObservationPeriod(
-        start=value.get(
-            "start"
-        ),
-        end=value.get(
-            "end"
-        ),
-        duration_seconds=value.get(
-            "duration_seconds"
-        ),
+        start=value.get("start"),
+        end=value.get("end"),
+        duration_seconds=value.get("duration_seconds"),
     )
 
 
@@ -971,9 +721,7 @@ def _observation_days(
     context: AnalysisContext,
 ) -> float | None:
 
-    period = _observation_period(
-        context
-    )
+    period = _observation_period(context)
 
     if period is None:
         return None
@@ -991,23 +739,16 @@ def _observation_days(
         start_dt = (
             start
             if isinstance(start, datetime)
-            else datetime.fromisoformat(
-                str(start).replace("Z", "+00:00")
-            )
+            else datetime.fromisoformat(str(start).replace("Z", "+00:00"))
         )
 
         end_dt = (
             end
             if isinstance(end, datetime)
-            else datetime.fromisoformat(
-                str(end).replace("Z", "+00:00")
-            )
+            else datetime.fromisoformat(str(end).replace("Z", "+00:00"))
         )
 
-        return (
-            (end_dt - start_dt).total_seconds()
-            / 86400.0
-        )
+        return (end_dt - start_dt).total_seconds() / 86400.0
 
     except (TypeError, ValueError):
         return None
@@ -1023,9 +764,7 @@ def _minimum_observation_period_met(
         DEFAULT_MIN_OBSERVATION_DAYS,
     )
 
-    observed = _observation_days(
-        context
-    )
+    observed = _observation_days(context)
 
     if observed is None:
         return False
@@ -1036,6 +775,7 @@ def _minimum_observation_period_met(
 # ======================================================================
 # ANALYZER
 # ======================================================================
+
 
 @register
 class EKSAnalyzer(Analyzer):
@@ -1057,10 +797,7 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        return (
-            context.resource_type
-            in self.SUPPORTED_RESOURCE_TYPES
-        )
+        return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
     # ==================================================================
     # ANALYZE
@@ -1071,15 +808,10 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> list[Finding]:
 
-        if not self.supports(
-            context
-        ):
+        if not self.supports(context):
             return []
 
-        if (
-            _cluster_status(context)
-            != "active"
-        ):
+        if _cluster_status(context) != "active":
             return []
 
         findings: list[Finding] = []
@@ -1097,14 +829,10 @@ class EKSAnalyzer(Analyzer):
 
         for detector in detectors:
 
-            finding = detector(
-                context
-            )
+            finding = detector(context)
 
             if finding is not None:
-                findings.append(
-                    finding
-                )
+                findings.append(finding)
 
         return findings
 
@@ -1117,9 +845,7 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        config = _config(
-            context
-        )
+        config = _config(context)
 
         versions = config.get(
             "extended_support_versions",
@@ -1132,27 +858,18 @@ class EKSAnalyzer(Analyzer):
         ):
             return None
 
-        version = (
-            _cluster(context).get(
-                "version"
-            )
-        )
+        version = _cluster(context).get("version")
 
         if not version:
             return None
 
-        if str(version) not in {
-            str(value)
-            for value in versions
-        }:
+        if str(version) not in {str(value) for value in versions}:
             return None
 
         return self._finding(
             context=context,
             finding_type="eks_extended_support_review",
-            title=(
-                "Review EKS Kubernetes version support"
-            ),
+            title=("Review EKS Kubernetes version support"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -1165,35 +882,20 @@ class EKSAnalyzer(Analyzer):
                 _statement(
                     name="kubernetes_version",
                     value=version,
-                    description=(
-                        "Kubernetes version reported by EKS."
-                    ),
-                    source=[
-                        "EKS.DescribeCluster"
-                    ],
-                    evidence_keys=[
-                        "configuration.cluster.version"
-                    ],
+                    description=("Kubernetes version reported by EKS."),
+                    source=["EKS.DescribeCluster"],
+                    evidence_keys=["configuration.cluster.version"],
                     observed=True,
                 )
             ],
             metadata={
-                "rule":
-                    "extended_support_version",
-
-                "kubernetes_version":
-                    version,
-
-                "configured_extended_support_versions":
-                    versions,
-
-                "region":
-                    context.region,
+                "rule": "extended_support_version",
+                "kubernetes_version": version,
+                "configured_extended_support_versions": versions,
+                "region": context.region,
             },
             limitations=[
-                (
-                    "The analyzer does not invent an upgrade target."
-                ),
+                ("The analyzer does not invent an upgrade target."),
                 (
                     "The finding depends on the configured "
                     "version-support catalog being current."
@@ -1215,9 +917,7 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        compute = _compute(
-            context
-        )
+        compute = _compute(context)
 
         inventory_status = str(
             compute.get(
@@ -1229,12 +929,10 @@ class EKSAnalyzer(Analyzer):
         if inventory_status != "complete":
             return None
 
-        node_count = (
-            _metric_aggregate(
-                context,
-                NODE_COUNT,
-                "cluster",
-            )
+        node_count = _metric_aggregate(
+            context,
+            NODE_COUNT,
+            "cluster",
         )
 
         if not _metric_ready(
@@ -1244,41 +942,22 @@ class EKSAnalyzer(Analyzer):
         ):
             return None
 
-        observed_node_count = (
-            _number(
-                node_count.get(
-                    "average"
-                )
-            )
-        )
+        observed_node_count = _number(node_count.get("average"))
 
-        if (
-            observed_node_count is None
-            or observed_node_count > 0
-        ):
+        if observed_node_count is None or observed_node_count > 0:
             return None
 
-        nodegroups = _nodegroups(
-            context
-        )
+        nodegroups = _nodegroups(context)
 
-        fargate_profiles = _list(
-            compute.get(
-                "fargate_profiles"
-            )
-        )
+        fargate_profiles = _list(compute.get("fargate_profiles"))
 
         if nodegroups or fargate_profiles:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_no_observed_worker_capacity"
-            ),
-            title=(
-                "EKS cluster has no observed worker capacity"
-            ),
+            finding_type=("eks_no_observed_worker_capacity"),
+            title=("EKS cluster has no observed worker capacity"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -1295,33 +974,18 @@ class EKSAnalyzer(Analyzer):
                 ),
                 _statement(
                     name="managed_nodegroup_count",
-                    value=len(
-                        nodegroups
-                    ),
-                    description=(
-                        "Managed EKS nodegroups discovered."
-                    ),
-                    source=[
-                        "EKS.ListNodegroups"
-                    ],
-                    evidence_keys=[
-                        "configuration.compute.nodegroups"
-                    ],
+                    value=len(nodegroups),
+                    description=("Managed EKS nodegroups discovered."),
+                    source=["EKS.ListNodegroups"],
+                    evidence_keys=["configuration.compute.nodegroups"],
                     observed=True,
                 ),
             ],
             metadata={
-                "rule":
-                    "no_observed_worker_capacity",
-
-                "observed_node_count":
-                    observed_node_count,
-
-                "managed_nodegroup_count":
-                    len(nodegroups),
-
-                "fargate_profile_count":
-                    len(fargate_profiles),
+                "rule": "no_observed_worker_capacity",
+                "observed_node_count": observed_node_count,
+                "managed_nodegroup_count": len(nodegroups),
+                "fargate_profile_count": len(fargate_profiles),
             },
             limitations=[
                 (
@@ -1349,14 +1013,10 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _ec2_instances(
-            context
-        ):
+        if not _ec2_instances(context):
             return None
 
-        if not _minimum_observation_period_met(
-            context
-        ):
+        if not _minimum_observation_period_met(context):
             return None
 
         required = (
@@ -1371,10 +1031,7 @@ class EKSAnalyzer(Analyzer):
                 context,
                 metric_name,
                 "cluster",
-                require_maximum=(
-                    metric_name
-                    != NODE_COUNT
-                ),
+                require_maximum=(metric_name != NODE_COUNT),
             ):
                 return None
 
@@ -1433,67 +1090,23 @@ class EKSAnalyzer(Analyzer):
         )
 
         if (
-            _number(
-                cpu.get(
-                    "average"
-                )
-            ) is None
-            or _number(
-                cpu.get(
-                    "maximum"
-                )
-            ) is None
-            or _number(
-                memory.get(
-                    "average"
-                )
-            ) is None
-            or _number(
-                memory.get(
-                    "maximum"
-                )
-            ) is None
+            _number(cpu.get("average")) is None
+            or _number(cpu.get("maximum")) is None
+            or _number(memory.get("average")) is None
+            or _number(memory.get("maximum")) is None
         ):
             return None
 
-        if (
-            _number(
-                cpu.get(
-                    "average"
-                )
-            )
-            > low_cpu_average
-        ):
+        if _number(cpu.get("average")) > low_cpu_average:
             return None
 
-        if (
-            _number(
-                memory.get(
-                    "average"
-                )
-            )
-            > low_memory_average
-        ):
+        if _number(memory.get("average")) > low_memory_average:
             return None
 
-        if (
-            _number(
-                cpu.get(
-                    "maximum"
-                )
-            )
-            > low_cpu_maximum
-        ):
+        if _number(cpu.get("maximum")) > low_cpu_maximum:
             return None
 
-        if (
-            _number(
-                memory.get(
-                    "maximum"
-                )
-            )
-            > low_memory_maximum
-        ):
+        if _number(memory.get("maximum")) > low_memory_maximum:
             return None
 
         for metric in (
@@ -1502,24 +1115,15 @@ class EKSAnalyzer(Analyzer):
             node_count,
         ):
 
-            coverage = _coverage_percent(
-                metric
-            )
+            coverage = _coverage_percent(metric)
 
-            if (
-                coverage is None
-                or coverage < minimum_coverage
-            ):
+            if coverage is None or coverage < minimum_coverage:
                 return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_low_worker_utilization"
-            ),
-            title=(
-                "EKS worker capacity is strongly underutilized"
-            ),
+            finding_type=("eks_low_worker_utilization"),
+            title=("EKS worker capacity is strongly underutilized"),
             severity="medium",
             confidence="high",
             reason=(
@@ -1544,22 +1148,13 @@ class EKSAnalyzer(Analyzer):
                     NODE_COUNT,
                     "cluster",
                 ),
-                self._worker_inventory_statement(
-                    context
-                ),
+                self._worker_inventory_statement(context),
             ],
             metadata={
-                "rule":
-                    "cluster_worker_underutilization",
-
-                "cpu":
-                    cpu,
-
-                "memory":
-                    memory,
-
-                "node_count":
-                    node_count,
+                "rule": "cluster_worker_underutilization",
+                "cpu": cpu,
+                "memory": memory,
+                "node_count": node_count,
             },
             limitations=[
                 (
@@ -1567,13 +1162,8 @@ class EKSAnalyzer(Analyzer):
                     "environment-wide signal but not the exact "
                     "nodegroup or instance to change."
                 ),
-                (
-                    "The finding does not select a replacement "
-                    "instance type."
-                ),
-                (
-                    "The finding does not estimate savings."
-                ),
+                ("The finding does not select a replacement " "instance type."),
+                ("The finding does not estimate savings."),
             ],
             recommendation_eligible=True,
         )
@@ -1587,16 +1177,12 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        nodegroups = _nodegroups(
-            context
-        )
+        nodegroups = _nodegroups(context)
 
         if not nodegroups:
             return None
 
-        group_metrics = _nodegroup_metrics(
-            context
-        )
+        group_metrics = _nodegroup_metrics(context)
 
         if not group_metrics:
             return None
@@ -1637,16 +1223,12 @@ class EKSAnalyzer(Analyzer):
 
         for nodegroup in nodegroups:
 
-            name = nodegroup.get(
-                "name"
-            )
+            name = nodegroup.get("name")
 
             if not name:
                 continue
 
-            metrics = group_metrics.get(
-                str(name)
-            )
+            metrics = group_metrics.get(str(name))
 
             if not metrics:
                 continue
@@ -1682,9 +1264,7 @@ class EKSAnalyzer(Analyzer):
                         [],
                     )
                 )
-                if metrics.get(
-                    "cpu_max"
-                )
+                if metrics.get("cpu_max")
                 else None
             )
 
@@ -1695,9 +1275,7 @@ class EKSAnalyzer(Analyzer):
                         [],
                     )
                 )
-                if metrics.get(
-                    "memory_max"
-                )
+                if metrics.get("memory_max")
                 else None
             )
 
@@ -1723,29 +1301,16 @@ class EKSAnalyzer(Analyzer):
 
             candidates.append(
                 {
-                    "nodegroup":
-                        name,
-
-                    "instance_count":
-                        instance_count,
-
-                    "instance_ids":
-                        metrics.get(
-                            "instance_ids",
-                            [],
-                        ),
-
-                    "cpu_average":
-                        cpu_avg,
-
-                    "cpu_maximum":
-                        cpu_max,
-
-                    "memory_average":
-                        memory_avg,
-
-                    "memory_maximum":
-                        memory_max,
+                    "nodegroup": name,
+                    "instance_count": instance_count,
+                    "instance_ids": metrics.get(
+                        "instance_ids",
+                        [],
+                    ),
+                    "cpu_average": cpu_avg,
+                    "cpu_maximum": cpu_max,
+                    "memory_average": memory_avg,
+                    "memory_maximum": memory_max,
                 }
             )
 
@@ -1754,12 +1319,8 @@ class EKSAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_nodegroup_underutilization"
-            ),
-            title=(
-                "EKS node group shows sustained underutilization"
-            ),
+            finding_type=("eks_nodegroup_underutilization"),
+            title=("EKS node group shows sustained underutilization"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -1790,25 +1351,16 @@ class EKSAnalyzer(Analyzer):
                 )
             ],
             metadata={
-                "rule":
-                    "nodegroup_underutilization",
-
-                "nodegroups":
-                    candidates,
+                "rule": "nodegroup_underutilization",
+                "nodegroups": candidates,
             },
             limitations=[
-                (
-                    "Metrics may not cover every node in the "
-                    "node group."
-                ),
+                ("Metrics may not cover every node in the " "node group."),
                 (
                     "Cluster/nodegroup peaks outside the "
                     "observation window are not represented."
                 ),
-                (
-                    "The finding does not specify an exact "
-                    "node count to remove."
-                ),
+                ("The finding does not specify an exact " "node count to remove."),
             ],
             recommendation_eligible=False,
         )
@@ -1824,38 +1376,17 @@ class EKSAnalyzer(Analyzer):
 
         candidates = []
 
-        for nodegroup in _nodegroups(
-            context
-        ):
+        for nodegroup in _nodegroups(context):
 
-            scaling = _dict(
-                nodegroup.get(
-                    "scaling"
-                )
-            )
+            scaling = _dict(nodegroup.get("scaling"))
 
-            minimum = _number(
-                scaling.get(
-                    "min_size"
-                )
-            )
+            minimum = _number(scaling.get("min_size"))
 
-            desired = _number(
-                scaling.get(
-                    "desired_size"
-                )
-            )
+            desired = _number(scaling.get("desired_size"))
 
-            maximum = _number(
-                scaling.get(
-                    "max_size"
-                )
-            )
+            maximum = _number(scaling.get("max_size"))
 
-            if (
-                minimum is None
-                or desired is None
-            ):
+            if minimum is None or desired is None:
                 continue
 
             if minimum <= 0:
@@ -1866,24 +1397,11 @@ class EKSAnalyzer(Analyzer):
 
             candidates.append(
                 {
-                    "nodegroup":
-                        nodegroup.get(
-                            "name"
-                        ),
-
-                    "minimum_size":
-                        minimum,
-
-                    "desired_size":
-                        desired,
-
-                    "maximum_size":
-                        maximum,
-
-                    "capacity_type":
-                        nodegroup.get(
-                            "capacity_type"
-                        ),
+                    "nodegroup": nodegroup.get("name"),
+                    "minimum_size": minimum,
+                    "desired_size": desired,
+                    "maximum_size": maximum,
+                    "capacity_type": nodegroup.get("capacity_type"),
                 }
             )
 
@@ -1892,23 +1410,15 @@ class EKSAnalyzer(Analyzer):
 
         # Only issue this as a review signal. A min size equal to
         # desired is not itself waste.
-        low_utilization = (
-            self._cluster_low_utilization_available(
-                context
-            )
-        )
+        low_utilization = self._cluster_low_utilization_available(context)
 
         if not low_utilization:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_minimum_capacity_review"
-            ),
-            title=(
-                "Review EKS node-group minimum capacity"
-            ),
+            finding_type=("eks_minimum_capacity_review"),
+            title=("Review EKS node-group minimum capacity"),
             severity="low",
             confidence="medium",
             reason=(
@@ -1924,12 +1434,8 @@ class EKSAnalyzer(Analyzer):
                         "Managed node groups whose desired "
                         "capacity equals minimum capacity."
                     ),
-                    source=[
-                        "EKS.DescribeNodegroup"
-                    ],
-                    evidence_keys=[
-                        "configuration.compute.nodegroups"
-                    ],
+                    source=["EKS.DescribeNodegroup"],
+                    evidence_keys=["configuration.compute.nodegroups"],
                     observed=True,
                 ),
                 self._metric_statement(
@@ -1944,11 +1450,8 @@ class EKSAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "rule":
-                    "minimum_capacity_review",
-
-                "nodegroups":
-                    candidates,
+                "rule": "minimum_capacity_review",
+                "nodegroups": candidates,
             },
             limitations=[
                 (
@@ -1956,10 +1459,7 @@ class EKSAnalyzer(Analyzer):
                     "availability, latency, resilience, or "
                     "scheduled workloads."
                 ),
-                (
-                    "The analyzer does not prescribe a new "
-                    "minimum size."
-                ),
+                ("The analyzer does not prescribe a new " "minimum size."),
             ],
             recommendation_eligible=False,
         )
@@ -1973,9 +1473,7 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _minimum_observation_period_met(
-            context
-        ):
+        if not _minimum_observation_period_met(context):
             return None
 
         reserved = _metric_aggregate(
@@ -2002,38 +1500,22 @@ class EKSAnalyzer(Analyzer):
             DEFAULT_HIGH_POD_CPU_RESERVED_PERCENT,
         )
 
-        reserved_average = _number(
-            reserved.get(
-                "average"
-            )
-        )
+        reserved_average = _number(reserved.get("average"))
 
-        utilization_average = _number(
-            utilization.get(
-                "average"
-            )
-        )
+        utilization_average = _number(utilization.get("average"))
 
-        if (
-            reserved_average is None
-            or utilization_average is None
-        ):
+        if reserved_average is None or utilization_average is None:
             return None
 
         if reserved_average < threshold:
             return None
 
-        if (
-            utilization_average
-            >= reserved_average * 0.70
-        ):
+        if utilization_average >= reserved_average * 0.70:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_pod_cpu_request_overprovisioning"
-            ),
+            finding_type=("eks_pod_cpu_request_overprovisioning"),
             title=(
                 "EKS pod CPU reservations are substantially "
                 "higher than observed usage"
@@ -2058,29 +1540,18 @@ class EKSAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "rule":
-                    "pod_cpu_request_overprovisioning",
-
-                "reserved":
-                    reserved,
-
-                "utilization":
-                    utilization,
-
-                "threshold_percent":
-                    threshold,
+                "rule": "pod_cpu_request_overprovisioning",
+                "reserved": reserved,
+                "utilization": utilization,
+                "threshold_percent": threshold,
             },
             limitations=[
                 (
                     "Pod reservation can be intentionally high "
                     "to guarantee scheduling capacity."
                 ),
-                (
-                    "The finding does not prescribe a CPU request."
-                ),
-                (
-                    "Peak workload behavior must be reviewed."
-                ),
+                ("The finding does not prescribe a CPU request."),
+                ("Peak workload behavior must be reviewed."),
             ],
             recommendation_eligible=True,
         )
@@ -2094,9 +1565,7 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _minimum_observation_period_met(
-            context
-        ):
+        if not _minimum_observation_period_met(context):
             return None
 
         reserved = _metric_aggregate(
@@ -2123,38 +1592,22 @@ class EKSAnalyzer(Analyzer):
             DEFAULT_HIGH_POD_MEMORY_RESERVED_PERCENT,
         )
 
-        reserved_average = _number(
-            reserved.get(
-                "average"
-            )
-        )
+        reserved_average = _number(reserved.get("average"))
 
-        utilization_average = _number(
-            utilization.get(
-                "average"
-            )
-        )
+        utilization_average = _number(utilization.get("average"))
 
-        if (
-            reserved_average is None
-            or utilization_average is None
-        ):
+        if reserved_average is None or utilization_average is None:
             return None
 
         if reserved_average < threshold:
             return None
 
-        if (
-            utilization_average
-            >= reserved_average * 0.70
-        ):
+        if utilization_average >= reserved_average * 0.70:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_pod_memory_request_overprovisioning"
-            ),
+            finding_type=("eks_pod_memory_request_overprovisioning"),
             title=(
                 "EKS pod memory reservations are substantially "
                 "higher than observed usage"
@@ -2179,30 +1632,18 @@ class EKSAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "rule":
-                    "pod_memory_request_overprovisioning",
-
-                "reserved":
-                    reserved,
-
-                "utilization":
-                    utilization,
-
-                "threshold_percent":
-                    threshold,
+                "rule": "pod_memory_request_overprovisioning",
+                "reserved": reserved,
+                "utilization": utilization,
+                "threshold_percent": threshold,
             },
             limitations=[
                 (
                     "Memory requests may intentionally include "
                     "headroom for application stability."
                 ),
-                (
-                    "The finding does not prescribe a memory request."
-                ),
-                (
-                    "Memory peaks and application behavior "
-                    "must be validated."
-                ),
+                ("The finding does not prescribe a memory request."),
+                ("Memory peaks and application behavior " "must be validated."),
             ],
             recommendation_eligible=True,
         )
@@ -2216,9 +1657,7 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        if not _minimum_observation_period_met(
-            context
-        ):
+        if not _minimum_observation_period_met(context):
             return None
 
         direct_utilization = _metric_aggregate(
@@ -2249,62 +1688,29 @@ class EKSAnalyzer(Analyzer):
         method = "direct"
         metrics_used: tuple[dict[str, Any], ...] = ()
 
-        if (
-            direct_utilization.get(
-                "has_data"
-            )
-            is True
-        ):
+        if direct_utilization.get("has_data") is True:
 
-            utilization = _number(
-                direct_utilization.get(
-                    "average"
-                )
-            )
+            utilization = _number(direct_utilization.get("average"))
 
             if utilization is not None:
-                metrics_used = (
-                    direct_utilization,
-                )
+                metrics_used = (direct_utilization,)
 
         if utilization is None:
 
             if (
-                gpu_limit.get(
-                    "has_data"
-                )
-                is not True
-                or gpu_usage.get(
-                    "has_data"
-                )
-                is not True
+                gpu_limit.get("has_data") is not True
+                or gpu_usage.get("has_data") is not True
             ):
                 return None
 
-            limit = _number(
-                gpu_limit.get(
-                    "average"
-                )
-            )
+            limit = _number(gpu_limit.get("average"))
 
-            usage = _number(
-                gpu_usage.get(
-                    "average"
-                )
-            )
+            usage = _number(gpu_usage.get("average"))
 
-            if (
-                limit is None
-                or usage is None
-                or limit <= 0
-            ):
+            if limit is None or usage is None or limit <= 0:
                 return None
 
-            utilization = (
-                usage
-                / limit
-                * 100.0
-            )
+            utilization = usage / limit * 100.0
 
             method = "usage_divided_by_limit"
             metrics_used = (
@@ -2314,15 +1720,9 @@ class EKSAnalyzer(Analyzer):
 
         for metric in metrics_used:
 
-            coverage = _coverage_percent(
-                metric
-            )
+            coverage = _coverage_percent(metric)
 
-            if (
-                coverage is None
-                or coverage
-                < minimum_coverage
-            ):
+            if coverage is None or coverage < minimum_coverage:
                 return None
 
         threshold = _threshold(
@@ -2336,12 +1736,8 @@ class EKSAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "eks_gpu_underutilization"
-            ),
-            title=(
-                "EKS GPU worker capacity appears underutilized"
-            ),
+            finding_type=("eks_gpu_underutilization"),
+            title=("EKS GPU worker capacity appears underutilized"),
             severity="high",
             confidence="medium",
             reason=(
@@ -2367,17 +1763,10 @@ class EKSAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "rule":
-                    "gpu_underutilization",
-
-                "utilization_percent":
-                    utilization,
-
-                "threshold_percent":
-                    threshold,
-
-                "calculation_method":
-                    method,
+                "rule": "gpu_underutilization",
+                "utilization_percent": utilization,
+                "threshold_percent": threshold,
+                "calculation_method": method,
             },
             limitations=[
                 (
@@ -2388,9 +1777,7 @@ class EKSAnalyzer(Analyzer):
                     "Scheduling constraints and workload requirements "
                     "must be reviewed."
                 ),
-                (
-                    "No replacement GPU instance is selected."
-                ),
+                ("No replacement GPU instance is selected."),
             ],
             recommendation_eligible=True,
         )
@@ -2410,27 +1797,13 @@ class EKSAnalyzer(Analyzer):
             second,
         ):
 
-            if (
-                metric.get(
-                    "has_data"
-                )
-                is not True
-            ):
+            if metric.get("has_data") is not True:
                 return False
 
-            if (
-                _number(
-                    metric.get(
-                        "average"
-                    )
-                )
-                is None
-            ):
+            if _number(metric.get("average")) is None:
                 return False
 
-            coverage = _coverage_percent(
-                metric
-            )
+            coverage = _coverage_percent(metric)
 
             if coverage is None:
                 return False
@@ -2460,38 +1833,21 @@ class EKSAnalyzer(Analyzer):
         ):
             return False
 
-        cpu_avg = _number(
-            cpu.get(
-                "average"
-            )
-        )
+        cpu_avg = _number(cpu.get("average"))
 
-        memory_avg = _number(
-            memory.get(
-                "average"
-            )
-        )
+        memory_avg = _number(memory.get("average"))
 
-        if (
-            cpu_avg is None
-            or memory_avg is None
-        ):
+        if cpu_avg is None or memory_avg is None:
             return False
 
-        return (
-            cpu_avg
-            <= _threshold(
-                context,
-                "low_cpu_average_percent",
-                DEFAULT_LOW_CPU_AVERAGE_PERCENT,
-            )
-            and
-            memory_avg
-            <= _threshold(
-                context,
-                "low_memory_average_percent",
-                DEFAULT_LOW_MEMORY_AVERAGE_PERCENT,
-            )
+        return cpu_avg <= _threshold(
+            context,
+            "low_cpu_average_percent",
+            DEFAULT_LOW_CPU_AVERAGE_PERCENT,
+        ) and memory_avg <= _threshold(
+            context,
+            "low_memory_average_percent",
+            DEFAULT_LOW_MEMORY_AVERAGE_PERCENT,
         )
 
     # ==================================================================
@@ -2514,25 +1870,10 @@ class EKSAnalyzer(Analyzer):
         return _statement(
             name=name,
             value=metric,
-            description=(
-                f"Observed Container Insights "
-                f"{name} metric."
-            ),
-            source=[
-                "CloudWatch.ContainerInsights"
-            ],
-            evidence_keys=[
-                (
-                    f"observations.cloudwatch."
-                    f"{group}.metrics.{name}"
-                )
-            ],
-            observed=(
-                metric.get(
-                    "has_data"
-                )
-                is True
-            ),
+            description=(f"Observed Container Insights " f"{name} metric."),
+            source=["CloudWatch.ContainerInsights"],
+            evidence_keys=[f"observations.cloudwatch." f"{group}.metrics.{name}"],
+            observed=(metric.get("has_data") is True),
         )
 
     @staticmethod
@@ -2540,39 +1881,18 @@ class EKSAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> EvidenceStatement:
 
-        compute = _compute(
-            context
-        )
+        compute = _compute(context)
 
         return _statement(
             name="worker_inventory",
             value={
-                "ec2_instance_count":
-                    len(
-                        _ec2_instances(
-                            context
-                        )
-                    ),
-
-                "nodegroup_count":
-                    len(
-                        _nodegroups(
-                            context
-                        )
-                    ),
-
-                "desired_nodes":
-                    _dict(
-                        compute.get(
-                            "summary"
-                        )
-                    ).get(
-                        "desired_node_count"
-                    ),
+                "ec2_instance_count": len(_ec2_instances(context)),
+                "nodegroup_count": len(_nodegroups(context)),
+                "desired_nodes": _dict(compute.get("summary")).get(
+                    "desired_node_count"
+                ),
             },
-            description=(
-                "Current EC2-backed EKS worker inventory."
-            ),
+            description=("Current EC2-backed EKS worker inventory."),
             source=[
                 "EKS",
                 "EC2",
@@ -2605,53 +1925,22 @@ class EKSAnalyzer(Analyzer):
 
         return Finding(
             finding_type=finding_type,
-
             title=title,
-
-            resource_type=(
-                context.resource_type
-                or "eks_cluster"
-            ),
-
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
-
+            resource_type=(context.resource_type or "eks_cluster"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
             analyzer_version=self.version,
-
-            severity=str(
-                severity
-            ).lower(),
-
-            confidence=str(
-                confidence
-            ).lower(),
-
+            severity=str(severity).lower(),
+            confidence=str(confidence).lower(),
             reason=reason,
-
             conditions=statements,
-
             evidence=self._build_evidence(
                 context,
                 metadata,
             ),
-
-            observation_period=(
-                _observation_period(
-                    context
-                )
-            ),
-
-            limitations=list(
-                limitations
-            ),
-
-            metadata=dict(
-                metadata
-            ),
-
+            observation_period=(_observation_period(context)),
+            limitations=list(limitations),
+            metadata=dict(metadata),
             recommendation_eligible=recommendation_eligible,
         )
 
@@ -2665,72 +1954,42 @@ class EKSAnalyzer(Analyzer):
 
         return Evidence(
             metrics={
-                "cluster":
-                    _cloudwatch_group(
-                        context,
-                        "cluster",
-                    ).get(
-                        "metrics",
-                        {},
-                    ),
-
-                "nodes":
-                    _cloudwatch_group(
-                        context,
-                        "nodes",
-                    ).get(
-                        "metrics",
-                        {},
-                    ),
-
-                "pods":
-                    _cloudwatch_group(
-                        context,
-                        "pods",
-                    ).get(
-                        "metrics",
-                        {},
-                    ),
+                "cluster": _cloudwatch_group(
+                    context,
+                    "cluster",
+                ).get(
+                    "metrics",
+                    {},
+                ),
+                "nodes": _cloudwatch_group(
+                    context,
+                    "nodes",
+                ).get(
+                    "metrics",
+                    {},
+                ),
+                "pods": _cloudwatch_group(
+                    context,
+                    "pods",
+                ).get(
+                    "metrics",
+                    {},
+                ),
             },
-
-            configuration=dict(
-                context.configuration()
-                or {}
-            ),
-
-            topology=dict(
-                context.topology()
-                or {}
-            ),
-
+            configuration=dict(context.configuration() or {}),
+            topology=dict(context.topology() or {}),
             resource={
-                "resource_id":
-                    context.resource_id,
-
-                "resource_type":
-                    context.resource_type,
-
-                "region":
-                    context.region,
+                "resource_id": context.resource_id,
+                "resource_type": context.resource_type,
+                "region": context.region,
             },
-
-            derived=dict(
-                metadata
-            ),
-
-            billing=dict(
-                context.billing()
-                or {}
-            ),
-
+            derived=dict(metadata),
+            billing=dict(context.billing() or {}),
             data_quality={
-                "cloudwatch":
-                    cloudwatch.get(
-                        "data_quality",
-                        {},
-                    ),
-
-                "collector":
-                    context.collector_data_quality(),
+                "cloudwatch": cloudwatch.get(
+                    "data_quality",
+                    {},
+                ),
+                "collector": context.collector_data_quality(),
             },
         )

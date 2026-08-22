@@ -48,18 +48,12 @@ class RecommendationEngine:
         ):
             return []
 
-        recommendations: list[
-            dict[str, Any]
-        ] = []
+        recommendations: list[dict[str, Any]] = []
 
         for finding in findings:
 
             try:
-                recommendation = (
-                    self._build_one(
-                        finding
-                    )
-                )
+                recommendation = self._build_one(finding)
 
             except Exception:
 
@@ -67,9 +61,7 @@ class RecommendationEngine:
                 # abort recommendation generation for the rest of
                 # the scan.
                 finding_type = (
-                    finding.get(
-                        "finding_type"
-                    )
+                    finding.get("finding_type")
                     if isinstance(
                         finding,
                         dict,
@@ -78,8 +70,7 @@ class RecommendationEngine:
                 )
 
                 logger.warning(
-                    "Skipping finding %r during "
-                    "recommendation generation",
+                    "Skipping finding %r during " "recommendation generation",
                     finding_type,
                     exc_info=True,
                 )
@@ -87,9 +78,7 @@ class RecommendationEngine:
                 continue
 
             if recommendation is not None:
-                recommendations.append(
-                    recommendation
-                )
+                recommendations.append(recommendation)
 
         return sorted(
             recommendations,
@@ -111,21 +100,15 @@ class RecommendationEngine:
         ):
             return None
 
-        if finding.get(
-            "recommendation_eligible"
-        ) is not True:
+        if finding.get("recommendation_eligible") is not True:
             return None
 
-        route = recommendation_route_for_finding(
-            finding
-        )
+        route = recommendation_route_for_finding(finding)
 
         if route is None:
             return None
 
-        definition = resolve_recommendation(
-            finding
-        )
+        definition = resolve_recommendation(finding)
 
         if definition is None:
             return None
@@ -138,20 +121,13 @@ class RecommendationEngine:
         if not allowed:
             return None
 
-        finding_id = self._finding_id(
-            finding
-        )
+        finding_id = self._finding_id(finding)
 
         if finding_id is None:
-            raise RuntimeError(
-                "Eligible finding has no persisted "
-                "database ID."
-            )
+            raise RuntimeError("Eligible finding has no persisted " "database ID.")
 
         scope = resolve_persistence_scope(
-            recommendation_scope=(
-                definition.recommendation_scope
-            ),
+            recommendation_scope=(definition.recommendation_scope),
             finding=finding,
         )
 
@@ -160,24 +136,14 @@ class RecommendationEngine:
             definition.priority,
         )
 
-        resource_id = finding.get(
-            "resource_id"
-        )
+        resource_id = finding.get("resource_id")
 
         resource_type = (
-            str(
-                finding.get(
-                    "resource_type"
-                )
-                or "unknown"
-            ).strip()
-            or "unknown"
+            str(finding.get("resource_type") or "unknown").strip() or "unknown"
         )
 
         finding_type = str(
-            finding.get("finding_type")
-            or finding.get("finding_key")
-            or "finding"
+            finding.get("finding_type") or finding.get("finding_key") or "finding"
         )
 
         title = finding_type.replace(
@@ -185,23 +151,20 @@ class RecommendationEngine:
             " ",
         ).title()
 
-        action = str(
-            definition.action
-            or "review"
-        ).replace(
-            "_",
-            " ",
-        ).title()
+        action = (
+            str(definition.action or "review")
+            .replace(
+                "_",
+                " ",
+            )
+            .title()
+        )
 
-        reason = str(
-            finding.get("reason")
-            or ""
-        ).strip()
+        reason = str(finding.get("reason") or "").strip()
 
         if not reason:
             reason = (
-                "The recommendation is supported by "
-                "the collected finding evidence."
+                "The recommendation is supported by " "the collected finding evidence."
             )
 
         impact = finding.get("impact")
@@ -212,138 +175,62 @@ class RecommendationEngine:
         ):
             impact = {}
 
-        financial_impact = normalize_financial_impact(
-            impact
-        )
+        financial_impact = normalize_financial_impact(impact)
 
         limitations = [
             str(item).strip()
-            for item in (
-                finding.get("limitations")
-                or []
-            )
+            for item in (finding.get("limitations") or [])
             if str(item).strip()
         ]
 
         evidence = [
             {
-                "finding_id":
-                    finding_id,
-
-                "finding_type":
-                    finding_type,
-
-                "resource_id":
-                    resource_id,
-
-                "severity":
-                    finding.get(
-                        "severity"
-                    ),
-
-                "confidence":
-                    finding.get(
-                        "confidence"
-                    ),
-
-                "reason":
-                    finding.get(
-                        "reason"
-                    ),
-
-                "evidence_summary":
-                    finding.get(
-                        "evidence_summary",
-                        [],
-                    ),
-
-                "conditions":
-                    finding.get(
-                        "conditions",
-                        [],
-                    ),
-
-                "limitations":
-                    finding.get(
-                        "limitations",
-                        [],
-                    ),
+                "finding_id": finding_id,
+                "finding_type": finding_type,
+                "resource_id": resource_id,
+                "severity": finding.get("severity"),
+                "confidence": finding.get("confidence"),
+                "reason": finding.get("reason"),
+                "evidence_summary": finding.get(
+                    "evidence_summary",
+                    [],
+                ),
+                "conditions": finding.get(
+                    "conditions",
+                    [],
+                ),
+                "limitations": finding.get(
+                    "limitations",
+                    [],
+                ),
             }
         ]
 
-        service = str(
-            finding.get("service")
-            or "Unknown service"
-        )
+        service = str(finding.get("service") or "Unknown service")
 
         return {
-            "service":
-                service,
-
-            "recommendation_key":
-                route.recommendation_key,
-
-            "recommendation_variant":
-                None,
-
-            "recommendation_scope":
-                definition.recommendation_scope,
-
-            "resource_type":
-                resource_type,
-
-            "scope":
-                scope,
-
-            "category":
-                definition.family,
-
-            "title":
-                title,
-
-            "priority":
-                priority,
-
-            "confidence":
-                confidence,
-
-            "reason":
-                reason,
-
-            "action":
-                action,
-
-            "affected_resources":
-                [resource_id]
-                if resource_id
-                else [],
-
-            "source_finding_ids":
-                [finding_id],
-
-            "source_finding_types":
-                [finding_type],
-
-            "source_finding_count":
-                1,
-
-            "finding_id":
-                finding_id,
-
-            "limitations":
-                limitations,
-
-            "evidence":
-                evidence,
-
-            "financial_impact":
-                financial_impact,
-
-            "status":
-                "requires_validation",
-
-            "supporting_finding_count":
-                0,
+            "service": service,
+            "recommendation_key": route.recommendation_key,
+            "recommendation_variant": None,
+            "recommendation_scope": definition.recommendation_scope,
+            "resource_type": resource_type,
+            "scope": scope,
+            "category": definition.family,
+            "title": title,
+            "priority": priority,
+            "confidence": confidence,
+            "reason": reason,
+            "action": action,
+            "affected_resources": [resource_id] if resource_id else [],
+            "source_finding_ids": [finding_id],
+            "source_finding_types": [finding_type],
+            "source_finding_count": 1,
+            "finding_id": finding_id,
+            "limitations": limitations,
+            "evidence": evidence,
+            "financial_impact": financial_impact,
+            "status": "requires_validation",
+            "supporting_finding_count": 0,
         }
 
     # --------------------------------------------------------------
@@ -355,9 +242,7 @@ class RecommendationEngine:
         finding: dict[str, Any],
     ) -> int | None:
 
-        value = finding.get(
-            "database_id"
-        )
+        value = finding.get("database_id")
 
         try:
             number = int(value)
@@ -368,11 +253,7 @@ class RecommendationEngine:
         ):
             return None
 
-        return (
-            number
-            if number > 0
-            else None
-        )
+        return number if number > 0 else None
 
     @classmethod
     def _sort_key(
@@ -399,19 +280,16 @@ class RecommendationEngine:
                 priority,
                 0,
             ),
-
             -cls.CONFIDENCE_RANK.get(
                 confidence,
                 0,
             ),
-
             str(
                 recommendation.get(
                     "title",
                     "",
                 )
             ),
-
             str(
                 recommendation.get(
                     "scope",

@@ -36,18 +36,14 @@ def historical_events(
             [],
         )
 
-        events.extend(
-            _normalize_events(history)
-        )
+        events.extend(_normalize_events(history))
 
         cloudtrail_events = cloudtrail.get(
             "events",
             [],
         )
 
-        events.extend(
-            _normalize_events(cloudtrail_events)
-        )
+        events.extend(_normalize_events(cloudtrail_events))
 
     historical = observations.get(
         "historical",
@@ -61,20 +57,14 @@ def historical_events(
             [],
         )
 
-        events.extend(
-            _normalize_events(history)
-        )
+        events.extend(_normalize_events(history))
 
         historical_events_value = historical.get(
             "events",
             [],
         )
 
-        events.extend(
-            _normalize_events(
-                historical_events_value
-            )
-        )
+        events.extend(_normalize_events(historical_events_value))
 
     return _deduplicate_events(events)
 
@@ -82,9 +72,7 @@ def historical_events(
 def has_historical_evidence(
     resource: dict[str, Any] | None,
 ) -> bool:
-    return bool(
-        historical_events(resource)
-    )
+    return bool(historical_events(resource))
 
 
 def find_historical_matches(
@@ -141,7 +129,6 @@ def historical_identity_matches(
     identity: dict[str, Any] | None,
 ) -> list[dict[str, Any]]:
 
-
     if not isinstance(identity, dict):
         return []
 
@@ -174,18 +161,14 @@ def historical_resource_summary(
     resource: dict[str, Any] | None,
 ) -> dict[str, Any]:
 
-    events = historical_events(
-        resource
-    )
+    events = historical_events(resource)
 
     timestamps = []
 
     for event in events:
 
         timestamp = (
-            event.get("timestamp")
-            or event.get("event_time")
-            or event.get("time")
+            event.get("timestamp") or event.get("event_time") or event.get("time")
         )
 
         if timestamp is not None:
@@ -210,9 +193,7 @@ def _normalize_events(
     for event in value:
 
         if isinstance(event, dict):
-            result.append(
-                dict(event)
-            )
+            result.append(dict(event))
 
     return result
 
@@ -223,29 +204,20 @@ def _event_matches_attribute(
     expected_value: Any,
 ) -> bool:
 
-    direct_attribute = event.get(
-        "attribute"
-    )
+    direct_attribute = event.get("attribute")
 
-    if (
-        direct_attribute == attribute
-        and (
-            event.get("old_value") == expected_value
-            or event.get("new_value") == expected_value
-            or event.get("value") == expected_value
-        )
+    if direct_attribute == attribute and (
+        event.get("old_value") == expected_value
+        or event.get("new_value") == expected_value
+        or event.get("value") == expected_value
     ):
         return True
 
-    changes = event.get(
-        "changes"
-    )
+    changes = event.get("changes")
 
     if isinstance(changes, dict):
 
-        change = changes.get(
-            attribute
-        )
+        change = changes.get(attribute)
 
         if isinstance(change, dict):
 
@@ -260,9 +232,7 @@ def _event_matches_attribute(
         elif change == expected_value:
             return True
 
-    attributes = event.get(
-        "attributes"
-    )
+    attributes = event.get("attributes")
 
     if isinstance(attributes, dict):
 
@@ -290,15 +260,11 @@ def _extract_event_values(
             if value is not None:
                 values.append(value)
 
-    changes = event.get(
-        "changes"
-    )
+    changes = event.get("changes")
 
     if isinstance(changes, dict):
 
-        change = changes.get(
-            attribute
-        )
+        change = changes.get(attribute)
 
         if isinstance(change, dict):
 
@@ -316,15 +282,11 @@ def _extract_event_values(
         elif change is not None:
             values.append(change)
 
-    attributes = event.get(
-        "attributes"
-    )
+    attributes = event.get("attributes")
 
     if isinstance(attributes, dict):
 
-        value = attributes.get(
-            attribute
-        )
+        value = attributes.get(attribute)
 
         if value is not None:
             values.append(value)

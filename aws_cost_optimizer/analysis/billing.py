@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 RESOURCE = "resource"
 COLLECTION_PLAN = "collection_plan"
 SERVICE = "service"
@@ -18,7 +17,6 @@ UNKNOWN = "unknown"
 def normalize_billing_context(
     value: Any,
 ) -> dict[str, Any]:
-
 
     if value is None:
         return {}
@@ -50,33 +48,25 @@ def normalize_billing_context(
         ),
     )
 
-    cost = value.get(
-        "cost"
-    )
+    cost = value.get("cost")
 
     if isinstance(
         cost,
         dict,
     ):
 
-        nested_value = cost.get(
-            "value"
-        )
+        nested_value = cost.get("value")
 
         if nested_value is not None:
             amount = nested_value
 
         if amount is None:
-            amount = cost.get(
-                "total"
-            )
+            amount = cost.get("total")
 
     if amount is not None:
 
         try:
-            result["amount"] = float(
-                amount
-            )
+            result["amount"] = float(amount)
 
         except (
             TypeError,
@@ -117,15 +107,11 @@ def normalize_billing_context(
 
             if alias in value:
 
-                result[
-                    "usage_type"
-                ] = value[alias]
+                result["usage_type"] = value[alias]
 
                 break
 
-    attribution_scope = value.get(
-        "attribution_scope"
-    )
+    attribution_scope = value.get("attribution_scope")
 
     if attribution_scope not in {
         RESOURCE,
@@ -137,27 +123,18 @@ def normalize_billing_context(
 
         attribution_scope = UNKNOWN
 
-    result[
-        "attribution_scope"
-    ] = attribution_scope
+    result["attribution_scope"] = attribution_scope
 
-    resource_cost_attributed = value.get(
-        "resource_cost_attributed"
-    )
+    resource_cost_attributed = value.get("resource_cost_attributed")
 
     if not isinstance(
         resource_cost_attributed,
         bool,
     ):
 
-        resource_cost_attributed = (
-            attribution_scope
-            == RESOURCE
-        )
+        resource_cost_attributed = attribution_scope == RESOURCE
 
-    result[
-        "resource_cost_attributed"
-    ] = resource_cost_attributed
+    result["resource_cost_attributed"] = resource_cost_attributed
 
     return result
 
@@ -172,49 +149,38 @@ def billing_from_plan(
     ):
         return {}
 
-    existing = plan.get(
-        "billing"
-    )
+    existing = plan.get("billing")
 
-    if isinstance(
-        existing,
-        dict,
-    ) and existing:
-
-        result = normalize_billing_context(
-            existing
+    if (
+        isinstance(
+            existing,
+            dict,
         )
+        and existing
+    ):
+
+        result = normalize_billing_context(existing)
 
         if "attribution_scope" not in result:
-            result[
-                "attribution_scope"
-            ] = UNKNOWN
+            result["attribution_scope"] = UNKNOWN
 
         return result
 
-    cost_context = plan.get(
-        "cost_context"
-    )
+    cost_context = plan.get("cost_context")
 
-    normalized = normalize_billing_context(
-        cost_context
-    )
+    normalized = normalize_billing_context(cost_context)
 
     if normalized:
         return normalized
 
     result: dict[str, Any] = {}
 
-    amount = plan.get(
-        "cost"
-    )
+    amount = plan.get("cost")
 
     if amount is not None:
 
         try:
-            result[
-                "amount"
-            ] = float(amount)
+            result["amount"] = float(amount)
 
         except (
             TypeError,
@@ -235,12 +201,8 @@ def billing_from_plan(
         if plan.get(key) is not None:
             result[key] = plan.get(key)
 
-    result[
-        "attribution_scope"
-    ] = COLLECTION_PLAN
+    result["attribution_scope"] = COLLECTION_PLAN
 
-    result[
-        "resource_cost_attributed"
-    ] = False
+    result["resource_cost_attributed"] = False
 
     return result

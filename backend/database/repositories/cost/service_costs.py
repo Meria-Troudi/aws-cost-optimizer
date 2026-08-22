@@ -1,6 +1,7 @@
 """
 Service cost repository
 """
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -36,7 +37,9 @@ def get_service_costs_with_rank(
     service_by_month = get_service_costs_by_month(db, scan_run_id)
     period_totals = {}
     for row in service_by_month:
-        period_totals[row["service"]] = period_totals.get(row["service"], 0) + row["cost"]
+        period_totals[row["service"]] = (
+            period_totals.get(row["service"], 0) + row["cost"]
+        )
     total = sum(period_totals.values()) or get_period_cost_total(db, scan_run_id) or 1
 
     enriched = build_service_costs_with_changes(

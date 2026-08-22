@@ -1,10 +1,15 @@
 """
-Usage type cost repository 
+Usage type cost repository
 """
+
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from backend.database.models.cost_record import CostRecord
-def get_usage_types_by_service(db: Session, scan_run_id: int, service: str, limit: int = 3):
+
+
+def get_usage_types_by_service(
+    db: Session, scan_run_id: int, service: str, limit: int = 3
+):
     rows = (
         db.query(
             CostRecord.usage_type,
@@ -36,8 +41,16 @@ def get_usage_types_by_service(db: Session, scan_run_id: int, service: str, limi
             # "percentage" is kept for aws_cost_optimizer/inspection/exporter.py's
             # text report; "share_pct" is the standardized key used by the API
             # presenters/frontend (matches the live-dashboard cost-driver shape).
-            "percentage": round(float(row.cost or 0) / service_total * 100, 2) if service_total else 0.0,
-            "share_pct": round(float(row.cost or 0) / service_total * 100, 2) if service_total else 0.0,
+            "percentage": (
+                round(float(row.cost or 0) / service_total * 100, 2)
+                if service_total
+                else 0.0
+            ),
+            "share_pct": (
+                round(float(row.cost or 0) / service_total * 100, 2)
+                if service_total
+                else 0.0
+            ),
         }
         for row in rows
     ]

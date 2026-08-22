@@ -7,7 +7,6 @@ cost/dashboard service module.
 
 from __future__ import annotations
 
-
 # Below this prior-period cost, a percentage change is not meaningful
 # (dividing by a near-zero denominator produces a wildly unstable
 # percentage), so callers should report the change as unavailable

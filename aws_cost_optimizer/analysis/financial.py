@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 CONFIDENCE_LEVELS = {
     "high",
     "medium",
@@ -40,9 +39,7 @@ def calculate_savings(
 ) -> dict[str, float | str | None]:
 
     normalized_confidence = (
-        str(confidence).strip().lower()
-        if confidence is not None
-        else None
+        str(confidence).strip().lower() if confidence is not None else None
     )
 
     if normalized_confidence not in CONFIDENCE_LEVELS:
@@ -128,9 +125,7 @@ def calculate_savings(
                     savings,
                     2,
                 ),
-                "savings_confidence": (
-                    normalized_confidence
-                ),
+                "savings_confidence": (normalized_confidence),
                 "savings_basis": "target_cost",
             }
     # --------------------------------------------------------------
@@ -152,12 +147,8 @@ def calculate_savings(
                 current,
                 2,
             ),
-            "savings_confidence": (
-                normalized_confidence
-            ),
-            "savings_basis": (
-                "full_resource_elimination"
-            ),
+            "savings_confidence": (normalized_confidence),
+            "savings_basis": ("full_resource_elimination"),
         }
 
     # Resource-attributed cost exists, but nothing tells us how
@@ -177,7 +168,6 @@ def normalize_financial_impact(
     value: Any,
 ) -> dict[str, Any]:
 
-
     if not isinstance(value, dict):
         return {
             "observed_monthly_cost": None,
@@ -187,26 +177,15 @@ def normalize_financial_impact(
             "currency": "USD",
         }
 
-    observed_cost = value.get(
-        "observed_monthly_cost"
-    )
+    observed_cost = value.get("observed_monthly_cost")
 
-    savings = value.get(
-        "estimated_monthly_savings"
-    )
+    savings = value.get("estimated_monthly_savings")
 
-    confidence = value.get(
-        "savings_confidence"
-    )
+    confidence = value.get("savings_confidence")
 
-    basis = value.get(
-        "savings_basis"
-    )
+    basis = value.get("savings_basis")
 
-    currency = (
-        value.get("currency")
-        or "USD"
-    )
+    currency = value.get("currency") or "USD"
 
     def _number(
         candidate: Any,
@@ -227,30 +206,16 @@ def normalize_financial_impact(
             return None
 
     normalized_confidence = (
-        str(confidence).strip().lower()
-        if confidence is not None
-        else None
+        str(confidence).strip().lower() if confidence is not None else None
     )
 
     if normalized_confidence not in CONFIDENCE_LEVELS:
         normalized_confidence = None
 
     return {
-        "observed_monthly_cost":
-            _number(observed_cost),
-
-        "estimated_monthly_savings":
-            _number(savings),
-
-        "savings_confidence":
-            normalized_confidence,
-
-        "savings_basis":
-            str(
-                basis or "unknown"
-            ).strip(),
-
-        "currency":
-            str(currency).strip()
-            or "USD",
+        "observed_monthly_cost": _number(observed_cost),
+        "estimated_monthly_savings": _number(savings),
+        "savings_confidence": normalized_confidence,
+        "savings_basis": str(basis or "unknown").strip(),
+        "currency": str(currency).strip() or "USD",
     }

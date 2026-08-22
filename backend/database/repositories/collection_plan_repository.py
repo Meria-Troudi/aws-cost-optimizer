@@ -27,7 +27,5 @@ def get_collection_plans_for_scan(
     scan_run_id: int,
 ):
     return (
-        db.query(CollectionPlan)
-        .filter(CollectionPlan.scan_run_id == scan_run_id)
-        .all()
+        db.query(CollectionPlan).filter(CollectionPlan.scan_run_id == scan_run_id).all()
     )

@@ -27,28 +27,18 @@ def validate(
         finding,
         dict,
     ):
-        return False, [
-            "Finding is not a mapping."
-        ]
+        return False, ["Finding is not a mapping."]
 
-    if finding.get(
-        "recommendation_eligible"
-    ) is not True:
+    if finding.get("recommendation_eligible") is not True:
 
-        errors.append(
-            "Finding is not recommendation eligible."
-        )
+        errors.append("Finding is not recommendation eligible.")
 
     if definition is None:
 
-        errors.append(
-            "No recommendation definition resolved."
-        )
+        errors.append("No recommendation definition resolved.")
 
     elif definition.recommendation_eligible is not True:
 
-        errors.append(
-            "Recommendation definition is disabled."
-        )
+        errors.append("Recommendation definition is disabled.")
 
     return (not errors, errors)

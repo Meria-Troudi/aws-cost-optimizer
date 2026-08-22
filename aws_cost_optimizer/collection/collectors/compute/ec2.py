@@ -47,21 +47,76 @@ class EC2Collector(BaseCollector):
     resource_type = "ec2_instance"
 
     DEFAULT_METRICS = [
-        {"name": "CPUUtilization", "statistic": "Average", "unit": "Percent", "key": "CPUUtilization"},
-        {"name": "CPUUtilization", "statistic": "Maximum", "unit": "Percent", "key": "CPUUtilization_max"},
+        {
+            "name": "CPUUtilization",
+            "statistic": "Average",
+            "unit": "Percent",
+            "key": "CPUUtilization",
+        },
+        {
+            "name": "CPUUtilization",
+            "statistic": "Maximum",
+            "unit": "Percent",
+            "key": "CPUUtilization_max",
+        },
         {"name": "NetworkIn", "statistic": "Sum", "unit": "Bytes", "key": "NetworkIn"},
-        {"name": "NetworkOut", "statistic": "Sum", "unit": "Bytes", "key": "NetworkOut"},
-        {"name": "EBSReadOps", "statistic": "Sum", "unit": "Count", "key": "EBSReadOps"},
-        {"name": "EBSWriteOps", "statistic": "Sum", "unit": "Count", "key": "EBSWriteOps"},
-        {"name": "StatusCheckFailed", "statistic": "Maximum", "unit": "Count", "key": "StatusCheckFailed"},
-        {"name": "StatusCheckFailed_Instance", "statistic": "Maximum", "unit": "Count", "key": "StatusCheckFailed_Instance"},
-        {"name": "StatusCheckFailed_System", "statistic": "Maximum", "unit": "Count", "key": "StatusCheckFailed_System"},
+        {
+            "name": "NetworkOut",
+            "statistic": "Sum",
+            "unit": "Bytes",
+            "key": "NetworkOut",
+        },
+        {
+            "name": "EBSReadOps",
+            "statistic": "Sum",
+            "unit": "Count",
+            "key": "EBSReadOps",
+        },
+        {
+            "name": "EBSWriteOps",
+            "statistic": "Sum",
+            "unit": "Count",
+            "key": "EBSWriteOps",
+        },
+        {
+            "name": "StatusCheckFailed",
+            "statistic": "Maximum",
+            "unit": "Count",
+            "key": "StatusCheckFailed",
+        },
+        {
+            "name": "StatusCheckFailed_Instance",
+            "statistic": "Maximum",
+            "unit": "Count",
+            "key": "StatusCheckFailed_Instance",
+        },
+        {
+            "name": "StatusCheckFailed_System",
+            "statistic": "Maximum",
+            "unit": "Count",
+            "key": "StatusCheckFailed_System",
+        },
     ]
 
     DEFAULT_AGENT_METRICS = [
-        {"name": "mem_used_percent", "statistic": "Average", "unit": "Percent", "key": "mem_used_percent"},
-        {"name": "mem_used_percent", "statistic": "Maximum", "unit": "Percent", "key": "mem_used_percent_max"},
-        {"name": "mem_available_percent", "statistic": "Average", "unit": "Percent", "key": "mem_available_percent"},
+        {
+            "name": "mem_used_percent",
+            "statistic": "Average",
+            "unit": "Percent",
+            "key": "mem_used_percent",
+        },
+        {
+            "name": "mem_used_percent",
+            "statistic": "Maximum",
+            "unit": "Percent",
+            "key": "mem_used_percent_max",
+        },
+        {
+            "name": "mem_available_percent",
+            "statistic": "Average",
+            "unit": "Percent",
+            "key": "mem_available_percent",
+        },
     ]
 
     DEFAULT_CLOUDWATCH_PERIOD = 3600
@@ -186,7 +241,9 @@ class EC2Collector(BaseCollector):
             "security_group_ids": security_group_ids,
             "security_group_count": len(security_group_ids),
             "network_interface_count": len(network_interfaces),
-            "iam_instance_profile": (resource.get("IamInstanceProfile") or {}).get("Arn"),
+            "iam_instance_profile": (resource.get("IamInstanceProfile") or {}).get(
+                "Arn"
+            ),
             "key_name": resource.get("KeyName"),
             "root_device": {
                 "device_name": resource.get("RootDeviceName"),
@@ -231,7 +288,9 @@ class EC2Collector(BaseCollector):
                 "network_interface_count": len(interface_ids),
                 "ebs_volume_count": len(volumes),
                 "security_group_count": len(resource.get("SecurityGroups", []) or []),
-                "autoscaling_group_count": 1 if asg.get("autoscaling_group_name") else 0,
+                "autoscaling_group_count": (
+                    1 if asg.get("autoscaling_group_name") else 0
+                ),
             },
             "network_interfaces": network_interfaces.get("interfaces", []),
             "ebs_volumes": volumes,
@@ -327,7 +386,10 @@ class EC2Collector(BaseCollector):
         cloudtrail_config = self.profile.get("cloudtrail", {})
         cloudtrail = {}
 
-        if isinstance(cloudtrail_config, dict) and cloudtrail_config.get("enabled", False) is True:
+        if (
+            isinstance(cloudtrail_config, dict)
+            and cloudtrail_config.get("enabled", False) is True
+        ):
             cloudtrail = self._collect_historical_events(str(instance_id), start, end)
 
         memory_available = any(
@@ -370,7 +432,10 @@ class EC2Collector(BaseCollector):
         instance_id = resource.get("InstanceId")
 
         if not vpc_id:
-            return {"status": "incomplete", "reason": "EC2 instance is not associated with a VPC."}
+            return {
+                "status": "incomplete",
+                "reason": "EC2 instance is not associated with a VPC.",
+            }
 
         topology = self._topology_collector.collect(
             vpc_id=vpc_id,
@@ -387,7 +452,9 @@ class EC2Collector(BaseCollector):
     # OPTIMIZATION EVIDENCE
     # ------------------------------------------------------------------
 
-    def build_optimization_evidence(self, resource: dict, collected_resource: dict) -> dict:
+    def build_optimization_evidence(
+        self, resource: dict, collected_resource: dict
+    ) -> dict:
 
         configuration = self._safe_dict(collected_resource.get("configuration"))
         relationships = self._safe_dict(collected_resource.get("relationships"))
@@ -413,11 +480,15 @@ class EC2Collector(BaseCollector):
                 "network_out_bytes": self._metric_value(metrics, "NetworkOut"),
                 "ebs_read_ops": self._metric_value(metrics, "EBSReadOps"),
                 "ebs_write_ops": self._metric_value(metrics, "EBSWriteOps"),
-                "memory_average_percent": self._metric_value(metrics, "mem_used_percent"),
+                "memory_average_percent": self._metric_value(
+                    metrics, "mem_used_percent"
+                ),
             },
             "capacity": {
                 "ebs_volume_count": len(relationships.get("ebs_volumes", []) or []),
-                "network_interface_count": len(relationships.get("network_interfaces", []) or []),
+                "network_interface_count": len(
+                    relationships.get("network_interfaces", []) or []
+                ),
                 "autoscaling_managed": bool(asg.get("autoscaling_group_name")),
             },
             "classification": {
@@ -475,7 +546,9 @@ class EC2Collector(BaseCollector):
             try:
                 response = self.ec2.describe_volumes(VolumeIds=chunk)
             except Exception as exc:
-                result.append({"status": "error", "volume_ids": chunk, "error": str(exc)})
+                result.append(
+                    {"status": "error", "volume_ids": chunk, "error": str(exc)}
+                )
                 continue
 
             for volume in response.get("Volumes", []):
@@ -487,18 +560,20 @@ class EC2Collector(BaseCollector):
                 if not volume_id:
                     continue
 
-                result.append({
-                    "volume_id": volume_id,
-                    "size_gib": volume.get("Size"),
-                    "volume_type": volume.get("VolumeType"),
-                    "iops": volume.get("Iops"),
-                    "throughput_mibps": volume.get("Throughput"),
-                    "state": volume.get("State"),
-                    "encrypted": volume.get("Encrypted"),
-                    "availability_zone": volume.get("AvailabilityZone"),
-                    "create_time": self._iso(volume.get("CreateTime")),
-                    "attachment": attachment_by_volume.get(volume_id, {}),
-                })
+                result.append(
+                    {
+                        "volume_id": volume_id,
+                        "size_gib": volume.get("Size"),
+                        "volume_type": volume.get("VolumeType"),
+                        "iops": volume.get("Iops"),
+                        "throughput_mibps": volume.get("Throughput"),
+                        "state": volume.get("State"),
+                        "encrypted": volume.get("Encrypted"),
+                        "availability_zone": volume.get("AvailabilityZone"),
+                        "create_time": self._iso(volume.get("CreateTime")),
+                        "attachment": attachment_by_volume.get(volume_id, {}),
+                    }
+                )
 
         return result
 
@@ -543,11 +618,13 @@ class EC2Collector(BaseCollector):
 
             if groups:
                 group = groups[0]
-                result.update({
-                    "min_size": group.get("MinSize"),
-                    "max_size": group.get("MaxSize"),
-                    "desired_capacity": group.get("DesiredCapacity"),
-                })
+                result.update(
+                    {
+                        "min_size": group.get("MinSize"),
+                        "max_size": group.get("MaxSize"),
+                        "desired_capacity": group.get("DesiredCapacity"),
+                    }
+                )
 
         except Exception as exc:
             result["group_error"] = str(exc)
@@ -598,12 +675,14 @@ class EC2Collector(BaseCollector):
                     if event_names and event_name not in event_names:
                         continue
 
-                    events.append({
-                        "event_name": event_name,
-                        "event_time": self._iso(event.get("EventTime")),
-                        "username": event.get("Username"),
-                        "event_id": event.get("EventId"),
-                    })
+                    events.append(
+                        {
+                            "event_name": event_name,
+                            "event_time": self._iso(event.get("EventTime")),
+                            "username": event.get("Username"),
+                            "event_id": event.get("EventId"),
+                        }
+                    )
 
                 next_token = response.get("NextToken")
                 if not next_token:
@@ -612,7 +691,12 @@ class EC2Collector(BaseCollector):
             return {"status": "ok", "event_count": len(events), "events": events}
 
         except Exception as exc:
-            return {"status": "error", "event_count": 0, "events": [], "error": str(exc)}
+            return {
+                "status": "error",
+                "event_count": 0,
+                "events": [],
+                "error": str(exc),
+            }
 
     def _cloudtrail_event_names(self) -> set[str]:
 
@@ -630,7 +714,9 @@ class EC2Collector(BaseCollector):
     # HELPERS
     # ------------------------------------------------------------------
 
-    def _normalize_metric_specs(self, specs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _normalize_metric_specs(
+        self, specs: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
 
         result = []
         for spec in specs:
@@ -672,7 +758,7 @@ class EC2Collector(BaseCollector):
     @staticmethod
     def _chunks(values: List[str], size: int):
         for index in range(0, len(values), size):
-            yield values[index:index + size]
+            yield values[index : index + size]
 
     @staticmethod
     def _normalize_block_device_mappings(mappings: Any) -> List[Dict[str, Any]]:
@@ -681,12 +767,14 @@ class EC2Collector(BaseCollector):
             if not isinstance(mapping, dict):
                 continue
             ebs = mapping.get("Ebs") or {}
-            result.append({
-                "device_name": mapping.get("DeviceName"),
-                "volume_id": ebs.get("VolumeId"),
-                "delete_on_termination": ebs.get("DeleteOnTermination"),
-                "status": ebs.get("Status"),
-            })
+            result.append(
+                {
+                    "device_name": mapping.get("DeviceName"),
+                    "volume_id": ebs.get("VolumeId"),
+                    "delete_on_termination": ebs.get("DeleteOnTermination"),
+                    "status": ebs.get("Status"),
+                }
+            )
         return result
 
     @staticmethod
@@ -706,7 +794,9 @@ class EC2Collector(BaseCollector):
         return float(metric["value"])
 
     @classmethod
-    def _build_activity_summary(cls, metrics: Dict[str, Any], start, end) -> Dict[str, Any]:
+    def _build_activity_summary(
+        cls, metrics: Dict[str, Any], start, end
+    ) -> Dict[str, Any]:
 
         duration = max((end - start).total_seconds(), 1.0)
 
@@ -737,7 +827,10 @@ class EC2Collector(BaseCollector):
         if any(m in values for m in ("prod", "production")):
             return "production"
 
-        if any(m in values for m in ("dev", "development", "test", "testing", "qa", "stage", "staging")):
+        if any(
+            m in values
+            for m in ("dev", "development", "test", "testing", "qa", "stage", "staging")
+        ):
             return "non_production"
 
         return "unknown"
@@ -746,7 +839,10 @@ class EC2Collector(BaseCollector):
     def _classify_workload(tags: Dict[str, str]) -> str:
         values = " ".join(f"{k} {v}".lower() for k, v in tags.items())
 
-        if any(m in values for m in ("batch", "worker", "ci", "cd", "cicd", "build", "etl", "ml")):
+        if any(
+            m in values
+            for m in ("batch", "worker", "ci", "cd", "cicd", "build", "etl", "ml")
+        ):
             return "batch_or_interruptible"
 
         if any(m in values for m in ("database", "db", "payment", "critical")):

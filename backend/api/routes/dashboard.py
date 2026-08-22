@@ -18,7 +18,6 @@ from backend.database.repositories.scan_run_repository import (
     get_scan_summary,
 )
 
-
 router = APIRouter(
     prefix="/api/dashboard",
     tags=["Dashboard"],
@@ -49,22 +48,14 @@ def dashboard_overview(
     force_refresh: bool = Query(
         default=False,
     ),
-    db: Session = Depends(
-        get_db
-    ),
+    db: Session = Depends(get_db),
 ):
 
     try:
 
         latest_scan = get_latest_scan_run(db)
 
-        latest_scan_summary = (
-            get_scan_summary(
-                latest_scan
-            )
-            if latest_scan
-            else None
-        )
+        latest_scan_summary = get_scan_summary(latest_scan) if latest_scan else None
 
         dashboard = DashboardService()
 

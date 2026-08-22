@@ -68,9 +68,7 @@ class TestDataQualityContract:
         context = AnalysisContext(
             resource={
                 "data_quality": {"a": 1, "shared": "top"},
-                "observations": {
-                    "data_quality": {"shared": "nested", "b": 2}
-                },
+                "observations": {"data_quality": {"shared": "nested", "b": 2}},
             }
         )
 
@@ -120,10 +118,7 @@ class TestFinancialImpactContract:
         finding = self._stopped_finding(_rds_resource())
 
         assert finding.impact["estimated_monthly_savings"] is None
-        assert (
-            finding.impact["savings_basis"]
-            == "cost_not_resource_attributed"
-        )
+        assert finding.impact["savings_basis"] == "cost_not_resource_attributed"
 
     def test_resource_attributed_cost_without_elimination_stays_unquantified(self):
         """
@@ -145,10 +140,7 @@ class TestFinancialImpactContract:
         finding = self._stopped_finding(resource)
 
         assert finding.impact["estimated_monthly_savings"] is None
-        assert (
-            finding.impact["savings_basis"]
-            == "target_cost_required"
-        )
+        assert finding.impact["savings_basis"] == "target_cost_required"
 
     def test_full_elimination_may_claim_the_whole_resource_cost(self):
         """
@@ -166,10 +158,7 @@ class TestFinancialImpactContract:
         )
 
         assert result["estimated_monthly_savings"] == 38.10
-        assert (
-            result["savings_basis"]
-            == "full_resource_elimination"
-        )
+        assert result["savings_basis"] == "full_resource_elimination"
 
     def test_high_confidence_alone_no_longer_implies_full_savings(self):
         """
@@ -187,10 +176,7 @@ class TestFinancialImpactContract:
         )
 
         assert result["estimated_monthly_savings"] is None
-        assert (
-            result["savings_basis"]
-            == "target_cost_required"
-        )
+        assert result["savings_basis"] == "target_cost_required"
 
 
 class TestBillingServiceContract:
@@ -209,10 +195,7 @@ class TestBillingServiceContract:
         assert findings
 
         for finding in findings:
-            assert (
-                finding.metadata["service"]
-                == "Amazon Relational Database Service"
-            )
+            assert finding.metadata["service"] == "Amazon Relational Database Service"
 
 
 class TestAnalyzerHealthReporting:
@@ -241,9 +224,7 @@ class TestAnalyzerHealthReporting:
         except RuntimeError as exc:
             assert "always_broken" in str(exc)
         else:
-            raise AssertionError(
-                "a analyzer that fails on every resource must raise"
-            )
+            raise AssertionError("a analyzer that fails on every resource must raise")
 
     def test_healthy_analyzers_do_not_raise(self):
         findings = AnalysisEngine().analyze(

@@ -29,9 +29,7 @@ def _parse_datetime(
     if isinstance(value, str):
 
         try:
-            return datetime.fromisoformat(
-                value.replace("Z", "+00:00")
-            )
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
 
@@ -69,20 +67,14 @@ def save_metric(
     metric: dict[str, Any],
 ) -> Metric | None:
 
-    metric_name = str(
-        metric.get("metric_name") or ""
-    ).strip()
+    metric_name = str(metric.get("metric_name") or "").strip()
 
     if not metric_name:
         return None
 
-    namespace = str(
-        metric.get("namespace") or ""
-    ).strip()
+    namespace = str(metric.get("namespace") or "").strip()
 
-    statistic = str(
-        metric.get("statistic") or ""
-    ).strip()
+    statistic = str(metric.get("statistic") or "").strip()
 
     record = _find_existing(
         db,
@@ -93,13 +85,9 @@ def save_metric(
         statistic=statistic,
     )
 
-    metric_start = _parse_datetime(
-        metric.get("metric_start")
-    )
+    metric_start = _parse_datetime(metric.get("metric_start"))
 
-    metric_end = _parse_datetime(
-        metric.get("metric_end")
-    )
+    metric_end = _parse_datetime(metric.get("metric_end"))
 
     dimensions = metric.get("dimensions")
 
@@ -111,18 +99,12 @@ def save_metric(
             namespace=namespace,
             metric_name=metric_name,
             statistic=statistic,
-            period=int(
-                metric.get("period") or 0
-            ),
+            period=int(metric.get("period") or 0),
             value=metric.get("value"),
             unit=metric.get("unit"),
             metric_start=metric_start,
             metric_end=metric_end,
-            dimensions=(
-                json_dumps(dimensions)
-                if dimensions is not None
-                else None
-            ),
+            dimensions=(json_dumps(dimensions) if dimensions is not None else None),
         )
 
         db.add(record)
@@ -130,9 +112,7 @@ def save_metric(
     else:
 
         if "period" in metric:
-            record.period = int(
-                metric.get("period") or 0
-            )
+            record.period = int(metric.get("period") or 0)
 
         if "value" in metric:
             record.value = metric.get("value")
@@ -147,9 +127,7 @@ def save_metric(
             record.metric_end = metric_end
 
         if dimensions is not None:
-            record.dimensions = json_dumps(
-                dimensions
-            )
+            record.dimensions = json_dumps(dimensions)
 
     db.flush()
 

@@ -19,7 +19,6 @@ from typing import Any
 
 import yaml
 
-
 VALID_RECOMMENDATION_SCOPES = frozenset(
     {
         "resource",
@@ -50,29 +49,17 @@ class RecommendationDefinition:
     recommendation_eligible: bool = True
     recommendation_scope: str = "resource"
 
-    required_evidence: tuple[str, ...] = field(
-        default_factory=tuple
-    )
+    required_evidence: tuple[str, ...] = field(default_factory=tuple)
 
-    never_invent: tuple[str, ...] = field(
-        default_factory=tuple
-    )
+    never_invent: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
 
-        scope = (
-            str(
-                self.recommendation_scope
-                or "resource"
-            )
-            .strip()
-            .lower()
-        )
+        scope = str(self.recommendation_scope or "resource").strip().lower()
 
         if scope not in VALID_RECOMMENDATION_SCOPES:
             raise ValueError(
-                f"Invalid recommendation scope "
-                f"{scope!r} for {self.key!r}."
+                f"Invalid recommendation scope " f"{scope!r} for {self.key!r}."
             )
 
         object.__setattr__(
@@ -81,14 +68,7 @@ class RecommendationDefinition:
             scope,
         )
 
-        priority = (
-            str(
-                self.priority
-                or "medium"
-            )
-            .strip()
-            .lower()
-        )
+        priority = str(self.priority or "medium").strip().lower()
 
         if priority not in VALID_PRIORITIES:
             priority = "medium"
@@ -116,16 +96,11 @@ class RecommendationCatalog:
         self.path = (
             path
             if path is not None
-            else (
-                Path(__file__).resolve().parent
-                / "recommendation_rules.yaml"
-            )
+            else (Path(__file__).resolve().parent / "recommendation_rules.yaml")
         )
 
         if not self.path.exists():
-            raise FileNotFoundError(
-                f"Recommendation rules not found: {self.path}"
-            )
+            raise FileNotFoundError(f"Recommendation rules not found: {self.path}")
 
         with open(
             self.path,
@@ -136,9 +111,7 @@ class RecommendationCatalog:
             data = yaml.safe_load(file)
 
         if not isinstance(data, dict):
-            raise ValueError(
-                "recommendation_rules.yaml must contain a mapping."
-            )
+            raise ValueError("recommendation_rules.yaml must contain a mapping.")
 
         self.definitions = self._load_definitions(
             data.get(
@@ -167,11 +140,7 @@ class RecommendationCatalog:
         ):
             return ()
 
-        return tuple(
-            str(item).strip()
-            for item in value
-            if str(item).strip()
-        )
+        return tuple(str(item).strip() for item in value if str(item).strip())
 
     @classmethod
     def _load_definitions(
@@ -186,9 +155,7 @@ class RecommendationCatalog:
             value,
             dict,
         ):
-            raise ValueError(
-                "'recommendations' must be a mapping."
-            )
+            raise ValueError("'recommendations' must be a mapping.")
 
         result: dict[
             str,
@@ -201,61 +168,46 @@ class RecommendationCatalog:
                 raw,
                 dict,
             ):
-                raise ValueError(
-                    f"Recommendation {key!r} must be a mapping."
-                )
+                raise ValueError(f"Recommendation {key!r} must be a mapping.")
 
-            result[
-                str(key)
-            ] = RecommendationDefinition(
+            result[str(key)] = RecommendationDefinition(
                 key=str(key),
-
                 family=str(
                     raw.get(
                         "family",
                         "",
                     )
                 ).strip(),
-
                 action=str(
                     raw.get(
                         "action",
                         "",
                     )
                 ).strip(),
-
                 priority=str(
                     raw.get(
                         "priority",
                         "medium",
                     )
-                ).strip().lower(),
-
+                )
+                .strip()
+                .lower(),
                 recommendation_eligible=bool(
                     raw.get(
                         "recommendation_eligible",
                         True,
                     )
                 ),
-
                 recommendation_scope=str(
                     raw.get(
                         "recommendation_scope",
                         "resource",
                     )
-                ).strip().lower(),
-
-                required_evidence=cls._string_tuple(
-                    raw.get(
-                        "required_evidence"
-                    )
-                ),
-
-                never_invent=cls._string_tuple(
-                    raw.get(
-                        "never_invent"
-                    )
-                ),
+                )
+                .strip()
+                .lower(),
+                required_evidence=cls._string_tuple(raw.get("required_evidence")),
+                never_invent=cls._string_tuple(raw.get("never_invent")),
             )
 
         return result
@@ -272,9 +224,7 @@ class RecommendationCatalog:
             value,
             dict,
         ):
-            raise ValueError(
-                "'routes' must be a mapping."
-            )
+            raise ValueError("'routes' must be a mapping.")
 
         result: dict[
             str,
@@ -287,13 +237,9 @@ class RecommendationCatalog:
                 raw,
                 dict,
             ):
-                raise ValueError(
-                    f"Route {finding_type!r} must be a mapping."
-                )
+                raise ValueError(f"Route {finding_type!r} must be a mapping.")
 
-            result[
-                str(finding_type)
-            ] = RecommendationRoute(
+            result[str(finding_type)] = RecommendationRoute(
                 recommendation_key=str(
                     raw.get(
                         "recommendation_key",
@@ -310,24 +256,16 @@ class RecommendationCatalog:
 
             if key != definition.key:
                 raise ValueError(
-                    f"Recommendation key mismatch: "
-                    f"{key!r} != {definition.key!r}."
+                    f"Recommendation key mismatch: " f"{key!r} != {definition.key!r}."
                 )
 
             if not definition.family:
-                raise ValueError(
-                    f"Recommendation {key!r} has no family."
-                )
+                raise ValueError(f"Recommendation {key!r} has no family.")
 
             if not definition.action:
-                raise ValueError(
-                    f"Recommendation {key!r} has no action."
-                )
+                raise ValueError(f"Recommendation {key!r} has no action.")
 
-            if (
-                definition.recommendation_scope
-                not in VALID_RECOMMENDATION_SCOPES
-            ):
+            if definition.recommendation_scope not in VALID_RECOMMENDATION_SCOPES:
                 raise ValueError(
                     f"Invalid scope for {key!r}: "
                     f"{definition.recommendation_scope!r}"
@@ -336,18 +274,12 @@ class RecommendationCatalog:
         for finding_type, route in self.routes.items():
 
             if not finding_type.strip():
-                raise ValueError(
-                    "Finding route cannot have an empty key."
-                )
+                raise ValueError("Finding route cannot have an empty key.")
 
             if not route.recommendation_key:
-                raise ValueError(
-                    f"{finding_type!r} has no recommendation_key."
-                )
+                raise ValueError(f"{finding_type!r} has no recommendation_key.")
 
-            definition = self.definitions.get(
-                route.recommendation_key
-            )
+            definition = self.definitions.get(route.recommendation_key)
 
             if definition is None:
                 raise ValueError(
@@ -364,9 +296,7 @@ class RecommendationCatalog:
         if not key:
             return None
 
-        return self.definitions.get(
-            str(key).strip()
-        )
+        return self.definitions.get(str(key).strip())
 
     def route(
         self,
@@ -376,11 +306,7 @@ class RecommendationCatalog:
         if not finding_type:
             return None
 
-        return self.routes.get(
-            str(
-                finding_type
-            ).strip()
-        )
+        return self.routes.get(str(finding_type).strip())
 
     def all_definitions(
         self,
@@ -389,9 +315,7 @@ class RecommendationCatalog:
         RecommendationDefinition,
     ]:
 
-        return dict(
-            self.definitions
-        )
+        return dict(self.definitions)
 
     def all_routes(
         self,
@@ -400,9 +324,7 @@ class RecommendationCatalog:
         RecommendationRoute,
     ]:
 
-        return dict(
-            self.routes
-        )
+        return dict(self.routes)
 
 
 _catalog: RecommendationCatalog | None = None
@@ -433,26 +355,19 @@ def recommendation_route_for_finding(
     ):
         return None
 
-    finding_type = (
-        finding.get("finding_type")
-        or finding.get("finding_key")
-    )
+    finding_type = finding.get("finding_type") or finding.get("finding_key")
 
     if not finding_type:
         return None
 
-    return get_catalog().route(
-        str(finding_type).strip()
-    )
+    return get_catalog().route(str(finding_type).strip())
 
 
 def recommendation_key_for_finding(
     finding: dict[str, Any],
 ) -> str | None:
 
-    route = recommendation_route_for_finding(
-        finding
-    )
+    route = recommendation_route_for_finding(finding)
 
     if route is None:
         return None
@@ -464,9 +379,7 @@ def get_definition(
     recommendation_key: str,
 ) -> RecommendationDefinition | None:
 
-    return get_catalog().definition(
-        recommendation_key
-    )
+    return get_catalog().definition(recommendation_key)
 
 
 def is_supported_recommendation_key(
@@ -475,9 +388,5 @@ def is_supported_recommendation_key(
 
     return (
         bool(recommendation_key)
-        and
-        get_catalog().definition(
-            recommendation_key
-        )
-        is not None
+        and get_catalog().definition(recommendation_key) is not None
     )

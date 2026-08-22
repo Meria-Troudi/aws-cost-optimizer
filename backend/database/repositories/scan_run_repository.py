@@ -45,27 +45,14 @@ def get_scan_runs(
     limit: int = 50,
 ) -> list[ScanRun]:
 
-    return (
-        db.query(ScanRun)
-        .order_by(
-            ScanRun.created_at.desc()
-        )
-        .limit(limit)
-        .all()
-    )
+    return db.query(ScanRun).order_by(ScanRun.created_at.desc()).limit(limit).all()
 
 
 def get_latest_scan_run(
     db: Session,
 ) -> ScanRun | None:
 
-    return (
-        db.query(ScanRun)
-        .order_by(
-            ScanRun.created_at.desc()
-        )
-        .first()
-    )
+    return db.query(ScanRun).order_by(ScanRun.created_at.desc()).first()
 
 
 def mark_scan_running(
@@ -166,49 +153,25 @@ def get_scan_summary(
     scan: ScanRun,
 ) -> dict:
 
-    findings_count = len(
-        scan.findings or []
-    )
+    findings_count = len(scan.findings or [])
 
-    recommendations_count = len(
-        scan.recommendations or []
-    )
+    recommendations_count = len(scan.recommendations or [])
 
     return {
         "id": scan.id,
         "account_id": scan.account_id,
         "region": scan.region,
         "status": scan.status,
-        "start_date": (
-            scan.start_date.isoformat()
-            if scan.start_date
-            else None
-        ),
-        "end_date": (
-            scan.end_date.isoformat()
-            if scan.end_date
-            else None
-        ),
-        "cost_threshold": float(
-            scan.cost_threshold or 0.0
-        ),
-        "progress_percent": float(
-            scan.progress_percent or 0.0
-        ),
+        "start_date": (scan.start_date.isoformat() if scan.start_date else None),
+        "end_date": (scan.end_date.isoformat() if scan.end_date else None),
+        "cost_threshold": float(scan.cost_threshold or 0.0),
+        "progress_percent": float(scan.progress_percent or 0.0),
         "findings_count": findings_count,
         "recommendations_count": recommendations_count,
         "error": scan.error_message,
         "outcome": scan.outcome,
-        "created_at": (
-            scan.created_at.isoformat()
-            if scan.created_at
-            else None
-        ),
-        "finished_at": (
-            scan.finished_at.isoformat()
-            if scan.finished_at
-            else None
-        ),
+        "created_at": (scan.created_at.isoformat() if scan.created_at else None),
+        "finished_at": (scan.finished_at.isoformat() if scan.finished_at else None),
     }
 
 

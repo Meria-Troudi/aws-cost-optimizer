@@ -40,29 +40,20 @@ class BaseCollector(ABC):
         profile: Dict[str, Any] | None = None,
     ):
         self.scan = scan
-        self.region = (
-            region
-            or scan.region
-        )
-        self.profile = (
-            profile
-            if isinstance(profile, dict)
-            else {}
-        )
+        self.region = region or scan.region
+        self.profile = profile if isinstance(profile, dict) else {}
+
     def collect(
         self,
     ) -> List[Dict[str, Any]]:
 
-        resources: List[
-            Dict[str, Any]
-        ] = []
+        resources: List[Dict[str, Any]] = []
 
         discovered = self.discover()
 
         if not isinstance(discovered, list):
             raise TypeError(
-                f"{self.__class__.__name__}.discover() "
-                "must return a list."
+                f"{self.__class__.__name__}.discover() " "must return a list."
             )
 
         for resource in discovered:
@@ -70,110 +61,60 @@ class BaseCollector(ABC):
             if not isinstance(resource, dict):
                 continue
 
-            resource_id = (
-                self._safe_resource_id(
-                    resource
-                )
-            )
+            resource_id = self._safe_resource_id(resource)
 
             try:
 
-                collected = (
-                    self._collect_resource(
-                        resource
-                    )
-                )
+                collected = self._collect_resource(resource)
 
-                resources.append(
-                    collected
-                )
+                resources.append(collected)
 
-                self._print_summary(
-                    collected
-                )
+                self._print_summary(collected)
 
             except Exception as exc:
 
-                print(
-                    f"[{self.key}] Failed to collect "
-                    f"{resource_id}: {exc}"
-                )
+                print(f"[{self.key}] Failed to collect " f"{resource_id}: {exc}")
 
                 resources.append(
                     {
-                        "resource_id":
-                            resource_id,
-
-                        "resource_type":
-                            self.resource_type,
-
-                        "region":
-                            self.region,
-
-                        "collection_status":
-                            "failed",
-
+                        "resource_id": resource_id,
+                        "resource_type": self.resource_type,
+                        "region": self.region,
+                        "collection_status": "failed",
                         "collection_errors": {
-                            "resource":
-                                str(exc),
+                            "resource": str(exc),
                         },
-
                         "data_quality": {
-                            "collection_status":
-                                "failed",
-
-                            "resource_collection":
-                                "failed",
-
+                            "collection_status": "failed",
+                            "resource_collection": "failed",
                             "section_errors": {
-                                "resource":
-                                    str(exc),
+                                "resource": str(exc),
                             },
-
-                            "optimization_evidence_available":
-                                False,
+                            "optimization_evidence_available": False,
                         },
-
-                        "optimization_evidence":
-                            {},
-
-                        "raw":
-                            resource,
+                        "optimization_evidence": {},
+                        "raw": resource,
                     }
                 )
 
         return resources
+
     def _collect_resource(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        resource_id = (
-            self.get_resource_id(
-                resource
-            )
-        )
+        resource_id = self.get_resource_id(resource)
 
         context: Dict[
             str,
             Any,
         ] = {
-            "resource_id":
-                str(
-                    resource_id
-                ),
-
-            "resource_type":
-                self.resource_type,
-
-            "region":
-                self.region,
-
-            "collection_status":
-                "complete",
-
-            "collection_errors":
-                {},
+            "resource_id": str(resource_id),
+            "resource_type": self.resource_type,
+            "region": self.region,
+            "collection_status": "complete",
+            "collection_errors": {},
         }
         self._safe_collect_section(
             context=context,
@@ -199,27 +140,21 @@ class BaseCollector(ABC):
             resource=resource,
             collector=self.collect_observations,
         )
-        topology_context = (
-            self._safe_collect_topology(
-                context=context,
-                resource=resource,
-            )
+        topology_context = self._safe_collect_topology(
+            context=context,
+            resource=resource,
         )
 
         if topology_context is not None:
 
-            context["topology"] = (
-                topology_context
-            )
+            context["topology"] = topology_context
         optimization_evidence = {}
 
         try:
 
-            value = (
-                self.build_optimization_evidence(
-                    resource,
-                    context,
-                )
+            value = self.build_optimization_evidence(
+                resource,
+                context,
             )
 
             if isinstance(value, dict):
@@ -233,29 +168,18 @@ class BaseCollector(ABC):
                 exc,
             )
 
-        context[
-            "optimization_evidence"
-        ] = optimization_evidence
+        context["optimization_evidence"] = optimization_evidence
         errors = context.get(
             "collection_errors",
             {},
         )
 
-        context[
-            "collection_status"
-        ] = (
-            "partial"
-            if errors
-            else "complete"
-        )
-        context[
-            "data_quality"
-        ] = self._build_data_quality(
-            context
-        )
+        context["collection_status"] = "partial" if errors else "complete"
+        context["data_quality"] = self._build_data_quality(context)
         context["raw"] = resource
 
         return context
+
     def _safe_collect_section(
         self,
         *,
@@ -265,24 +189,15 @@ class BaseCollector(ABC):
         collector,
     ) -> None:
 
-        if not self._section_enabled(
-            section_name
-        ):
+        if not self._section_enabled(section_name):
 
-            context[
-                section_name
-            ] = {
-                "status":
-                    "disabled"
-            }
+            context[section_name] = {"status": "disabled"}
 
             return
 
         try:
 
-            value = collector(
-                resource
-            )
+            value = collector(resource)
 
             if value is None:
                 value = {}
@@ -296,9 +211,7 @@ class BaseCollector(ABC):
                     f"got {type(value).__name__}"
                 )
 
-            context[
-                section_name
-            ] = value
+            context[section_name] = value
 
         except Exception as exc:
 
@@ -308,14 +221,9 @@ class BaseCollector(ABC):
                 exc,
             )
 
-            context[
-                section_name
-            ] = {
-                "status":
-                    "error",
-
-                "error":
-                    str(exc),
+            context[section_name] = {
+                "status": "error",
+                "error": str(exc),
             }
 
     def _safe_collect_topology(
@@ -325,22 +233,15 @@ class BaseCollector(ABC):
         resource: Dict[str, Any],
     ) -> Dict[str, Any] | None:
 
-        if not self._section_enabled(
-            "topology"
-        ):
+        if not self._section_enabled("topology"):
 
-            return {
-                "status":
-                    "disabled"
-            }
+            return {"status": "disabled"}
 
         try:
 
-            value = (
-                self.collect_topology(
-                    resource,
-                    context,
-                )
+            value = self.collect_topology(
+                resource,
+                context,
             )
 
             if value is None:
@@ -350,9 +251,7 @@ class BaseCollector(ABC):
                 value,
                 dict,
             ):
-                raise TypeError(
-                    "topology collector must return dict."
-                )
+                raise TypeError("topology collector must return dict.")
 
             return value
 
@@ -365,11 +264,8 @@ class BaseCollector(ABC):
             )
 
             return {
-                "status":
-                    "error",
-
-                "error":
-                    str(exc),
+                "status": "error",
+                "error": str(exc),
             }
 
     @staticmethod
@@ -384,9 +280,8 @@ class BaseCollector(ABC):
             {},
         )
 
-        errors[
-            section
-        ] = str(exc)
+        errors[section] = str(exc)
+
     @staticmethod
     def _build_data_quality(
         context: Dict[str, Any],
@@ -455,26 +350,16 @@ class BaseCollector(ABC):
             else {}
         )
 
-        queried = count_queried_metrics(
-            metrics
-        )
+        queried = count_queried_metrics(metrics)
 
-        observed = count_observed_metrics(
-            metrics
-        )
+        observed = count_observed_metrics(metrics)
 
-        no_data = count_missing_metrics(
-            metrics
-        )
+        no_data = count_missing_metrics(metrics)
 
-        metric_errors = count_metric_errors(
-            metrics
-        )
+        metric_errors = count_metric_errors(metrics)
 
         topology_status = (
-            topology.get(
-                "status"
-            )
+            topology.get("status")
             if isinstance(
                 topology,
                 dict,
@@ -483,70 +368,22 @@ class BaseCollector(ABC):
         )
 
         return {
-            "collection_status":
-                (
-                    "partial"
-                    if errors
-                    else "complete"
-                ),
-
-            "section_errors":
-                dict(errors),
-
-            "identity_available":
-                bool(
-                    context.get(
-                        "identity"
-                    )
-                ),
-
-            "configuration_available":
-                bool(
-                    context.get(
-                        "configuration"
-                    )
-                ),
-
-            "relationships_available":
-                bool(
-                    context.get(
-                        "relationships"
-                    )
-                ),
-
-            "topology_available":
-                topology_status == "ok",
-
-            "observations_available":
-                queried > 0,
-
-            "optimization_evidence_available":
-                bool(
-                    optimization_evidence
-                ),
-
-            "metric_result_count":
-                queried,
-
-            "queried_metric_count":
-                queried,
-
-            "observed_metric_count":
-                observed,
-
-            "no_data_metric_count":
-                no_data,
-
-            "metric_error_count":
-                metric_errors,
-
-            "metric_observation_ratio":
-                (
-                    observed / queried
-                    if queried > 0
-                    else None
-                ),
+            "collection_status": ("partial" if errors else "complete"),
+            "section_errors": dict(errors),
+            "identity_available": bool(context.get("identity")),
+            "configuration_available": bool(context.get("configuration")),
+            "relationships_available": bool(context.get("relationships")),
+            "topology_available": topology_status == "ok",
+            "observations_available": queried > 0,
+            "optimization_evidence_available": bool(optimization_evidence),
+            "metric_result_count": queried,
+            "queried_metric_count": queried,
+            "observed_metric_count": observed,
+            "no_data_metric_count": no_data,
+            "metric_error_count": metric_errors,
+            "metric_observation_ratio": (observed / queried if queried > 0 else None),
         }
+
     def get_analysis_period(self):
 
         start = (
@@ -593,26 +430,16 @@ class BaseCollector(ABC):
                 "start_date/end_date, or start_time/end_time."
             )
 
-        start = (
-            self._normalize_datetime(
-                start
-            )
-        )
+        start = self._normalize_datetime(start)
 
-        end = (
-            self._normalize_datetime(
-                end
-            )
-        )
+        end = self._normalize_datetime(end)
 
         if start >= end:
 
-            raise ValueError(
-                "Invalid analysis period: "
-                f"start={start}, end={end}"
-            )
+            raise ValueError("Invalid analysis period: " f"start={start}, end={end}")
 
         return start, end
+
     def _section_enabled(
         self,
         section_name: str,
@@ -621,11 +448,9 @@ class BaseCollector(ABC):
 
         if default is None:
 
-            default = (
-                self.SECTION_DEFAULTS.get(
-                    section_name,
-                    False,
-                )
+            default = self.SECTION_DEFAULTS.get(
+                section_name,
+                False,
             )
 
         section = self.profile.get(
@@ -642,12 +467,8 @@ class BaseCollector(ABC):
         if "enabled" not in section:
             return default
 
-        return (
-            section.get(
-                "enabled"
-            )
-            is True
-        )
+        return section.get("enabled") is True
+
     @abstractmethod
     def discover(
         self,
@@ -697,6 +518,7 @@ class BaseCollector(ABC):
         collected_resource: dict,
     ) -> dict:
         return {}
+
     def _print_summary(
         self,
         context: Dict[str, Any],
@@ -708,14 +530,9 @@ class BaseCollector(ABC):
             f"{context.get('resource_id')}"
         )
 
-        print(
-            f"  Region: "
-            f"{context.get('region')}"
-        )
+        print(f"  Region: " f"{context.get('region')}")
 
-        identity = context.get(
-            "identity"
-        )
+        identity = context.get("identity")
 
         if isinstance(
             identity,
@@ -723,35 +540,18 @@ class BaseCollector(ABC):
         ):
             print(
                 "  Identity: "
-                + (
-                    str(
-                        identity.get("name")
-                    )
-                    if identity.get("name")
-                    else "available"
-                )
+                + (str(identity.get("name")) if identity.get("name") else "available")
             )
 
-        configuration = context.get(
-            "configuration"
-        )
+        configuration = context.get("configuration")
 
         if isinstance(
             configuration,
             dict,
         ):
-            print(
-                "  Configuration: "
-                + (
-                    "available"
-                    if configuration
-                    else "empty"
-                )
-            )
+            print("  Configuration: " + ("available" if configuration else "empty"))
 
-        topology = context.get(
-            "topology"
-        )
+        topology = context.get("topology")
 
         if isinstance(
             topology,
@@ -760,55 +560,29 @@ class BaseCollector(ABC):
             print(
                 "  Topology: "
                 + (
-                    str(
-                        topology.get("status")
-                    )
+                    str(topology.get("status"))
                     if topology.get("status")
-                    else (
-                        "available"
-                        if topology
-                        else "empty"
-                    )
+                    else ("available" if topology else "empty")
                 )
             )
 
-        relationships = context.get(
-            "relationships"
-        )
+        relationships = context.get("relationships")
 
         if isinstance(
             relationships,
             dict,
         ):
-            print(
-                "  Relationships: "
-                + (
-                    "available"
-                    if relationships
-                    else "empty"
-                )
-            )
+            print("  Relationships: " + ("available" if relationships else "empty"))
 
-        observations = context.get(
-            "observations"
-        )
+        observations = context.get("observations")
 
         if isinstance(
             observations,
             dict,
         ):
-            print(
-                "  Observations: "
-                + (
-                    "available"
-                    if observations
-                    else "empty"
-                )
-            )
+            print("  Observations: " + ("available" if observations else "empty"))
 
-        optimization_evidence = context.get(
-            "optimization_evidence"
-        )
+        optimization_evidence = context.get("optimization_evidence")
 
         if isinstance(
             optimization_evidence,
@@ -816,11 +590,7 @@ class BaseCollector(ABC):
         ):
             print(
                 "  Optimization Evidence: "
-                + (
-                    "available"
-                    if optimization_evidence
-                    else "none"
-                )
+                + ("available" if optimization_evidence else "none")
             )
 
         errors = context.get(
@@ -830,10 +600,7 @@ class BaseCollector(ABC):
 
         if errors:
 
-            print(
-                "  Collection errors: "
-                + str(errors)
-            )
+            print("  Collection errors: " + str(errors))
 
         observations = context.get(
             "observations",
@@ -851,10 +618,13 @@ class BaseCollector(ABC):
             {},
         )
 
-        if isinstance(
-            cloudwatch,
-            dict,
-        ) and cloudwatch:
+        if (
+            isinstance(
+                cloudwatch,
+                dict,
+            )
+            and cloudwatch
+        ):
 
             metrics = cloudwatch.get(
                 "metrics",
@@ -865,13 +635,9 @@ class BaseCollector(ABC):
                 metrics,
                 dict,
             ):
-                metric_list = list(
-                    metrics.values()
-                )
+                metric_list = list(metrics.values())
             else:
-                metric_list = list(
-                    metrics or []
-                )
+                metric_list = list(metrics or [])
 
             observed = sum(
                 1
@@ -881,12 +647,8 @@ class BaseCollector(ABC):
                         metric,
                         dict,
                     )
-                    and metric.get(
-                        "status"
-                    ) == "ok"
-                    and metric.get(
-                        "has_data"
-                    ) is True
+                    and metric.get("status") == "ok"
+                    and metric.get("has_data") is True
                 )
             )
 
@@ -898,9 +660,7 @@ class BaseCollector(ABC):
                         metric,
                         dict,
                     )
-                    and metric.get(
-                        "status"
-                    ) == "error"
+                    and metric.get("status") == "error"
                 )
             )
 
@@ -912,9 +672,8 @@ class BaseCollector(ABC):
                         metric,
                         dict,
                     )
-                    and metric.get(
-                        "status"
-                    ) in {
+                    and metric.get("status")
+                    in {
                         "no_data",
                         "missing",
                     }
@@ -929,16 +688,12 @@ class BaseCollector(ABC):
                 f"errors={errors_count})"
             )
 
-        status = context.get(
-            "collection_status"
-        )
+        status = context.get("collection_status")
 
         if status:
 
-            print(
-                f"  Collection status: "
-                f"{status}"
-            )
+            print(f"  Collection status: " f"{status}")
+
     @staticmethod
     def _safe_resource_id(
         resource: Dict[str, Any],
@@ -963,13 +718,9 @@ class BaseCollector(ABC):
 
             if value.tzinfo is None:
 
-                return value.replace(
-                    tzinfo=timezone.utc
-                )
+                return value.replace(tzinfo=timezone.utc)
 
-            return value.astimezone(
-                timezone.utc
-            )
+            return value.astimezone(timezone.utc)
 
         if isinstance(
             value,
@@ -990,30 +741,16 @@ class BaseCollector(ABC):
 
             value = value.strip()
 
-            if value.endswith(
-                "Z"
-            ):
+            if value.endswith("Z"):
 
-                value = (
-                    value[:-1]
-                    + "+00:00"
-                )
+                value = value[:-1] + "+00:00"
 
-            parsed = datetime.fromisoformat(
-                value
-            )
+            parsed = datetime.fromisoformat(value)
 
             if parsed.tzinfo is None:
 
-                parsed = parsed.replace(
-                    tzinfo=timezone.utc
-                )
+                parsed = parsed.replace(tzinfo=timezone.utc)
 
-            return parsed.astimezone(
-                timezone.utc
-            )
+            return parsed.astimezone(timezone.utc)
 
-        raise TypeError(
-            "Unsupported datetime value: "
-            f"{type(value).__name__}"
-        )
+        raise TypeError("Unsupported datetime value: " f"{type(value).__name__}")

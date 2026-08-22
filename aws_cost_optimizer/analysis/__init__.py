@@ -15,7 +15,6 @@ __all__ = [
 
 def __getattr__(name: str):
 
-
     if name == "AnalysisEngine":
         from .engine import AnalysisEngine
 
@@ -41,6 +40,4 @@ def __getattr__(name: str):
 
         return FindingAggregator
 
-    raise AttributeError(
-        f"module {__name__!r} has no attribute {name!r}"
-    )
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

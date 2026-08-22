@@ -52,9 +52,7 @@ def _compact_evidence(evidence: Any) -> dict[str, Any]:
 
     if billing:
         compact["billing"] = {
-            key: value
-            for key, value in billing.items()
-            if key in _SAFE_BILLING_KEYS
+            key: value for key, value in billing.items() if key in _SAFE_BILLING_KEYS
         }
 
     return compact
@@ -85,17 +83,11 @@ def build_explanation_payload(
             "confidence": finding.get("confidence"),
             "reason": finding.get("reason"),
         },
-        "evidence": _compact_evidence(
-            finding.get("evidence")
-        ),
+        "evidence": _compact_evidence(finding.get("evidence")),
         "limitations": (
-            finding.get("limitations")
-            or recommendation.get("limitations")
-            or []
+            finding.get("limitations") or recommendation.get("limitations") or []
         ),
         "financial_impact": (
-            recommendation.get("financial_impact")
-            or finding.get("impact")
-            or {}
+            recommendation.get("financial_impact") or finding.get("impact") or {}
         ),
     }

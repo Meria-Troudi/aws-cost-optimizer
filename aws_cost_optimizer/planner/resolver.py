@@ -64,8 +64,7 @@ class CatalogResolver:
         services = billing.get("services", [])
 
         return any(
-            str(service).strip().lower()
-            == str(candidate).strip().lower()
+            str(service).strip().lower() == str(candidate).strip().lower()
             for candidate in services
         )
 

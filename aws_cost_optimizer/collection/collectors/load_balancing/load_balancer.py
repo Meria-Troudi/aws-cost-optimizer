@@ -64,17 +64,9 @@ class ElbCollector(BaseCollector):
             self.region,
         )
 
-        self.metric_collector = (
-            CloudWatchMetricCollector(
-                self.cloudwatch
-            )
-        )
+        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
 
-        self.topology_collector = (
-            NetworkTopologyCollector(
-                self.region
-            )
-        )
+        self.topology_collector = NetworkTopologyCollector(self.region)
 
     # ================================================================
     # DISCOVERY
@@ -86,9 +78,7 @@ class ElbCollector(BaseCollector):
 
         resources: List[Dict[str, Any]] = []
 
-        paginator = self.elbv2.get_paginator(
-            "describe_load_balancers"
-        )
+        paginator = self.elbv2.get_paginator("describe_load_balancers")
 
         for page in paginator.paginate():
 
@@ -110,14 +100,10 @@ class ElbCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> str:
 
-        arn = resource.get(
-            "LoadBalancerArn"
-        )
+        arn = resource.get("LoadBalancerArn")
 
         if not arn:
-            raise ValueError(
-                "ELB resource has no LoadBalancerArn"
-            )
+            raise ValueError("ELB resource has no LoadBalancerArn")
 
         return arn
 
@@ -131,70 +117,22 @@ class ElbCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         return {
-            "load_balancer_arn":
+            "load_balancer_arn": resource.get("LoadBalancerArn"),
+            "load_balancer_name": resource.get("LoadBalancerName"),
+            "type": resource.get("Type"),
+            "scheme": resource.get("Scheme"),
+            "state": (resource.get("State") or {}).get("Code"),
+            "created_time": self._isoformat(resource.get("CreatedTime")),
+            "vpc_id": resource.get("VpcId"),
+            "dns_name": resource.get("DNSName"),
+            "canonical_hosted_zone_id": resource.get("CanonicalHostedZoneId"),
+            "ip_address_type": resource.get("IpAddressType"),
+            "tags": self._get_tags(
                 resource.get(
-                    "LoadBalancerArn"
-                ),
-
-            "load_balancer_name":
-                resource.get(
-                    "LoadBalancerName"
-                ),
-
-            "type":
-                resource.get(
-                    "Type"
-                ),
-
-            "scheme":
-                resource.get(
-                    "Scheme"
-                ),
-
-            "state":
-                (
-                    resource.get(
-                        "State"
-                    )
-                    or {}
-                ).get(
-                    "Code"
-                ),
-
-            "created_time":
-                self._isoformat(
-                    resource.get(
-                        "CreatedTime"
-                    )
-                ),
-
-            "vpc_id":
-                resource.get(
-                    "VpcId"
-                ),
-
-            "dns_name":
-                resource.get(
-                    "DNSName"
-                ),
-
-            "canonical_hosted_zone_id":
-                resource.get(
-                    "CanonicalHostedZoneId"
-                ),
-
-            "ip_address_type":
-                resource.get(
-                    "IpAddressType"
-                ),
-
-            "tags":
-                self._get_tags(
-                    resource.get(
-                        "Tags",
-                        [],
-                    )
-                ),
+                    "Tags",
+                    [],
+                )
+            ),
         }
 
     # ================================================================
@@ -208,15 +146,8 @@ class ElbCollector(BaseCollector):
 
         availability_zones = [
             {
-                "zone_name":
-                    az.get(
-                        "ZoneName"
-                    ),
-
-                "subnet_id":
-                    az.get(
-                        "SubnetId"
-                    ),
+                "zone_name": az.get("ZoneName"),
+                "subnet_id": az.get("SubnetId"),
             }
             for az in resource.get(
                 "AvailabilityZones",
@@ -229,13 +160,7 @@ class ElbCollector(BaseCollector):
         ]
 
         subnet_ids = [
-            az.get(
-                "subnet_id"
-            )
-            for az in availability_zones
-            if az.get(
-                "subnet_id"
-            )
+            az.get("subnet_id") for az in availability_zones if az.get("subnet_id")
         ]
 
         security_groups = list(
@@ -246,119 +171,35 @@ class ElbCollector(BaseCollector):
             or []
         )
 
-        lb_type = str(
-            resource.get(
-                "Type"
-            )
-            or ""
-        ).lower()
+        lb_type = str(resource.get("Type") or "").lower()
 
         return {
-            "load_balancer_arn":
+            "load_balancer_arn": resource.get("LoadBalancerArn"),
+            "load_balancer_name": resource.get("LoadBalancerName"),
+            "type": lb_type or None,
+            "scheme": resource.get("Scheme"),
+            "state": (resource.get("State") or {}).get("Code"),
+            "state_reason": (resource.get("State") or {}).get("Reason"),
+            "created_time": self._isoformat(resource.get("CreatedTime")),
+            "vpc_id": resource.get("VpcId"),
+            "dns_name": resource.get("DNSName"),
+            "canonical_hosted_zone_id": resource.get("CanonicalHostedZoneId"),
+            "ip_address_type": resource.get("IpAddressType"),
+            "availability_zones": availability_zones,
+            "availability_zone_count": len(availability_zones),
+            "subnet_ids": subnet_ids,
+            "subnet_count": len(subnet_ids),
+            "security_groups": security_groups,
+            "security_group_count": len(security_groups),
+            "service_managed": False,
+            "optimization_allowed": True,
+            "release_allowed": True,
+            "tags": self._get_tags(
                 resource.get(
-                    "LoadBalancerArn"
-                ),
-
-            "load_balancer_name":
-                resource.get(
-                    "LoadBalancerName"
-                ),
-
-            "type":
-                lb_type or None,
-
-            "scheme":
-                resource.get(
-                    "Scheme"
-                ),
-
-            "state":
-                (
-                    resource.get(
-                        "State"
-                    )
-                    or {}
-                ).get(
-                    "Code"
-                ),
-
-            "state_reason":
-                (
-                    resource.get(
-                        "State"
-                    )
-                    or {}
-                ).get(
-                    "Reason"
-                ),
-
-            "created_time":
-                self._isoformat(
-                    resource.get(
-                        "CreatedTime"
-                    )
-                ),
-
-            "vpc_id":
-                resource.get(
-                    "VpcId"
-                ),
-
-            "dns_name":
-                resource.get(
-                    "DNSName"
-                ),
-
-            "canonical_hosted_zone_id":
-                resource.get(
-                    "CanonicalHostedZoneId"
-                ),
-
-            "ip_address_type":
-                resource.get(
-                    "IpAddressType"
-                ),
-
-            "availability_zones":
-                availability_zones,
-
-            "availability_zone_count":
-                len(
-                    availability_zones
-                ),
-
-            "subnet_ids":
-                subnet_ids,
-
-            "subnet_count":
-                len(
-                    subnet_ids
-                ),
-
-            "security_groups":
-                security_groups,
-
-            "security_group_count":
-                len(
-                    security_groups
-                ),
-
-            "service_managed":
-                False,
-
-            "optimization_allowed":
-                True,
-
-            "release_allowed":
-                True,
-
-            "tags":
-                self._get_tags(
-                    resource.get(
-                        "Tags",
-                        [],
-                    )
-                ),
+                    "Tags",
+                    [],
+                )
+            ),
         }
 
     # ================================================================
@@ -370,9 +211,7 @@ class ElbCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        load_balancer_arn = resource.get(
-            "LoadBalancerArn"
-        )
+        load_balancer_arn = resource.get("LoadBalancerArn")
 
         if not load_balancer_arn:
             return {
@@ -388,38 +227,20 @@ class ElbCollector(BaseCollector):
                     "unhealthy_target_count": None,
                     "target_health_complete": False,
                 },
-                "error":
-                    "LoadBalancerArn is missing",
+                "error": "LoadBalancerArn is missing",
             }
 
-        listeners, listener_errors = (
-            self._collect_listeners(
-                load_balancer_arn
-            )
-        )
+        listeners, listener_errors = self._collect_listeners(load_balancer_arn)
 
-        target_groups, target_errors = (
-            self._collect_target_groups(
-                load_balancer_arn
-            )
-        )
+        target_groups, target_errors = self._collect_target_groups(load_balancer_arn)
 
-        target_health_complete = (
-            bool(target_groups)
-            and all(
-                group.get(
-                    "target_health_status"
-                ) == "ok"
-                for group in target_groups
-            )
+        target_health_complete = bool(target_groups) and all(
+            group.get("target_health_status") == "ok" for group in target_groups
         )
 
         # If there are no target groups, that is a valid
         # configuration fact, not a target-health failure.
-        no_target_groups = (
-            len(target_groups) == 0
-            and not target_errors
-        )
+        no_target_groups = len(target_groups) == 0 and not target_errors
 
         if no_target_groups:
             target_health_complete = True
@@ -432,23 +253,11 @@ class ElbCollector(BaseCollector):
 
             for group in target_groups:
 
-                group_target_count = (
-                    group.get(
-                        "target_count"
-                    )
-                )
+                group_target_count = group.get("target_count")
 
-                group_healthy_count = (
-                    group.get(
-                        "healthy_target_count"
-                    )
-                )
+                group_healthy_count = group.get("healthy_target_count")
 
-                group_unhealthy_count = (
-                    group.get(
-                        "unhealthy_target_count"
-                    )
-                )
+                group_unhealthy_count = group.get("unhealthy_target_count")
 
                 if not isinstance(
                     group_target_count,
@@ -457,9 +266,7 @@ class ElbCollector(BaseCollector):
                     target_count = None
 
                 elif target_count is not None:
-                    target_count += (
-                        group_target_count
-                    )
+                    target_count += group_target_count
 
                 if not isinstance(
                     group_healthy_count,
@@ -468,9 +275,7 @@ class ElbCollector(BaseCollector):
                     healthy_count = None
 
                 elif healthy_count is not None:
-                    healthy_count += (
-                        group_healthy_count
-                    )
+                    healthy_count += group_healthy_count
 
                 if not isinstance(
                     group_unhealthy_count,
@@ -479,66 +284,31 @@ class ElbCollector(BaseCollector):
                     unhealthy_count = None
 
                 elif unhealthy_count is not None:
-                    unhealthy_count += (
-                        group_unhealthy_count
-                    )
+                    unhealthy_count += group_unhealthy_count
 
         else:
             target_count = None
             healthy_count = None
             unhealthy_count = None
 
-        errors = (
-            listener_errors
-            + target_errors
-        )
+        errors = listener_errors + target_errors
 
-        status = (
-            "ok"
-            if not errors
-            else "partial"
-        )
+        status = "ok" if not errors else "partial"
 
         return {
             "status": status,
-
-            "listeners":
-                listeners,
-
-            "target_groups":
-                target_groups,
-
+            "listeners": listeners,
+            "target_groups": target_groups,
             "summary": {
-                "listener_count":
-                    len(
-                        listeners
-                    ),
-
-                "listener_default_action_count":
-                    self._count_listener_rules(
-                        listeners
-                    ),
-
-                "target_group_count":
-                    len(
-                        target_groups
-                    ),
-
-                "target_count":
-                    target_count,
-
-                "healthy_target_count":
-                    healthy_count,
-
-                "unhealthy_target_count":
-                    unhealthy_count,
-
-                "target_health_complete":
-                    target_health_complete,
+                "listener_count": len(listeners),
+                "listener_default_action_count": self._count_listener_rules(listeners),
+                "target_group_count": len(target_groups),
+                "target_count": target_count,
+                "healthy_target_count": healthy_count,
+                "unhealthy_target_count": unhealthy_count,
+                "target_health_complete": target_health_complete,
             },
-
-            "errors":
-                errors,
+            "errors": errors,
         }
 
     # ================================================================
@@ -550,9 +320,7 @@ class ElbCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        observations_config = (
-            self._get_observations_config()
-        )
+        observations_config = self._get_observations_config()
 
         if not observations_config:
 
@@ -563,11 +331,9 @@ class ElbCollector(BaseCollector):
                 }
             }
 
-        cloudwatch_config = (
-            self._select_cloudwatch_config(
-                resource,
-                observations_config,
-            )
+        cloudwatch_config = self._select_cloudwatch_config(
+            resource,
+            observations_config,
         )
 
         if not cloudwatch_config:
@@ -591,22 +357,16 @@ class ElbCollector(BaseCollector):
                 }
             }
 
-        namespace = cloudwatch_config.get(
-            "namespace"
+        namespace = cloudwatch_config.get("namespace")
+
+        metric_specs = cloudwatch_config.get(
+            "metrics",
+            [],
         )
 
-        metric_specs = (
-            cloudwatch_config.get(
-                "metrics",
-                [],
-            )
-        )
-
-        requested_period = (
-            cloudwatch_config.get(
-                "period",
-                3600,
-            )
+        requested_period = cloudwatch_config.get(
+            "period",
+            3600,
         )
 
         if not namespace:
@@ -615,8 +375,7 @@ class ElbCollector(BaseCollector):
                 "cloudwatch": {
                     "status": "invalid",
                     "metrics": {},
-                    "error":
-                        "CloudWatch namespace is not configured",
+                    "error": "CloudWatch namespace is not configured",
                 }
             }
 
@@ -625,44 +384,29 @@ class ElbCollector(BaseCollector):
             return {
                 "cloudwatch": {
                     "status": "no_metrics",
-                    "namespace":
-                        namespace,
+                    "namespace": namespace,
                     "metrics": {},
                 }
             }
 
-        load_balancer_arn = resource.get(
-            "LoadBalancerArn"
-        )
+        load_balancer_arn = resource.get("LoadBalancerArn")
 
         if not load_balancer_arn:
 
             return {
                 "cloudwatch": {
                     "status": "error",
-                    "namespace":
-                        namespace,
+                    "namespace": namespace,
                     "metrics": {},
-                    "error":
-                        "LoadBalancerArn is not available",
+                    "error": "LoadBalancerArn is not available",
                 }
             }
 
-        start, end = (
-            self.get_analysis_period()
-        )
+        start, end = self.get_analysis_period()
 
-        lb_dimension = (
-            self._cloudwatch_load_balancer_dimension(
-                load_balancer_arn
-            )
-        )
+        lb_dimension = self._cloudwatch_load_balancer_dimension(load_balancer_arn)
 
-        target_groups = (
-            self._collect_target_group_inventory(
-                load_balancer_arn
-            )
-        )
+        target_groups = self._collect_target_group_inventory(load_balancer_arn)
 
         metrics: Dict[str, Any] = {}
 
@@ -675,36 +419,25 @@ class ElbCollector(BaseCollector):
         lb_specs = [
             spec
             for spec in metric_specs
-            if self._metric_dimensions(
-                spec
-            ) == (
-                "LoadBalancer",
-            )
+            if self._metric_dimensions(spec) == ("LoadBalancer",)
         ]
 
         if lb_specs:
 
             try:
 
-                results = (
-                    self.metric_collector.collect(
-                        namespace=namespace,
-                        dimensions=[
-                            {
-                                "Name":
-                                    "LoadBalancer",
-
-                                "Value":
-                                    lb_dimension,
-                            }
-                        ],
-                        metric_specs=lb_specs,
-                        start=start,
-                        end=end,
-                        requested_period=(
-                            requested_period
-                        ),
-                    )
+                results = self.metric_collector.collect(
+                    namespace=namespace,
+                    dimensions=[
+                        {
+                            "Name": "LoadBalancer",
+                            "Value": lb_dimension,
+                        }
+                    ],
+                    metric_specs=lb_specs,
+                    start=start,
+                    end=end,
+                    requested_period=(requested_period),
                 )
 
                 self._merge_metric_results(
@@ -714,12 +447,7 @@ class ElbCollector(BaseCollector):
 
             except Exception as exc:
 
-                collection_errors.append(
-                    (
-                        "load_balancer_metrics: "
-                        f"{exc}"
-                    )
-                )
+                collection_errors.append(("load_balancer_metrics: " f"{exc}"))
 
         # ------------------------------------------------------------
         # Target-group-level metrics
@@ -728,9 +456,8 @@ class ElbCollector(BaseCollector):
         tg_specs = [
             spec
             for spec in metric_specs
-            if self._metric_dimensions(
-                spec
-            ) == (
+            if self._metric_dimensions(spec)
+            == (
                 "LoadBalancer",
                 "TargetGroup",
             )
@@ -740,106 +467,61 @@ class ElbCollector(BaseCollector):
 
             for target_group in target_groups:
 
-                target_group_arn = (
-                    target_group.get(
-                        "target_group_arn"
-                    )
-                )
+                target_group_arn = target_group.get("target_group_arn")
 
                 if not target_group_arn:
                     continue
 
-                target_group_dimension = (
-                    self._cloudwatch_target_group_dimension(
-                        target_group_arn
-                    )
+                target_group_dimension = self._cloudwatch_target_group_dimension(
+                    target_group_arn
                 )
 
                 try:
 
-                    results = (
-                        self.metric_collector.collect(
-                            namespace=namespace,
-                            dimensions=[
-                                {
-                                    "Name":
-                                        "LoadBalancer",
-
-                                    "Value":
-                                        lb_dimension,
-                                },
-                                {
-                                    "Name":
-                                        "TargetGroup",
-
-                                    "Value":
-                                        target_group_dimension,
-                                },
-                            ],
-                            metric_specs=tg_specs,
-                            start=start,
-                            end=end,
-                            requested_period=(
-                                requested_period
-                            ),
-                        )
+                    results = self.metric_collector.collect(
+                        namespace=namespace,
+                        dimensions=[
+                            {
+                                "Name": "LoadBalancer",
+                                "Value": lb_dimension,
+                            },
+                            {
+                                "Name": "TargetGroup",
+                                "Value": target_group_dimension,
+                            },
+                        ],
+                        metric_specs=tg_specs,
+                        start=start,
+                        end=end,
+                        requested_period=(requested_period),
                     )
 
                     self._merge_metric_results(
                         metrics,
                         results,
-                        target_group_arn=(
-                            target_group_arn
-                        ),
+                        target_group_arn=(target_group_arn),
                     )
 
                 except Exception as exc:
 
                     collection_errors.append(
-                        (
-                            "target_group_metrics:"
-                            f"{target_group_arn}: "
-                            f"{exc}"
-                        )
+                        ("target_group_metrics:" f"{target_group_arn}: " f"{exc}")
                     )
 
-        cloudwatch_status = (
-            "ok"
-            if not collection_errors
-            else "partial"
-        )
+        cloudwatch_status = "ok" if not collection_errors else "partial"
 
-        activity = (
-            self._build_activity_summary(
-                metrics
-            )
-        )
+        activity = self._build_activity_summary(metrics)
 
         return {
             "cloudwatch": {
-                "status":
-                    cloudwatch_status,
-
-                "namespace":
-                    namespace,
-
-                "requested_period":
-                    requested_period,
-
-                "start":
-                    start.isoformat(),
-
-                "end":
-                    end.isoformat(),
-
-                "metrics":
-                    metrics,
-
-                "activity":
-                    activity,
-
-                "collection_errors":
-                    collection_errors,
+                "status": cloudwatch_status,
+                "namespace": namespace,
+                "requested_period": requested_period,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "metrics": metrics,
+                "activity": activity,
+                "collection_errors": collection_errors,
             }
         }
 
@@ -853,30 +535,19 @@ class ElbCollector(BaseCollector):
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        vpc_id = resource.get(
-            "VpcId"
-        )
+        vpc_id = resource.get("VpcId")
 
         if not vpc_id:
 
             return {
                 "status": "incomplete",
-                "reason":
-                    "VPC ID is not available",
+                "reason": "VPC ID is not available",
             }
 
-        return (
-            self.topology_collector.collect(
-                vpc_id=vpc_id,
-                resource_type=(
-                    self.resource_type
-                ),
-                resource_id=(
-                    resource.get(
-                        "LoadBalancerArn"
-                    )
-                ),
-            )
+        return self.topology_collector.collect(
+            vpc_id=vpc_id,
+            resource_type=(self.resource_type),
+            resource_id=(resource.get("LoadBalancerArn")),
         )
 
     # ================================================================
@@ -889,113 +560,53 @@ class ElbCollector(BaseCollector):
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        configuration = (
-            collected_resource.get(
-                "configuration",
-                {},
-            )
+        configuration = collected_resource.get(
+            "configuration",
+            {},
         )
 
-        relationships = (
-            collected_resource.get(
-                "relationships",
-                {},
-            )
+        relationships = collected_resource.get(
+            "relationships",
+            {},
         )
 
-        summary = (
-            relationships.get(
-                "summary",
-                {},
-            )
+        summary = relationships.get(
+            "summary",
+            {},
         )
 
-        observations = (
-            collected_resource.get(
-                "observations",
-                {},
-            )
+        observations = collected_resource.get(
+            "observations",
+            {},
         )
 
-        cloudwatch = (
-            observations.get(
-                "cloudwatch",
-                {}
-            )
-        )
+        cloudwatch = observations.get("cloudwatch", {})
 
         return {
-            "load_balancer_type":
-                configuration.get(
-                    "type"
-                ),
-
-            "scheme":
-                configuration.get(
-                    "scheme"
-                ),
-
-            "state":
-                configuration.get(
-                    "state"
-                ),
-
-            "availability_zone_count":
-                configuration.get(
-                    "availability_zone_count",
-                    0,
-                ),
-
-            "listener_count":
-                summary.get(
-                    "listener_count"
-                ),
-
-            "listener_default_action_count":
-                summary.get(
-                    "listener_default_action_count"
-                ),
-
-            "target_group_count":
-                summary.get(
-                    "target_group_count"
-                ),
-
-            "target_count":
-                summary.get(
-                    "target_count"
-                ),
-
-            "healthy_target_count":
-                summary.get(
-                    "healthy_target_count"
-                ),
-
-            "unhealthy_target_count":
-                summary.get(
-                    "unhealthy_target_count"
-                ),
-
-            "target_health_complete":
-                summary.get(
-                    "target_health_complete"
-                ),
-
-            "cloudwatch_status":
+            "load_balancer_type": configuration.get("type"),
+            "scheme": configuration.get("scheme"),
+            "state": configuration.get("state"),
+            "availability_zone_count": configuration.get(
+                "availability_zone_count",
+                0,
+            ),
+            "listener_count": summary.get("listener_count"),
+            "listener_default_action_count": summary.get(
+                "listener_default_action_count"
+            ),
+            "target_group_count": summary.get("target_group_count"),
+            "target_count": summary.get("target_count"),
+            "healthy_target_count": summary.get("healthy_target_count"),
+            "unhealthy_target_count": summary.get("unhealthy_target_count"),
+            "target_health_complete": summary.get("target_health_complete"),
+            "cloudwatch_status": cloudwatch.get("status"),
+            "traffic_available": (
                 cloudwatch.get(
-                    "status"
-                ),
-
-            "traffic_available":
-                (
-                    cloudwatch.get(
-                        "activity",
-                        {},
-                    ).get(
-                        "traffic_available"
-                    )
-                    is True
-                ),
+                    "activity",
+                    {},
+                ).get("traffic_available")
+                is True
+            ),
         }
 
     # ================================================================
@@ -1012,21 +623,11 @@ class ElbCollector(BaseCollector):
 
         try:
 
-            paginator = (
-                self.elbv2.get_paginator(
-                    "describe_listeners"
-                )
-            )
+            paginator = self.elbv2.get_paginator("describe_listeners")
 
-            listeners: List[
-                Dict[str, Any]
-            ] = []
+            listeners: List[Dict[str, Any]] = []
 
-            for page in paginator.paginate(
-                LoadBalancerArn=(
-                    load_balancer_arn
-                )
-            ):
+            for page in paginator.paginate(LoadBalancerArn=(load_balancer_arn)):
 
                 listeners.extend(
                     page.get(
@@ -1047,37 +648,18 @@ class ElbCollector(BaseCollector):
 
                 result.append(
                     {
-                        "listener_arn":
-                            listener.get(
-                                "ListenerArn"
-                            ),
-
-                        "protocol":
-                            listener.get(
-                                "Protocol"
-                            ),
-
-                        "port":
-                            listener.get(
-                                "Port"
-                            ),
-
-                        "ssl_policy":
-                            listener.get(
-                                "SslPolicy"
-                            ),
-
-                        "default_actions":
-                            listener.get(
-                                "DefaultActions",
-                                [],
-                            ),
-
-                        "certificates":
-                            listener.get(
-                                "Certificates",
-                                [],
-                            ),
+                        "listener_arn": listener.get("ListenerArn"),
+                        "protocol": listener.get("Protocol"),
+                        "port": listener.get("Port"),
+                        "ssl_policy": listener.get("SslPolicy"),
+                        "default_actions": listener.get(
+                            "DefaultActions",
+                            [],
+                        ),
+                        "certificates": listener.get(
+                            "Certificates",
+                            [],
+                        ),
                     }
                 )
 
@@ -1085,9 +667,7 @@ class ElbCollector(BaseCollector):
 
         except Exception as exc:
 
-            return [], [
-                f"listener_collection_error: {exc}"
-            ]
+            return [], [f"listener_collection_error: {exc}"]
 
     # ================================================================
     # TARGET GROUPS
@@ -1103,21 +683,11 @@ class ElbCollector(BaseCollector):
 
         try:
 
-            paginator = (
-                self.elbv2.get_paginator(
-                    "describe_target_groups"
-                )
-            )
+            paginator = self.elbv2.get_paginator("describe_target_groups")
 
-            target_groups_raw: List[
-                Dict[str, Any]
-            ] = []
+            target_groups_raw: List[Dict[str, Any]] = []
 
-            for page in paginator.paginate(
-                LoadBalancerArn=(
-                    load_balancer_arn
-                )
-            ):
+            for page in paginator.paginate(LoadBalancerArn=(load_balancer_arn)):
 
                 target_groups_raw.extend(
                     page.get(
@@ -1128,13 +698,9 @@ class ElbCollector(BaseCollector):
 
         except Exception as exc:
 
-            return [], [
-                f"target_group_collection_error: {exc}"
-            ]
+            return [], [f"target_group_collection_error: {exc}"]
 
-        result: List[
-            Dict[str, Any]
-        ] = []
+        result: List[Dict[str, Any]] = []
 
         errors: List[str] = []
 
@@ -1146,133 +712,50 @@ class ElbCollector(BaseCollector):
             ):
                 continue
 
-            target_group_arn = (
-                target_group.get(
-                    "TargetGroupArn"
-                )
-            )
+            target_group_arn = target_group.get("TargetGroupArn")
 
             if not target_group_arn:
                 continue
 
             base = {
-                "target_group_arn":
-                    target_group_arn,
-
-                "target_group_name":
-                    target_group.get(
-                        "TargetGroupName"
-                    ),
-
-                "protocol":
-                    target_group.get(
-                        "Protocol"
-                    ),
-
-                "port":
-                    target_group.get(
-                        "Port"
-                    ),
-
-                "protocol_version":
-                    target_group.get(
-                        "ProtocolVersion"
-                    ),
-
-                "target_type":
-                    target_group.get(
-                        "TargetType"
-                    ),
-
-                "vpc_id":
-                    target_group.get(
-                        "VpcId"
-                    ),
-
-                "health_check_enabled":
-                    target_group.get(
-                        "HealthCheckEnabled"
-                    ),
-
-                "health_check_protocol":
-                    target_group.get(
-                        "HealthCheckProtocol"
-                    ),
-
-                "health_check_port":
-                    target_group.get(
-                        "HealthCheckPort"
-                    ),
-
-                "health_check_path":
-                    target_group.get(
-                        "HealthCheckPath"
-                    ),
-
-                "health_check_interval":
-                    target_group.get(
-                        "HealthCheckIntervalSeconds"
-                    ),
-
-                "health_check_timeout":
-                    target_group.get(
-                        "HealthCheckTimeoutSeconds"
-                    ),
-
-                "healthy_threshold":
-                    target_group.get(
-                        "HealthyThresholdCount"
-                    ),
-
-                "unhealthy_threshold":
-                    target_group.get(
-                        "UnhealthyThresholdCount"
-                    ),
-
-                "load_balancer_arns":
-                    target_group.get(
-                        "LoadBalancerArns",
-                        [],
-                    ),
-
+                "target_group_arn": target_group_arn,
+                "target_group_name": target_group.get("TargetGroupName"),
+                "protocol": target_group.get("Protocol"),
+                "port": target_group.get("Port"),
+                "protocol_version": target_group.get("ProtocolVersion"),
+                "target_type": target_group.get("TargetType"),
+                "vpc_id": target_group.get("VpcId"),
+                "health_check_enabled": target_group.get("HealthCheckEnabled"),
+                "health_check_protocol": target_group.get("HealthCheckProtocol"),
+                "health_check_port": target_group.get("HealthCheckPort"),
+                "health_check_path": target_group.get("HealthCheckPath"),
+                "health_check_interval": target_group.get("HealthCheckIntervalSeconds"),
+                "health_check_timeout": target_group.get("HealthCheckTimeoutSeconds"),
+                "healthy_threshold": target_group.get("HealthyThresholdCount"),
+                "unhealthy_threshold": target_group.get("UnhealthyThresholdCount"),
+                "load_balancer_arns": target_group.get(
+                    "LoadBalancerArns",
+                    [],
+                ),
                 "targets": [],
-
                 "target_count": None,
-
-                "healthy_target_count":
-                    None,
-
-                "unhealthy_target_count":
-                    None,
-
-                "initial_target_count":
-                    None,
-
-                "draining_target_count":
-                    None,
-
-                "target_health_status":
-                    "unknown",
-
-                "target_health_error":
-                    None,
+                "healthy_target_count": None,
+                "unhealthy_target_count": None,
+                "initial_target_count": None,
+                "draining_target_count": None,
+                "target_health_status": "unknown",
+                "target_health_error": None,
             }
 
             try:
 
-                health_response = (
-                    self.elbv2.describe_target_health(
-                        TargetGroupArn=(
-                            target_group_arn
-                        )
-                    )
+                health_response = self.elbv2.describe_target_health(
+                    TargetGroupArn=(target_group_arn)
                 )
 
-                descriptions = (
-                    health_response.get(
-                        "TargetHealthDescriptions",
-                        [],
-                    )
+                descriptions = health_response.get(
+                    "TargetHealthDescriptions",
+                    [],
                 )
 
                 targets = []
@@ -1290,25 +773,11 @@ class ElbCollector(BaseCollector):
                     ):
                         continue
 
-                    target = (
-                        description.get(
-                            "Target"
-                        )
-                        or {}
-                    )
+                    target = description.get("Target") or {}
 
-                    health = (
-                        description.get(
-                            "TargetHealth"
-                        )
-                        or {}
-                    )
+                    health = description.get("TargetHealth") or {}
 
-                    state = (
-                        health.get(
-                            "State"
-                        )
-                    )
+                    state = health.get("State")
 
                     if state == "healthy":
                         healthy_count += 1
@@ -1327,61 +796,25 @@ class ElbCollector(BaseCollector):
 
                     targets.append(
                         {
-                            "id":
-                                target.get(
-                                    "Id"
-                                ),
-
-                            "port":
-                                target.get(
-                                    "Port"
-                                ),
-
-                            "availability_zone":
-                                description.get(
-                                    "AvailabilityZone"
-                                ),
-
-                            "health":
-                                state,
-
-                            "reason":
-                                health.get(
-                                    "Reason"
-                                ),
-
-                            "description":
-                                health.get(
-                                    "Description"
-                                ),
+                            "id": target.get("Id"),
+                            "port": target.get("Port"),
+                            "availability_zone": description.get("AvailabilityZone"),
+                            "health": state,
+                            "reason": health.get("Reason"),
+                            "description": health.get("Description"),
                         }
                     )
 
                 base.update(
                     {
-                        "targets":
-                            targets,
-
-                        "target_count":
-                            len(targets),
-
-                        "healthy_target_count":
-                            healthy_count,
-
-                        "unhealthy_target_count":
-                            unhealthy_count,
-
-                        "initial_target_count":
-                            initial_count,
-
-                        "draining_target_count":
-                            draining_count,
-
-                        "target_health_status":
-                            "ok",
-
-                        "target_health_error":
-                            None,
+                        "targets": targets,
+                        "target_count": len(targets),
+                        "healthy_target_count": healthy_count,
+                        "unhealthy_target_count": unhealthy_count,
+                        "initial_target_count": initial_count,
+                        "draining_target_count": draining_count,
+                        "target_health_status": "ok",
+                        "target_health_error": None,
                     }
                 )
 
@@ -1392,41 +825,21 @@ class ElbCollector(BaseCollector):
                 base.update(
                     {
                         "targets": [],
-
-                        "target_count":
-                            None,
-
-                        "healthy_target_count":
-                            None,
-
-                        "unhealthy_target_count":
-                            None,
-
-                        "initial_target_count":
-                            None,
-
-                        "draining_target_count":
-                            None,
-
-                        "target_health_status":
-                            "error",
-
-                        "target_health_error":
-                            str(exc),
+                        "target_count": None,
+                        "healthy_target_count": None,
+                        "unhealthy_target_count": None,
+                        "initial_target_count": None,
+                        "draining_target_count": None,
+                        "target_health_status": "error",
+                        "target_health_error": str(exc),
                     }
                 )
 
                 errors.append(
-                    (
-                        "target_health_collection_error:"
-                        f"{target_group_arn}: "
-                        f"{exc}"
-                    )
+                    ("target_health_collection_error:" f"{target_group_arn}: " f"{exc}")
                 )
 
-            result.append(
-                base
-            )
+            result.append(base)
 
         return result, errors
 
@@ -1441,12 +854,8 @@ class ElbCollector(BaseCollector):
 
         try:
 
-            response = (
-                self.elbv2.describe_target_groups(
-                    LoadBalancerArn=(
-                        load_balancer_arn
-                    )
-                )
+            response = self.elbv2.describe_target_groups(
+                LoadBalancerArn=(load_balancer_arn)
             )
 
         except Exception:
@@ -1465,22 +874,15 @@ class ElbCollector(BaseCollector):
             ):
                 continue
 
-            arn = group.get(
-                "TargetGroupArn"
-            )
+            arn = group.get("TargetGroupArn")
 
             if not arn:
                 continue
 
             result.append(
                 {
-                    "target_group_arn":
-                        arn,
-
-                    "target_group_name":
-                        group.get(
-                            "TargetGroupName"
-                        ),
+                    "target_group_arn": arn,
+                    "target_group_name": group.get("TargetGroupName"),
                 }
             )
 
@@ -1495,17 +897,13 @@ class ElbCollector(BaseCollector):
         metric_spec: Dict[str, Any],
     ) -> tuple[str, ...]:
 
-        dimensions = metric_spec.get(
-            "dimensions"
-        )
+        dimensions = metric_spec.get("dimensions")
 
         if not isinstance(
             dimensions,
             list,
         ):
-            return (
-                "LoadBalancer",
-            )
+            return ("LoadBalancer",)
 
         normalized = []
 
@@ -1515,27 +913,19 @@ class ElbCollector(BaseCollector):
                 dimension,
                 str,
             ):
-                normalized.append(
-                    dimension
-                )
+                normalized.append(dimension)
 
             elif isinstance(
                 dimension,
                 dict,
             ):
 
-                name = dimension.get(
-                    "Name"
-                )
+                name = dimension.get("Name")
 
                 if name:
-                    normalized.append(
-                        str(name)
-                    )
+                    normalized.append(str(name))
 
-        return tuple(
-            normalized
-        )
+        return tuple(normalized)
 
     @classmethod
     def _merge_metric_results(
@@ -1553,37 +943,24 @@ class ElbCollector(BaseCollector):
             ):
                 continue
 
-            metric_key = result.get(
-                "metric_key"
-            )
+            metric_key = result.get("metric_key")
 
             if not metric_key:
                 continue
 
             if target_group_arn:
 
-                scoped_key = (
-                    f"{metric_key}"
-                    f"[TargetGroup={target_group_arn}]"
-                )
+                scoped_key = f"{metric_key}" f"[TargetGroup={target_group_arn}]"
 
-                copied = dict(
-                    result
-                )
+                copied = dict(result)
 
-                copied[
-                    "target_group_arn"
-                ] = target_group_arn
+                copied["target_group_arn"] = target_group_arn
 
-                destination[
-                    scoped_key
-                ] = copied
+                destination[scoped_key] = copied
 
             else:
 
-                destination[
-                    str(metric_key)
-                ] = result
+                destination[str(metric_key)] = result
 
     @staticmethod
     def _build_activity_summary(
@@ -1612,27 +989,16 @@ class ElbCollector(BaseCollector):
             ):
                 continue
 
-            metric_key = str(
-                metric.get(
-                    "metric_key"
-                )
-                or ""
-            )
+            metric_key = str(metric.get("metric_key") or "")
 
-            if metric_key not in (
-                activity_metric_names
-            ):
+            if metric_key not in (activity_metric_names):
                 continue
 
-            if metric.get(
-                "observed"
-            ) is not True:
+            if metric.get("observed") is not True:
 
                 continue
 
-            value = metric.get(
-                "value"
-            )
+            value = metric.get("value")
 
             if not isinstance(
                 value,
@@ -1640,55 +1006,26 @@ class ElbCollector(BaseCollector):
             ):
                 continue
 
-            available[
-                metric_key
-            ] = float(value)
+            available[metric_key] = float(value)
 
         if not available:
 
             return {
-                "traffic_available":
-                    False,
-
-                "traffic_observed":
-                    None,
-
-                "request_count":
-                    None,
-
-                "processed_bytes":
-                    None,
-
-                "active_connections":
-                    None,
-
-                "new_connections":
-                    None,
+                "traffic_available": False,
+                "traffic_observed": None,
+                "request_count": None,
+                "processed_bytes": None,
+                "active_connections": None,
+                "new_connections": None,
             }
 
-        request_count = (
-            available.get(
-                "request_count"
-            )
-        )
+        request_count = available.get("request_count")
 
-        processed_bytes = (
-            available.get(
-                "processed_bytes"
-            )
-        )
+        processed_bytes = available.get("processed_bytes")
 
-        active_connections = (
-            available.get(
-                "active_connections"
-            )
-        )
+        active_connections = available.get("active_connections")
 
-        new_connections = (
-            available.get(
-                "new_connections"
-            )
-        )
+        new_connections = available.get("new_connections")
 
         positive_values = [
             value
@@ -1697,56 +1034,27 @@ class ElbCollector(BaseCollector):
                 processed_bytes,
                 active_connections,
                 new_connections,
-                available.get(
-                    "active_flow_count"
-                ),
-                available.get(
-                    "new_flow_count"
-                ),
+                available.get("active_flow_count"),
+                available.get("new_flow_count"),
             )
             if value is not None
         ]
 
         traffic_observed = (
-            any(
-                value > 0
-                for value in positive_values
-            )
-            if positive_values
-            else None
+            any(value > 0 for value in positive_values) if positive_values else None
         )
 
         return {
-            "traffic_available":
-                True,
-
-            "traffic_observed":
-                traffic_observed,
-
-            "request_count":
-                request_count,
-
-            "processed_bytes":
-                processed_bytes,
-
-            "processed_gib":
-                (
-                    processed_bytes
-                    / (1024 ** 3)
-                    if processed_bytes is not None
-                    else None
-                ),
-
-            "active_connections":
-                active_connections,
-
-            "new_connections":
-                new_connections,
-
-            "available_metrics":
-                sorted(
-                    available.keys()
-                ),
+            "traffic_available": True,
+            "traffic_observed": traffic_observed,
+            "request_count": request_count,
+            "processed_bytes": processed_bytes,
+            "processed_gib": (
+                processed_bytes / (1024**3) if processed_bytes is not None else None
+            ),
+            "active_connections": active_connections,
+            "new_connections": new_connections,
+            "available_metrics": sorted(available.keys()),
         }
 
     # ================================================================
@@ -1757,16 +1065,11 @@ class ElbCollector(BaseCollector):
         self,
     ) -> Dict[str, Any]:
 
-        profile = (
-            self.profile
-            or {}
-        )
+        profile = self.profile or {}
 
-        observations = (
-            profile.get(
-                "observations",
-                {},
-            )
+        observations = profile.get(
+            "observations",
+            {},
         )
 
         return (
@@ -1784,18 +1087,11 @@ class ElbCollector(BaseCollector):
         observations_config: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        lb_type = str(
-            resource.get(
-                "Type"
-            )
-            or ""
-        ).lower()
+        lb_type = str(resource.get("Type") or "").lower()
 
-        by_type = (
-            observations_config.get(
-                "cloudwatch_by_type",
-                {},
-            )
+        by_type = observations_config.get(
+            "cloudwatch_by_type",
+            {},
         )
 
         if isinstance(
@@ -1803,9 +1099,7 @@ class ElbCollector(BaseCollector):
             dict,
         ):
 
-            selected = by_type.get(
-                lb_type
-            )
+            selected = by_type.get(lb_type)
 
             if isinstance(
                 selected,
@@ -1813,12 +1107,7 @@ class ElbCollector(BaseCollector):
             ):
                 return selected
 
-        fallback = (
-            observations_config.get(
-                "cloudwatch",
-                {}
-            )
-        )
+        fallback = observations_config.get("cloudwatch", {})
 
         return (
             fallback
@@ -1838,16 +1127,11 @@ class ElbCollector(BaseCollector):
         arn: str,
     ) -> str:
 
-        marker = (
-            "loadbalancer/"
-        )
+        marker = "loadbalancer/"
 
         if marker not in arn:
 
-            raise ValueError(
-                "Invalid load balancer ARN: "
-                f"{arn}"
-            )
+            raise ValueError("Invalid load balancer ARN: " f"{arn}")
 
         return arn.split(
             marker,
@@ -1859,16 +1143,11 @@ class ElbCollector(BaseCollector):
         arn: str,
     ) -> str:
 
-        marker = (
-            "targetgroup/"
-        )
+        marker = "targetgroup/"
 
         if marker not in arn:
 
-            raise ValueError(
-                "Invalid target group ARN: "
-                f"{arn}"
-            )
+            raise ValueError("Invalid target group ARN: " f"{arn}")
 
         return arn.split(
             marker,
@@ -1888,20 +1167,16 @@ class ElbCollector(BaseCollector):
 
         for listener in listeners:
 
-            actions = (
-                listener.get(
-                    "default_actions",
-                    [],
-                )
+            actions = listener.get(
+                "default_actions",
+                [],
             )
 
             if isinstance(
                 actions,
                 list,
             ):
-                count += len(
-                    actions
-                )
+                count += len(actions)
 
         return count
 
@@ -1911,22 +1186,13 @@ class ElbCollector(BaseCollector):
     ) -> Dict[str, str]:
 
         return {
-            str(
-                tag.get(
-                    "Key"
-                )
-            ):
-                tag.get(
-                    "Value"
-                )
+            str(tag.get("Key")): tag.get("Value")
             for tag in tags
             if isinstance(
                 tag,
                 dict,
             )
-            and tag.get(
-                "Key"
-            )
+            and tag.get("Key")
         }
 
     @staticmethod

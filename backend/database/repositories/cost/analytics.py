@@ -56,10 +56,7 @@ def get_service_period_totals(db: Session, scan_run_id: int) -> list[dict]:
         .order_by(func.sum(CostRecord.amount).desc())
         .all()
     )
-    return [
-        {"service": row.service, "cost": float(row.cost or 0)}
-        for row in rows
-    ]
+    return [{"service": row.service, "cost": float(row.cost or 0)} for row in rows]
 
 
 def get_region_period_totals(db: Session, scan_run_id: int) -> list[dict]:

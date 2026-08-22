@@ -1,6 +1,7 @@
 """
 Application settings - loaded from environment variables with sensible defaults.
 """
+
 import os
 
 CE_REGION = os.getenv("AWS_CE_REGION", "us-east-1")

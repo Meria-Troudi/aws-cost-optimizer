@@ -86,11 +86,11 @@ def _extract_cost(
     )
 
     if cost is None:
-        cost = 0.0 if (
-            "billing" in evidence
-            and isinstance(billing, dict)
-            and billing
-        ) else None
+        cost = (
+            0.0
+            if ("billing" in evidence and isinstance(billing, dict) and billing)
+            else None
+        )
 
     if billing:
         billing = dict(billing)
@@ -122,9 +122,7 @@ def _extract_service(
         if service:
             return str(service)
 
-    resource_type = str(
-        finding.resource_type or ""
-    ).strip()
+    resource_type = str(finding.resource_type or "").strip()
 
     if resource_type:
         normalized = resource_type.replace("_", " ").strip()
@@ -152,9 +150,7 @@ def _extract_service(
 def present_finding(
     finding: Finding,
 ) -> dict[str, Any]:
-    evidence = _parse_evidence(
-        finding.evidence
-    )
+    evidence = _parse_evidence(finding.evidence)
 
     impact = parse_json_field(
         finding.impact,
@@ -169,17 +165,11 @@ def present_finding(
         impact,
     )
 
-    limitations = _parse_list_field(
-        finding.limitations
-    )
+    limitations = _parse_list_field(finding.limitations)
 
-    conditions = _parse_list_field(
-        finding.conditions
-    )
+    conditions = _parse_list_field(finding.conditions)
 
-    evidence_summary = _parse_list_field(
-        finding.evidence_summary
-    )
+    evidence_summary = _parse_list_field(finding.evidence_summary)
 
     observation_period = parse_json_field(
         finding.observation_period,
@@ -191,12 +181,8 @@ def present_finding(
         evidence,
     )
 
-    
-
     finding_type = (
-        str(finding.finding_type).strip()
-        if finding.finding_type
-        else "finding"
+        str(finding.finding_type).strip() if finding.finding_type else "finding"
     )
 
     title = finding_type.replace(
@@ -207,84 +193,37 @@ def present_finding(
     return {
         "id": finding.id,
         "scan_id": finding.scan_run_id,
-
         "finding_type": finding_type,
         "finding_key": finding.finding_key,
-
         "resource_type": finding.resource_type,
         "resource_id": finding.resource_id,
-
         "service": service,
-
         "analyzer": finding.analyzer,
         "analyzer_version": finding.analyzer_version,
-
         "severity": finding.severity,
         "confidence": finding.confidence,
-
-
         "title": title,
-
         "reason": finding.reason,
-
         "cost": cost,
-
-        "cost_currency": (
-            billing.get("currency", "USD")
-            if billing
-            else "USD"
-        ),
-
+        "cost_currency": (billing.get("currency", "USD") if billing else "USD"),
         "cost_scope": (
-            billing.get("scope")
-            or billing.get("attribution_scope")
+            billing.get("scope") or billing.get("attribution_scope")
             if billing
             else None
         ),
-
-        "billing_details": (
-            billing
-            if billing
-            else None
-        ),
-
+        "billing_details": (billing if billing else None),
         "impact": impact,
-
-        "recommendation_eligible": bool(
-            finding.recommendation_eligible
-        ),
-
+        "recommendation_eligible": bool(finding.recommendation_eligible),
         "conditions": conditions,
-
         "evidence": evidence,
-
-        "evidence_summary": [
-            str(item)
-            for item in evidence_summary
-        ],
-
-        "limitations": [
-            str(item)
-            for item in limitations
-        ],
-
+        "evidence_summary": [str(item) for item in evidence_summary],
+        "limitations": [str(item) for item in limitations],
         "region": finding.region,
-
         "account_id": finding.account_id,
-
         "status": finding.status,
-
-        "aggregation_scope": (
-            finding.aggregation_scope
-        ),
-
+        "aggregation_scope": (finding.aggregation_scope),
         "observation_period": observation_period,
-
-        "created_at": (
-            finding.created_at.isoformat()
-            if finding.created_at
-            else None
-        ),
+        "created_at": (finding.created_at.isoformat() if finding.created_at else None),
     }
 
 
@@ -297,10 +236,7 @@ def present_findings(
     for finding in findings:
         item = present_finding(finding)
 
-        if (
-            region
-            and not item.get("region")
-        ):
+        if region and not item.get("region"):
             item["region"] = region
 
         output.append(item)

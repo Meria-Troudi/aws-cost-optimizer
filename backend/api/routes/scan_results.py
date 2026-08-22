@@ -57,7 +57,6 @@ from backend.database.repositories.scan_run_repository import (
     get_scan_summary,
 )
 
-
 router = APIRouter(
     prefix="/api/scans",
     tags=["Scan Results"],
@@ -90,11 +89,7 @@ def _aggregate_findings(
         if finding.get("id") is not None
     }
 
-    aggregator_groups = (
-        FindingAggregator().aggregate(
-            hydrated
-        )
-    )
+    aggregator_groups = FindingAggregator().aggregate(hydrated)
 
     result: list[dict[str, Any]] = []
 
@@ -109,23 +104,14 @@ def _aggregate_findings(
         # already sets Finding.database_id from the DB row's own id.
         member_ids = [
             resource.get("database_id")
-            for resource in (
-                group.get(
-                    "affected_resources"
-                )
-                or []
-            )
-            if resource.get("database_id")
-            is not None
+            for resource in (group.get("affected_resources") or [])
+            if resource.get("database_id") is not None
         ]
 
         members = [
-            presented_by_database_id[
-                member_id
-            ]
+            presented_by_database_id[member_id]
             for member_id in member_ids
-            if member_id
-            in presented_by_database_id
+            if member_id in presented_by_database_id
         ]
 
         if not members:
@@ -141,17 +127,10 @@ def _aggregate_findings(
         group_cost: float | None = None
 
         for finding in members:
-            resource_id = finding.get(
-                "resource_id"
-            )
+            resource_id = finding.get("resource_id")
 
-            if (
-                resource_id
-                and resource_id not in resource_ids
-            ):
-                resource_ids.append(
-                    str(resource_id)
-                )
+            if resource_id and resource_id not in resource_ids:
+                resource_ids.append(str(resource_id))
 
             cost = finding.get("cost")
 
@@ -178,96 +157,39 @@ def _aggregate_findings(
 
             reason = finding.get("reason")
 
-            if (
-                reason
-                and reason not in reasons
-            ):
-                reasons.append(
-                    str(reason)
-                )
+            if reason and reason not in reasons:
+                reasons.append(str(reason))
 
-            for item in (
-                finding.get(
-                    "evidence_summary"
-                )
-                or []
-            ):
-                if (
-                    item
-                    and str(item)
-                    not in evidence_summaries
-                ):
-                    evidence_summaries.append(
-                        str(item)
-                    )
+            for item in finding.get("evidence_summary") or []:
+                if item and str(item) not in evidence_summaries:
+                    evidence_summaries.append(str(item))
 
-            for item in (
-                finding.get(
-                    "limitations"
-                )
-                or []
-            ):
-                if (
-                    item
-                    and str(item)
-                    not in limitations
-                ):
-                    limitations.append(
-                        str(item)
-                    )
+            for item in finding.get("limitations") or []:
+                if item and str(item) not in limitations:
+                    limitations.append(str(item))
 
         aggregated = dict(first)
 
-        aggregated["resource_ids"] = (
-            resource_ids
-        )
+        aggregated["resource_ids"] = resource_ids
 
-        aggregated["resource_count"] = (
-            len(resource_ids)
-        )
+        aggregated["resource_count"] = len(resource_ids)
 
-        aggregated["cost"] = (
-            round(group_cost, 2)
-            if group_cost is not None
-            else None
-        )
+        aggregated["cost"] = round(group_cost, 2) if group_cost is not None else None
 
         if len(resource_ids) == 1:
-            resource_text = (
-                "1 affected resource."
-            )
+            resource_text = "1 affected resource."
         else:
-            resource_text = (
-                f"{len(resource_ids)} affected resources."
-            )
+            resource_text = f"{len(resource_ids)} affected resources."
 
-        aggregated["reason"] = (
-            resource_text
-            + (
-                f" {reasons[0]}"
-                if reasons
-                else ""
-            )
-        )
+        aggregated["reason"] = resource_text + (f" {reasons[0]}" if reasons else "")
 
-        aggregated["evidence_summary"] = (
-            evidence_summaries
-        )
+        aggregated["evidence_summary"] = evidence_summaries
 
-        aggregated["limitations"] = (
-            limitations
-        )
+        aggregated["limitations"] = limitations
 
-        aggregated["aggregation_scope"] = (
-            group.get(
-                "aggregation_scope"
-            )
-            or "region"
-        )
+        aggregated["aggregation_scope"] = group.get("aggregation_scope") or "region"
 
-        result.append(
-            aggregated
-        )
+        result.append(aggregated)
 
     result.sort(
         key=lambda finding: (
@@ -292,9 +214,7 @@ def _aggregate_findings(
     return result
 
 
-@router.get(
-    "/{scan_id}/cost-summary"
-)
+@router.get("/{scan_id}/cost-summary")
 def get_scan_cost_summary(
     scan_id: int,
     db: Session = Depends(get_db),
@@ -304,11 +224,7 @@ def get_scan_cost_summary(
     if scan is None:
         raise HTTPException(status_code=404, detail=f"Scan {scan_id} not found.")
 
-    records = (
-        db.query(CostRecord)
-        .filter(CostRecord.scan_run_id == scan_id)
-        .all()
-    )
+    records = db.query(CostRecord).filter(CostRecord.scan_run_id == scan_id).all()
     total_cost = sum(float(record.amount or 0) for record in records)
 
     return {
@@ -327,9 +243,7 @@ def get_scan_cost_summary(
     }
 
 
-@router.get(
-    "/{scan_id}/cost-trend"
-)
+@router.get("/{scan_id}/cost-trend")
 def get_scan_cost_trend(
     scan_id: int,
     db: Session = Depends(get_db),
@@ -342,9 +256,7 @@ def get_scan_cost_trend(
     if scan is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Scan {scan_id} not found."
-            ),
+            detail=(f"Scan {scan_id} not found."),
         )
 
     return get_monthly_totals(
@@ -396,9 +308,7 @@ def get_scan_collection_summary(
     return present_collection_summary(db, scan)
 
 
-@router.get(
-    "/{scan_id}/findings"
-)
+@router.get("/{scan_id}/findings")
 def get_scan_findings(
     scan_id: int,
     db: Session = Depends(get_db),
@@ -411,9 +321,7 @@ def get_scan_findings(
     if scan is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Scan {scan_id} not found."
-            ),
+            detail=(f"Scan {scan_id} not found."),
         )
 
     findings = get_findings_by_scan(
@@ -421,9 +329,7 @@ def get_scan_findings(
         scan_id,
     )
 
-    presented = present_findings(
-        findings
-    )
+    presented = present_findings(findings)
 
     return _aggregate_findings(
         presented,
@@ -431,9 +337,7 @@ def get_scan_findings(
     )
 
 
-@router.get(
-    "/{scan_id}/recommendations"
-)
+@router.get("/{scan_id}/recommendations")
 def get_scan_recommendations(
     scan_id: int,
     db: Session = Depends(get_db),
@@ -446,26 +350,18 @@ def get_scan_recommendations(
     if scan is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Scan {scan_id} not found."
-            ),
+            detail=(f"Scan {scan_id} not found."),
         )
 
-    recommendations = (
-        get_recommendations_by_scan(
-            db,
-            scan_id,
-        )
+    recommendations = get_recommendations_by_scan(
+        db,
+        scan_id,
     )
 
-    return present_recommendations(
-        recommendations
-    )
+    return present_recommendations(recommendations)
 
 
-@router.get(
-    "/{scan_id}/result"
-)
+@router.get("/{scan_id}/result")
 def get_scan_result(
     scan_id: int,
     db: Session = Depends(get_db),
@@ -485,19 +381,10 @@ def get_scan_result(
     if scan is None:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Scan {scan_id} not found."
-            ),
+            detail=(f"Scan {scan_id} not found."),
         )
 
-    cost_records = (
-        db.query(CostRecord)
-        .filter(
-            CostRecord.scan_run_id
-            == scan_id
-        )
-        .all()
-    )
+    cost_records = db.query(CostRecord).filter(CostRecord.scan_run_id == scan_id).all()
 
     costs = []
 
@@ -510,52 +397,32 @@ def get_scan_result(
                 "operation": record.operation,
                 "region": record.region,
                 "amount": round(
-                    float(
-                        record.amount or 0
-                    ),
+                    float(record.amount or 0),
                     2,
                 ),
                 "usage_quantity": (
-                    float(
-                        record.usage_quantity
-                    )
-                    if record.usage_quantity
-                    is not None
+                    float(record.usage_quantity)
+                    if record.usage_quantity is not None
                     else None
                 ),
                 "unit": record.unit,
                 "start_date": (
-                    record.start_date.isoformat()
-                    if record.start_date
-                    else None
+                    record.start_date.isoformat() if record.start_date else None
                 ),
-                "end_date": (
-                    record.end_date.isoformat()
-                    if record.end_date
-                    else None
-                ),
+                "end_date": (record.end_date.isoformat() if record.end_date else None),
             }
         )
 
-    total_cost = sum(
-        item["amount"]
-        for item in costs
-    )
+    total_cost = sum(item["amount"] for item in costs)
 
-    scan_finding_rows = (
-        get_findings_by_scan(
-            db,
-            scan_id,
-        )
+    scan_finding_rows = get_findings_by_scan(
+        db,
+        scan_id,
     )
 
     findings = _aggregate_findings(
-        present_findings(
-            scan_finding_rows
-        ),
-        hydrate_findings(
-            scan_finding_rows
-        ),
+        present_findings(scan_finding_rows),
+        hydrate_findings(scan_finding_rows),
     )
 
     recommendations = present_recommendations(
@@ -566,32 +433,19 @@ def get_scan_result(
     )
 
     return {
-        "scan": get_scan_summary(
-            scan
-        ),
-
+        "scan": get_scan_summary(scan),
         "summary": {
             "total_cost": round(
                 total_cost,
                 2,
             ),
-            "cost_records": len(
-                costs
-            ),
-            "findings": len(
-                findings
-            ),
-            "recommendations": len(
-                recommendations
-            ),
+            "cost_records": len(costs),
+            "findings": len(findings),
+            "recommendations": len(recommendations),
         },
-
         "cost_records": costs,
-
         "findings": findings,
-
         "recommendations": recommendations,
-
         "cost_trend": get_monthly_totals(
             db,
             scan_id,

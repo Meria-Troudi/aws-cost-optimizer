@@ -35,7 +35,6 @@ from backend.database.models.scan_run import ScanRun
 
 import backend.api.services.recommendation_explanation_service as svc
 
-
 # ======================================================================
 # Payload compactness
 # ======================================================================
@@ -104,9 +103,7 @@ def test_payload_never_includes_raw_topology_or_cloudwatch():
     assert "raw_datapoints" not in str(payload)
 
     # Allowlisted billing fields survive; the raw usage type does not.
-    assert payload["evidence"]["billing"]["attribution_scope"] == (
-        "collection_plan"
-    )
+    assert payload["evidence"]["billing"]["attribution_scope"] == ("collection_plan")
     assert "usage_type" not in payload["evidence"]["billing"]
 
     assert payload["evidence"]["derived"] == {
@@ -221,9 +218,7 @@ def test_cached_explanation_short_circuits_the_provider(
     monkeypatch,
 ):
 
-    recommendation_id = _seed_recommendation(
-        db_session
-    )
+    recommendation_id = _seed_recommendation(db_session)
 
     stub = _StubProvider(
         explanation=RecommendationExplanation(
@@ -241,9 +236,7 @@ def test_cached_explanation_short_circuits_the_provider(
         lambda: stub,
     )
 
-    service = svc.RecommendationExplanationService(
-        db_session
-    )
+    service = svc.RecommendationExplanationService(db_session)
 
     first = service.explain(recommendation_id)
 
@@ -262,13 +255,9 @@ def test_provider_failure_returns_unavailable_without_raising(
     monkeypatch,
 ):
 
-    recommendation_id = _seed_recommendation(
-        db_session
-    )
+    recommendation_id = _seed_recommendation(db_session)
 
-    stub = _StubProvider(
-        error=RuntimeError("connection refused")
-    )
+    stub = _StubProvider(error=RuntimeError("connection refused"))
 
     monkeypatch.setattr(
         svc,
@@ -276,9 +265,7 @@ def test_provider_failure_returns_unavailable_without_raising(
         lambda: stub,
     )
 
-    service = svc.RecommendationExplanationService(
-        db_session
-    )
+    service = svc.RecommendationExplanationService(db_session)
 
     result = service.explain(recommendation_id)
 

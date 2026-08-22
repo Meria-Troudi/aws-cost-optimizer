@@ -50,35 +50,20 @@ class CollectorManager:
                 "error": "Collector requires a region",
             }
 
-        print(
-            f"\nExecuting collector: "
-            f"{collector_name} [{region}]"
-        )
+        print(f"\nExecuting collector: " f"{collector_name} [{region}]")
 
-        collector_class = get_collector(
-            collector_name
-        )
+        collector_class = get_collector(collector_name)
 
         if not collector_class:
 
             return {
-                "collector":
-                    collector_name,
-
-                "region":
-                    region,
-
-                "status":
-                    "failed",
-
-                "error":
-                    f"Collector not found: "
-                    f"{collector_name}",
+                "collector": collector_name,
+                "region": region,
+                "status": "failed",
+                "error": f"Collector not found: " f"{collector_name}",
             }
 
-        profile = self.profile_loader.get(
-            collector_class.resource_type
-        )
+        profile = self.profile_loader.get(collector_class.resource_type)
 
         if not profile:
 
@@ -104,9 +89,7 @@ class CollectorManager:
             resources = collector.collect()
 
             if not isinstance(resources, list):
-                raise TypeError(
-                    "Collector.collect() must return a list"
-                )
+                raise TypeError("Collector.collect() must return a list")
 
             # Billing is context only, and reconciliation (run per
             # resource, after this) writes an attribution verdict
@@ -120,46 +103,27 @@ class CollectorManager:
                 for resource in resources:
 
                     if isinstance(resource, dict):
-                        resource["cost_context"] = dict(
-                            cost_context
-                        )
+                        resource["cost_context"] = dict(cost_context)
 
             resource_ids = [
                 str(resource.get("resource_id"))
                 for resource in resources
-                if (
-                    isinstance(resource, dict)
-                    and resource.get("resource_id")
-                )
+                if (isinstance(resource, dict) and resource.get("resource_id"))
             ]
 
-            print(
-                f"[{collector_name}] "
-                f"Resources returned: "
-                f"{len(resources)}"
-            )
+            print(f"[{collector_name}] " f"Resources returned: " f"{len(resources)}")
 
         except Exception as exc:
 
-            print(
-                f"Collector failed: "
-                f"{collector_name}"
-            )
+            print(f"Collector failed: " f"{collector_name}")
 
             traceback.print_exc()
 
             return {
-                "collector":
-                    collector_name,
-
-                "region":
-                    region,
-
-                "status":
-                    "failed",
-
-                "error":
-                    str(exc),
+                "collector": collector_name,
+                "region": region,
+                "status": "failed",
+                "error": str(exc),
             }
 
         saved_resources = 0
@@ -178,41 +142,23 @@ class CollectorManager:
             if not isinstance(resource, dict):
                 continue
 
-            metric_counts = (
-                self.persistence.metric_counts(
-                    resource
-                )
-            )
+            metric_counts = self.persistence.metric_counts(resource)
 
-            queried_metrics += (
-                metric_counts["queried"]
-            )
+            queried_metrics += metric_counts["queried"]
 
-            saved_observed_metrics += (
-                metric_counts["observed"]
-            )
+            saved_observed_metrics += metric_counts["observed"]
 
-            no_data_metrics += (
-                metric_counts["no_data"]
-            )
+            no_data_metrics += metric_counts["no_data"]
 
-            metric_errors += (
-                metric_counts["errors"]
-            )
+            metric_errors += metric_counts["errors"]
 
-            if resource.get(
-                "topology"
-            ):
+            if resource.get("topology"):
                 topology_count += 1
 
-            if resource.get(
-                "collection_status"
-            ) == "partial":
+            if resource.get("collection_status") == "partial":
                 partial_resources += 1
 
-            if resource.get(
-                "collection_status"
-            ) == "failed":
+            if resource.get("collection_status") == "failed":
                 failed_resources += 1
 
             try:
@@ -227,36 +173,17 @@ class CollectorManager:
 
                 resource_summaries.append(
                     {
-                        "resource_id":
-                            resource.get(
-                                "resource_id"
-                            ),
-
-                        "collection_status":
-                            resource.get(
-                                "collection_status"
-                            ),
-
-                        "metric_counts":
-                            metric_counts,
-
-                        "topology_available":
-                            (
-                                resource.get(
-                                    "topology",
-                                    {}
-                                ).get(
-                                    "status"
-                                )
-                                == "ok"
-                                if isinstance(
-                                    resource.get(
-                                        "topology"
-                                    ),
-                                    dict,
-                                )
-                                else False
-                            ),
+                        "resource_id": resource.get("resource_id"),
+                        "collection_status": resource.get("collection_status"),
+                        "metric_counts": metric_counts,
+                        "topology_available": (
+                            resource.get("topology", {}).get("status") == "ok"
+                            if isinstance(
+                                resource.get("topology"),
+                                dict,
+                            )
+                            else False
+                        ),
                     }
                 )
 
@@ -287,17 +214,10 @@ class CollectorManager:
             traceback.print_exc()
 
             return {
-                "collector":
-                    collector_name,
-
-                "region":
-                    region,
-
-                "status":
-                    "failed",
-
-                "error":
-                    f"Commit failed: {exc}",
+                "collector": collector_name,
+                "region": region,
+                "status": "failed",
+                "error": f"Commit failed: {exc}",
             }
 
         print(
@@ -311,56 +231,23 @@ class CollectorManager:
         )
 
         return {
-            "collector":
-                collector_name,
-
-            "region":
-                region,
-
-            "resource_type":
-                collector_class.resource_type,
-
-            "status":
-                "completed",
-
-            "resources":
-                saved_resources,
-
-            "resource_count":
-                len(resources),
-
-            "resource_ids":
-                resource_ids,
-
+            "collector": collector_name,
+            "region": region,
+            "resource_type": collector_class.resource_type,
+            "status": "completed",
+            "resources": saved_resources,
+            "resource_count": len(resources),
+            "resource_ids": resource_ids,
             # Backwards-compatible observed count.
-            "metrics":
-                saved_observed_metrics,
-
+            "metrics": saved_observed_metrics,
             # Explicit counts.
-            "queried_metrics":
-                queried_metrics,
-
-            "observed_metrics":
-                saved_observed_metrics,
-
-            "no_data_metrics":
-                no_data_metrics,
-
-            "metric_errors":
-                metric_errors,
-
-            "topology_resources":
-                topology_count,
-
-            "partial_resources":
-                partial_resources,
-
-            "failed_resources":
-                failed_resources,
-
-            "resource_summaries":
-                resource_summaries,
-
-            "resource_data":
-                resources,
+            "queried_metrics": queried_metrics,
+            "observed_metrics": saved_observed_metrics,
+            "no_data_metrics": no_data_metrics,
+            "metric_errors": metric_errors,
+            "topology_resources": topology_count,
+            "partial_resources": partial_resources,
+            "failed_resources": failed_resources,
+            "resource_summaries": resource_summaries,
+            "resource_data": resources,
         }

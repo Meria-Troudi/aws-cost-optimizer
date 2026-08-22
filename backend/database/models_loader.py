@@ -68,10 +68,7 @@ def _column_default_sql(column) -> str:
 
         affinity = str(column.type).upper()
 
-        if any(
-            token in affinity
-            for token in ("CHAR", "TEXT", "CLOB")
-        ):
+        if any(token in affinity for token in ("CHAR", "TEXT", "CLOB")):
             return " DEFAULT ''"
 
         return " DEFAULT 0"
@@ -105,9 +102,7 @@ def _sync_sqlite_columns() -> list[str]:
 
             existing = {
                 row[1]
-                for row in conn.exec_driver_sql(
-                    f"PRAGMA table_info({table_name})"
-                )
+                for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})")
             }
 
             # Table absent entirely -> create_all() just made it.
@@ -119,15 +114,9 @@ def _sync_sqlite_columns() -> list[str]:
                 if column.name in existing:
                     continue
 
-                column_type = column.type.compile(
-                    dialect=engine.dialect
-                )
+                column_type = column.type.compile(dialect=engine.dialect)
 
-                nullability = (
-                    ""
-                    if column.nullable
-                    else " NOT NULL"
-                )
+                nullability = "" if column.nullable else " NOT NULL"
 
                 statement = (
                     f"ALTER TABLE {table_name} "
@@ -139,9 +128,7 @@ def _sync_sqlite_columns() -> list[str]:
 
                 conn.exec_driver_sql(statement)
 
-                applied.append(
-                    f"{table_name}.{column.name}"
-                )
+                applied.append(f"{table_name}.{column.name}")
 
         conn.commit()
 
@@ -168,8 +155,7 @@ def init_db() -> None:
 
     if applied:
         print(
-            f"[init_db] Added {len(applied)} missing column(s): "
-            + ", ".join(applied)
+            f"[init_db] Added {len(applied)} missing column(s): " + ", ".join(applied)
         )
 
 

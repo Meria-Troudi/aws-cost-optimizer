@@ -61,10 +61,7 @@ def _cache_get(
 
     expires_at, value = entry
 
-    if (
-        expires_at is not None
-        and time.time() >= expires_at
-    ):
+    if expires_at is not None and time.time() >= expires_at:
         _MONTH_CACHE.pop(key, None)
         return None
 
@@ -80,11 +77,7 @@ def _cache_set(
 
     today = date.today().isoformat()
 
-    expires_at = (
-        None
-        if month_end <= today
-        else time.time() + CACHE_TTL_SECONDS
-    )
+    expires_at = None if month_end <= today else time.time() + CACHE_TTL_SECONDS
 
     _MONTH_CACHE[key] = (expires_at, value)
 
@@ -114,7 +107,6 @@ def _fetch_monthly_with_cache(
     region: str | None,
 ) -> list[dict[str, Any]]:
 
-
     start_date = date.fromisoformat(start)
     end_date = date.fromisoformat(end)
 
@@ -136,9 +128,7 @@ def _fetch_monthly_with_cache(
 
         month_start = _month_start_date(month_key)
 
-        month_end = date.fromisoformat(
-            _month_end_date_exclusive(month_key)
-        )
+        month_end = date.fromisoformat(_month_end_date_exclusive(month_key))
 
         clipped_start = max(month_start, start_date)
         clipped_end = min(month_end, end_date)
@@ -175,9 +165,7 @@ def _fetch_monthly_with_cache(
         if value is not None:
             cached[month_key] = value
         else:
-            missing.append(
-                (month_key, slice_start, slice_end)
-            )
+            missing.append((month_key, slice_start, slice_end))
 
     if missing:
 
@@ -197,19 +185,14 @@ def _fetch_monthly_with_cache(
 
         for block in fetched:
 
-            block_start = (
-                block.get("TimePeriod", {})
-                .get("Start", "")
-            )
+            block_start = block.get("TimePeriod", {}).get("Start", "")
 
             block_month = block_start[:7]
 
             if block_month not in slice_by_month:
                 continue
 
-            slice_start, slice_end = slice_by_month[
-                block_month
-            ]
+            slice_start, slice_end = slice_by_month[block_month]
 
             _cache_set(
                 _cache_key(
@@ -225,11 +208,7 @@ def _fetch_monthly_with_cache(
 
             cached[block_month] = block
 
-    return [
-        cached[month_key]
-        for month_key, _, _ in slices
-        if month_key in cached
-    ]
+    return [cached[month_key] for month_key, _, _ in slices if month_key in cached]
 
 
 def _paginate_cost_and_usage(
@@ -242,35 +221,25 @@ def _paginate_cost_and_usage(
         dict[str, Any],
     ] = {}
 
-    response = client.get_cost_and_usage(
-        **params
-    )
+    response = client.get_cost_and_usage(**params)
 
     _merge_groups_by_period(
         results_by_period,
         response,
     )
 
-    while (
-        response.get("NextPageToken")
-    ):
+    while response.get("NextPageToken"):
 
-        params["NextPageToken"] = (
-            response["NextPageToken"]
-        )
+        params["NextPageToken"] = response["NextPageToken"]
 
-        response = client.get_cost_and_usage(
-            **params
-        )
+        response = client.get_cost_and_usage(**params)
 
         _merge_groups_by_period(
             results_by_period,
             response,
         )
 
-    return list(
-        results_by_period.values()
-    )
+    return list(results_by_period.values())
 
 
 def _merge_groups_by_period(
@@ -287,13 +256,9 @@ def _merge_groups_by_period(
         [],
     ):
 
-        time_period = block[
-            "TimePeriod"
-        ]
+        time_period = block["TimePeriod"]
 
-        start = time_period[
-            "Start"
-        ]
+        start = time_period["Start"]
 
         if start not in results_by_period:
 
@@ -310,9 +275,7 @@ def _merge_groups_by_period(
                 ),
             }
 
-        results_by_period[
-            start
-        ]["Groups"].extend(
+        results_by_period[start]["Groups"].extend(
             block.get(
                 "Groups",
                 [],
@@ -341,14 +304,11 @@ def get_cost_usage(
                 "Start": range_start,
                 "End": range_end,
             },
-
             "Granularity": "MONTHLY",
-
             "Metrics": [
                 "UnblendedCost",
                 "UsageQuantity",
             ],
-
             "GroupBy": [
                 {
                     "Type": "DIMENSION",
@@ -404,13 +364,10 @@ def get_regions_with_costs(
                 "Start": range_start,
                 "End": range_end,
             },
-
             "Granularity": "MONTHLY",
-
             "Metrics": [
                 "UnblendedCost",
             ],
-
             "GroupBy": [
                 {
                     "Type": "DIMENSION",
@@ -502,9 +459,7 @@ def get_monthly_totals(
                 "Start": range_start,
                 "End": range_end,
             },
-
             "Granularity": "MONTHLY",
-
             "Metrics": [
                 "UnblendedCost",
             ],
@@ -544,16 +499,11 @@ def get_cost_forecast(
     prediction_interval_level: int | None = 80,
 ) -> dict[str, Any]:
 
-
     if not start or not end:
-        raise ValueError(
-            "Forecast start and end dates are required."
-        )
+        raise ValueError("Forecast start and end dates are required.")
 
     if start >= end:
-        raise ValueError(
-            "Forecast start date must be earlier than end date."
-        )
+        raise ValueError("Forecast start date must be earlier than end date.")
 
     if metric not in {
         "UNBLENDED_COST",
@@ -564,15 +514,11 @@ def get_cost_forecast(
         "USAGE_QUANTITY",
         "NORMALIZED_USAGE_AMOUNT",
     }:
-        raise ValueError(
-            f"Unsupported Cost Explorer forecast metric: {metric}"
-        )
+        raise ValueError(f"Unsupported Cost Explorer forecast metric: {metric}")
 
     if prediction_interval_level is not None:
         if not 51 <= prediction_interval_level <= 99:
-            raise ValueError(
-                "prediction_interval_level must be between 51 and 99."
-            )
+            raise ValueError("prediction_interval_level must be between 51 and 99.")
 
     client = get_client(
         "ce",
@@ -629,13 +575,9 @@ def get_cost_forecast(
         }
 
     if prediction_interval_level is not None:
-        params["PredictionIntervalLevel"] = (
-            prediction_interval_level
-        )
+        params["PredictionIntervalLevel"] = prediction_interval_level
 
-    response = client.get_cost_forecast(
-        **params
-    )
+    response = client.get_cost_forecast(**params)
 
     total = response.get(
         "Total",
@@ -655,12 +597,7 @@ def get_cost_forecast(
     ):
         total_amount = 0.0
 
-    unit = (
-        total.get(
-            "Unit"
-        )
-        or "USD"
-    )
+    unit = total.get("Unit") or "USD"
 
     results: list[dict[str, Any]] = []
 
@@ -673,23 +610,11 @@ def get_cost_forecast(
             {},
         )
 
-        mean = _safe_float(
-            item.get(
-                "MeanValue"
-            )
-        )
+        mean = _safe_float(item.get("MeanValue"))
 
-        lower = _safe_float(
-            item.get(
-                "PredictionIntervalLowerBound"
-            )
-        )
+        lower = _safe_float(item.get("PredictionIntervalLowerBound"))
 
-        upper = _safe_float(
-            item.get(
-                "PredictionIntervalUpperBound"
-            )
-        )
+        upper = _safe_float(item.get("PredictionIntervalUpperBound"))
 
         results.append(
             {
@@ -701,12 +626,8 @@ def get_cost_forecast(
                         )
                     )[:7]
                 ),
-                "start_date": period.get(
-                    "Start"
-                ),
-                "end_date": period.get(
-                    "End"
-                ),
+                "start_date": period.get("Start"),
+                "end_date": period.get("End"),
                 "forecast": round(
                     mean,
                     2,
@@ -738,9 +659,7 @@ def get_cost_forecast(
         ),
         "currency": unit,
         "metric": metric,
-        "prediction_interval_level": (
-            prediction_interval_level
-        ),
+        "prediction_interval_level": (prediction_interval_level),
         "period": {
             "start_date": start,
             "end_date": end,

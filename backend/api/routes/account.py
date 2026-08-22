@@ -30,9 +30,7 @@ def get_account():
         return discover_current_account()
 
     except Exception as exc:
-        logger.exception(
-            "AWS account discovery failed."
-        )
+        logger.exception("AWS account discovery failed.")
 
         raise HTTPException(
             status_code=503,
@@ -47,26 +45,18 @@ def account_health():
     """
 
     try:
-        account = (
-            discover_current_account()
-        )
+        account = discover_current_account()
 
         return {
             "status": "ok",
-            "account_id": account[
-                "account_id"
-            ],
+            "account_id": account["account_id"],
             "source": "sts",
         }
 
     except Exception as exc:
-        logger.exception(
-            "AWS account health check failed."
-        )
+        logger.exception("AWS account health check failed.")
 
         raise HTTPException(
             status_code=503,
-            detail=(
-                "AWS credentials unavailable."
-            ),
+            detail=("AWS credentials unavailable."),
         ) from exc

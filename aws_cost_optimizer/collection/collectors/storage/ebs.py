@@ -51,9 +51,7 @@ class EBSCollector(BaseCollector):
             self.region,
         )
 
-        self.metric_collector = CloudWatchMetricCollector(
-            self.cloudwatch
-        )
+        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
 
         self._metrics_batch_cache: dict[
             str,
@@ -89,15 +87,9 @@ class EBSCollector(BaseCollector):
         self,
     ) -> dict[str, Any]:
 
-        observations = self._profile_section(
-            "observations"
-        )
+        observations = self._profile_section("observations")
 
-        return self._dict(
-            observations.get(
-                "cloudwatch"
-            )
-        )
+        return self._dict(observations.get("cloudwatch"))
 
     # ------------------------------------------------------------------
     # Discovery
@@ -107,9 +99,7 @@ class EBSCollector(BaseCollector):
         self,
     ) -> List[Dict[str, Any]]:
 
-        paginator = self.ec2.get_paginator(
-            "describe_volumes"
-        )
+        paginator = self.ec2.get_paginator("describe_volumes")
 
         resources: List[Dict[str, Any]] = []
 
@@ -120,9 +110,7 @@ class EBSCollector(BaseCollector):
                 [],
             ):
 
-                volume_id = volume.get(
-                    "VolumeId"
-                )
+                volume_id = volume.get("VolumeId")
 
                 if not volume_id:
                     continue
@@ -135,9 +123,7 @@ class EBSCollector(BaseCollector):
                 )
 
         # CloudWatch is fetched once for all discovered volumes.
-        self._prefetch_metrics_batch(
-            resources
-        )
+        self._prefetch_metrics_batch(resources)
 
         return resources
 
@@ -150,17 +136,18 @@ class EBSCollector(BaseCollector):
         resources: List[Dict[str, Any]],
     ) -> None:
 
-        cloudwatch_profile = (
-            self._cloudwatch_profile()
-        )
+        cloudwatch_profile = self._cloudwatch_profile()
 
         if not cloudwatch_profile:
             return
 
-        if cloudwatch_profile.get(
-            "enabled",
-            True,
-        ) is False:
+        if (
+            cloudwatch_profile.get(
+                "enabled",
+                True,
+            )
+            is False
+        ):
             return
 
         metric_specs = cloudwatch_profile.get(
@@ -168,17 +155,17 @@ class EBSCollector(BaseCollector):
             [],
         )
 
-        if not isinstance(
-            metric_specs,
-            list,
-        ) or not metric_specs:
+        if (
+            not isinstance(
+                metric_specs,
+                list,
+            )
+            or not metric_specs
+        ):
             return
 
         namespace = str(
-            cloudwatch_profile.get(
-                "namespace"
-            )
-            or self.DEFAULT_NAMESPACE
+            cloudwatch_profile.get("namespace") or self.DEFAULT_NAMESPACE
         ).strip()
 
         requested_period = int(
@@ -189,9 +176,7 @@ class EBSCollector(BaseCollector):
         )
 
         try:
-            start, end = (
-                self.get_analysis_period()
-            )
+            start, end = self.get_analysis_period()
         except ValueError:
             return
 
@@ -214,13 +199,11 @@ class EBSCollector(BaseCollector):
         if not requests:
             return
 
-        self._metrics_batch_cache = (
-            self.metric_collector.collect_batch(
-                requests,
-                start=start,
-                end=end,
-                requested_period=requested_period,
-            )
+        self._metrics_batch_cache = self.metric_collector.collect_batch(
+            requests,
+            start=start,
+            end=end,
+            requested_period=requested_period,
         )
 
     def get_resource_id(
@@ -228,9 +211,7 @@ class EBSCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> str:
 
-        return str(
-            resource["id"]
-        )
+        return str(resource["id"])
 
     # ------------------------------------------------------------------
     # Identity
@@ -251,22 +232,10 @@ class EBSCollector(BaseCollector):
         )
 
         return {
-            "name":
-                tags.get(
-                    "Name"
-                )
-                or resource["id"],
-
-            "volume_id":
-                resource["id"],
-
-            "state":
-                volume.get(
-                    "State"
-                ),
-
-            "tags":
-                tags,
+            "name": tags.get("Name") or resource["id"],
+            "volume_id": resource["id"],
+            "state": volume.get("State"),
+            "tags": tags,
         }
 
     # ------------------------------------------------------------------
@@ -288,91 +257,35 @@ class EBSCollector(BaseCollector):
         )
 
         return {
-            "volume_id":
-                resource["id"],
-
-            "availability_zone":
+            "volume_id": resource["id"],
+            "availability_zone": volume.get("AvailabilityZone"),
+            "state": volume.get("State"),
+            "size_gib": volume.get("Size"),
+            "volume_type": volume.get("VolumeType"),
+            "iops": volume.get("Iops"),
+            "throughput_mibps": volume.get("Throughput"),
+            "encrypted": volume.get("Encrypted"),
+            "kms_key_id": volume.get("KmsKeyId"),
+            "snapshot_id": volume.get("SnapshotId"),
+            "create_time": (
+                volume["CreateTime"].isoformat() if volume.get("CreateTime") else None
+            ),
+            "attachments": attachments,
+            "attachment_count": len(attachments),
+            "attached": bool(attachments),
+            "instance_ids": sorted(
+                {
+                    attachment.get("instance_id")
+                    for attachment in attachments
+                    if attachment.get("instance_id")
+                }
+            ),
+            "tags": self._tags(
                 volume.get(
-                    "AvailabilityZone"
-                ),
-
-            "state":
-                volume.get(
-                    "State"
-                ),
-
-            "size_gib":
-                volume.get(
-                    "Size"
-                ),
-
-            "volume_type":
-                volume.get(
-                    "VolumeType"
-                ),
-
-            "iops":
-                volume.get(
-                    "Iops"
-                ),
-
-            "throughput_mibps":
-                volume.get(
-                    "Throughput"
-                ),
-
-            "encrypted":
-                volume.get(
-                    "Encrypted"
-                ),
-
-            "kms_key_id":
-                volume.get(
-                    "KmsKeyId"
-                ),
-
-            "snapshot_id":
-                volume.get(
-                    "SnapshotId"
-                ),
-
-            "create_time":
-                (
-                    volume["CreateTime"].isoformat()
-                    if volume.get("CreateTime")
-                    else None
-                ),
-
-            "attachments":
-                attachments,
-
-            "attachment_count":
-                len(attachments),
-
-            "attached":
-                bool(attachments),
-
-            "instance_ids":
-                sorted(
-                    {
-                        attachment.get(
-                            "instance_id"
-                        )
-                        for attachment
-                        in attachments
-                        if attachment.get(
-                            "instance_id"
-                        )
-                    }
-                ),
-
-            "tags":
-                self._tags(
-                    volume.get(
-                        "Tags",
-                        [],
-                    )
-                ),
+                    "Tags",
+                    [],
+                )
+            ),
         }
 
     @staticmethod
@@ -392,25 +305,10 @@ class EBSCollector(BaseCollector):
 
             attachments.append(
                 {
-                    "instance_id":
-                        attachment.get(
-                            "InstanceId"
-                        ),
-
-                    "device":
-                        attachment.get(
-                            "Device"
-                        ),
-
-                    "state":
-                        attachment.get(
-                            "State"
-                        ),
-
-                    "delete_on_termination":
-                        attachment.get(
-                            "DeleteOnTermination"
-                        ),
+                    "instance_id": attachment.get("InstanceId"),
+                    "device": attachment.get("Device"),
+                    "state": attachment.get("State"),
+                    "delete_on_termination": attachment.get("DeleteOnTermination"),
                 }
             )
 
@@ -435,22 +333,14 @@ class EBSCollector(BaseCollector):
         )
 
         return {
-            "instance_ids":
-                sorted(
-                    {
-                        attachment.get(
-                            "instance_id"
-                        )
-                        for attachment
-                        in attachments
-                        if attachment.get(
-                            "instance_id"
-                        )
-                    }
-                ),
-
-            "attachment_count":
-                len(attachments),
+            "instance_ids": sorted(
+                {
+                    attachment.get("instance_id")
+                    for attachment in attachments
+                    if attachment.get("instance_id")
+                }
+            ),
+            "attachment_count": len(attachments),
         }
 
     # ------------------------------------------------------------------
@@ -462,9 +352,7 @@ class EBSCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        cloudwatch_profile = (
-            self._cloudwatch_profile()
-        )
+        cloudwatch_profile = self._cloudwatch_profile()
 
         if not cloudwatch_profile:
             return {
@@ -484,10 +372,7 @@ class EBSCollector(BaseCollector):
             }
 
         namespace = str(
-            cloudwatch_profile.get(
-                "namespace"
-            )
-            or self.DEFAULT_NAMESPACE
+            cloudwatch_profile.get("namespace") or self.DEFAULT_NAMESPACE
         ).strip()
 
         requested_period = int(
@@ -498,60 +383,41 @@ class EBSCollector(BaseCollector):
         )
 
         try:
-            start, end = (
-                self.get_analysis_period()
-            )
+            start, end = self.get_analysis_period()
         except ValueError:
             return {
                 "status": "disabled",
                 "cloudwatch": {},
             }
 
-        results = (
-            self._metrics_batch_cache.get(
-                resource["id"],
-                [],
-            )
+        results = self._metrics_batch_cache.get(
+            resource["id"],
+            [],
         )
 
         metrics: Dict[str, Any] = {}
 
         for result in results:
 
-            metric_name = result.get(
-                "metric_name"
-            )
+            metric_name = result.get("metric_name")
 
             if metric_name:
-                metrics[
-                    metric_name
-                ] = result
+                metrics[metric_name] = result
 
         return {
             "status": "ok",
-
             "cloudwatch": {
-                "namespace":
-                    namespace,
-
-                "requested_period":
-                    requested_period,
-
-                "start":
-                    start.isoformat(),
-
-                "end":
-                    end.isoformat(),
-
+                "namespace": namespace,
+                "requested_period": requested_period,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
                 "dimensions": [
                     {
                         "Name": "VolumeId",
                         "Value": resource["id"],
                     }
                 ],
-
-                "metrics":
-                    metrics,
+                "metrics": metrics,
             },
         }
 
@@ -565,60 +431,27 @@ class EBSCollector(BaseCollector):
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        configuration = self._dict(
-            collected_resource.get(
-                "configuration"
-            )
-        )
+        configuration = self._dict(collected_resource.get("configuration"))
 
-        observations = self._dict(
-            collected_resource.get(
-                "observations"
-            )
-        )
+        observations = self._dict(collected_resource.get("observations"))
 
-        cloudwatch = self._dict(
-            observations.get(
-                "cloudwatch"
-            )
-        )
+        cloudwatch = self._dict(observations.get("cloudwatch"))
 
         return {
             "resource": {
-                "volume_id":
-                    configuration.get(
-                        "volume_id"
-                    ),
-
-                "volume_type":
-                    configuration.get(
-                        "volume_type"
-                    ),
-
-                "size_gib":
-                    configuration.get(
-                        "size_gib"
-                    ),
-
-                "attached":
-                    configuration.get(
-                        "attached"
-                    ),
-
-                "state":
-                    configuration.get(
-                        "state"
-                    ),
+                "volume_id": configuration.get("volume_id"),
+                "volume_type": configuration.get("volume_type"),
+                "size_gib": configuration.get("size_gib"),
+                "attached": configuration.get("attached"),
+                "state": configuration.get("state"),
             },
-
             "data_quality": {
-                "cloudwatch_available":
-                    bool(
-                        cloudwatch.get(
-                            "metrics",
-                            {},
-                        )
-                    ),
+                "cloudwatch_available": bool(
+                    cloudwatch.get(
+                        "metrics",
+                        {},
+                    )
+                ),
             },
         }
 
@@ -648,14 +481,11 @@ class EBSCollector(BaseCollector):
             return {}
 
         return {
-            tag["Key"]:
-                tag.get("Value")
+            tag["Key"]: tag.get("Value")
             for tag in tags
             if isinstance(
                 tag,
                 dict,
             )
-            and tag.get(
-                "Key"
-            )
+            and tag.get("Key")
         }

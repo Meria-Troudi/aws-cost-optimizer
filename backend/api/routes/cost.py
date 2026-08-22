@@ -23,7 +23,6 @@ from backend.api.services.dashboard_service import (
     DashboardService,
 )
 
-
 router = APIRouter(
     prefix="/api/cost",
     tags=["Cost"],
@@ -48,16 +47,10 @@ def list_regions():
                 "Regions",
                 [],
             )
-            if region.get(
-                "RegionName"
-            )
+            if region.get("RegionName")
         ]
 
-        return {
-            "regions": sorted(
-                regions
-            )
-        }
+        return {"regions": sorted(regions)}
 
     except Exception as exc:
 
@@ -94,7 +87,8 @@ def get_cost_explorer(
             dimension=dimension,
             region=(
                 None
-                if region in (
+                if region
+                in (
                     None,
                     "",
                     "all",
@@ -120,9 +114,7 @@ def get_cost_explorer(
 
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Unable to retrieve Cost Explorer data."
-            ),
+            detail=("Unable to retrieve Cost Explorer data."),
         ) from exc
 
 
@@ -151,7 +143,8 @@ def get_cost_explorer_service(
             service=service,
             region=(
                 None
-                if region in (
+                if region
+                in (
                     None,
                     "",
                     "all",
@@ -177,7 +170,5 @@ def get_cost_explorer_service(
 
         raise HTTPException(
             status_code=502,
-            detail=(
-                "Unable to retrieve service cost details."
-            ),
+            detail=("Unable to retrieve service cost details."),
         ) from exc

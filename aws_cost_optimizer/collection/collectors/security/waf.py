@@ -96,11 +96,7 @@ class WAFCollector(BaseCollector):
             self.region,
         )
 
-        self.metric_collector = (
-            CloudWatchMetricCollector(
-                self.cloudwatch
-            )
-        )
+        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
 
         self._metrics_batch_cache: Dict[
             str,
@@ -121,30 +117,25 @@ class WAFCollector(BaseCollector):
             {},
         )
 
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
-        )
+        return value if isinstance(value, dict) else {}
 
     def _cloudwatch_profile(
         self,
     ) -> Dict[str, Any]:
 
-        return self._profile_section(
-            "observations"
-        ).get(
-            "cloudwatch",
-            {},
-        ) or {}
+        return (
+            self._profile_section("observations").get(
+                "cloudwatch",
+                {},
+            )
+            or {}
+        )
 
     def _analyzer_profile(
         self,
     ) -> Dict[str, Any]:
 
-        return self._profile_section(
-            "analyzer_config"
-        )
+        return self._profile_section("analyzer_config")
 
     def _metric_specs(
         self,
@@ -152,13 +143,9 @@ class WAFCollector(BaseCollector):
         defaults: tuple[str, ...],
     ) -> List[Dict[str, Any]]:
 
-        groups = self._profile_section(
-            "metric_groups"
-        )
+        groups = self._profile_section("metric_groups")
 
-        configured = groups.get(
-            group_name
-        )
+        configured = groups.get(group_name)
 
         if not isinstance(
             configured,
@@ -170,9 +157,7 @@ class WAFCollector(BaseCollector):
 
         for name in configured:
 
-            text = str(
-                name
-            ).strip()
+            text = str(name).strip()
 
             if not text:
                 continue
@@ -195,9 +180,7 @@ class WAFCollector(BaseCollector):
         self,
     ) -> List[Dict[str, Any]]:
 
-        scopes = self._profile_section(
-            "scopes"
-        ).get(
+        scopes = self._profile_section("scopes").get(
             "enabled",
             ["REGIONAL"],
         )
@@ -208,15 +191,11 @@ class WAFCollector(BaseCollector):
         ):
             scopes = ["REGIONAL"]
 
-        resources: List[
-            Dict[str, Any]
-        ] = []
+        resources: List[Dict[str, Any]] = []
 
         for scope in scopes:
 
-            scope = str(
-                scope
-            ).upper().strip()
+            scope = str(scope).upper().strip()
 
             if scope == "REGIONAL":
 
@@ -241,9 +220,7 @@ class WAFCollector(BaseCollector):
                     )
                 )
 
-        self._prefetch_metrics(
-            resources
-        )
+        self._prefetch_metrics(resources)
 
         return resources
 
@@ -263,9 +240,7 @@ class WAFCollector(BaseCollector):
             )
         )
 
-        resources: List[
-            Dict[str, Any]
-        ] = []
+        resources: List[Dict[str, Any]] = []
 
         next_marker: Optional[str] = None
 
@@ -277,30 +252,20 @@ class WAFCollector(BaseCollector):
             }
 
             if next_marker:
-                kwargs["NextMarker"] = (
-                    next_marker
-                )
+                kwargs["NextMarker"] = next_marker
 
-            response = client.list_web_acls(
-                **kwargs
-            )
+            response = client.list_web_acls(**kwargs)
 
             for summary in response.get(
                 "WebACLs",
                 [],
             ):
 
-                name = summary.get(
-                    "Name"
-                )
+                name = summary.get("Name")
 
-                acl_id = summary.get(
-                    "Id"
-                )
+                acl_id = summary.get("Id")
 
-                arn = summary.get(
-                    "ARN"
-                )
+                arn = summary.get("ARN")
 
                 if not name or not acl_id:
                     continue
@@ -319,57 +284,27 @@ class WAFCollector(BaseCollector):
                             "scope": scope,
                             "region": region,
                             "raw": summary,
-                            "collection_error":
-                                str(exc),
+                            "collection_error": str(exc),
                         }
                     )
 
                     continue
 
-                web_acl = (
-                    acl_response.get(
-                        "WebACL"
-                    )
-                    or {}
-                )
+                web_acl = acl_response.get("WebACL") or {}
 
                 resources.append(
                     {
-                        "id":
-                            arn
-                            or web_acl.get(
-                                "ARN"
-                            )
-                            or acl_id,
-
-                        "name":
-                            name,
-
-                        "web_acl_id":
-                            acl_id,
-
-                        "scope":
-                            scope,
-
-                        "region":
-                            region,
-
-                        "arn":
-                            (
-                                web_acl.get(
-                                    "ARN"
-                                )
-                                or arn
-                            ),
-
-                        "raw":
-                            web_acl,
+                        "id": arn or web_acl.get("ARN") or acl_id,
+                        "name": name,
+                        "web_acl_id": acl_id,
+                        "scope": scope,
+                        "region": region,
+                        "arn": (web_acl.get("ARN") or arn),
+                        "raw": web_acl,
                     }
                 )
 
-            next_marker = response.get(
-                "NextMarker"
-            )
+            next_marker = response.get("NextMarker")
 
             if not next_marker:
                 break
@@ -385,9 +320,7 @@ class WAFCollector(BaseCollector):
         resources: List[Dict[str, Any]],
     ) -> None:
 
-        cloudwatch_profile = (
-            self._cloudwatch_profile()
-        )
+        cloudwatch_profile = self._cloudwatch_profile()
 
         if (
             not cloudwatch_profile
@@ -401,9 +334,7 @@ class WAFCollector(BaseCollector):
 
         try:
 
-            start, end = (
-                self.get_analysis_period()
-            )
+            start, end = self.get_analysis_period()
 
         except ValueError:
 
@@ -433,41 +364,20 @@ class WAFCollector(BaseCollector):
             self.DEFAULT_RULE_METRICS,
         )
 
-        requests: List[
-            Dict[str, Any]
-        ] = []
+        requests: List[Dict[str, Any]] = []
 
         for resource in resources:
 
-            web_acl = (
-                resource.get(
-                    "raw"
-                )
-                or {}
-            )
+            web_acl = resource.get("raw") or {}
 
-            visibility = (
-                web_acl.get(
-                    "VisibilityConfig"
-                )
-                or {}
-            )
+            visibility = web_acl.get("VisibilityConfig") or {}
 
-            web_acl_metric_name = (
-                visibility.get(
-                    "MetricName"
-                )
-                or resource.get(
-                    "name"
-                )
-            )
+            web_acl_metric_name = visibility.get("MetricName") or resource.get("name")
 
             if not web_acl_metric_name:
                 continue
 
-            scope = resource.get(
-                "scope"
-            )
+            scope = resource.get("scope")
 
             dimensions = []
 
@@ -476,39 +386,24 @@ class WAFCollector(BaseCollector):
                 dimensions.append(
                     {
                         "Name": "Region",
-                        "Value": resource.get(
-                            "region"
-                        )
-                        or self.region,
+                        "Value": resource.get("region") or self.region,
                     }
                 )
 
             dimensions.append(
                 {
                     "Name": "WebACL",
-                    "Value":
-                        str(
-                            web_acl_metric_name
-                        ),
+                    "Value": str(web_acl_metric_name),
                 }
             )
 
             requests.append(
                 {
-                    "resource_key":
-                        resource["id"],
-
-                    "metric_group":
-                        "acl",
-
-                    "namespace":
-                        namespace,
-
-                    "dimensions":
-                        dimensions,
-
-                    "metric_specs":
-                        acl_specs,
+                    "resource_key": resource["id"],
+                    "metric_group": "acl",
+                    "namespace": namespace,
+                    "dimensions": dimensions,
+                    "metric_specs": acl_specs,
                 }
             )
 
@@ -526,102 +421,60 @@ class WAFCollector(BaseCollector):
                 ):
                     continue
 
-                rule_visibility = (
-                    rule.get(
-                        "VisibilityConfig"
-                    )
-                    or {}
-                )
+                rule_visibility = rule.get("VisibilityConfig") or {}
 
-                rule_metric_name = (
-                    rule_visibility.get(
-                        "MetricName"
-                    )
-                    or rule.get(
-                        "Name"
-                    )
-                )
+                rule_metric_name = rule_visibility.get("MetricName") or rule.get("Name")
 
                 if not rule_metric_name:
                     continue
 
-                rule_dimensions = list(
-                    dimensions
-                )
+                rule_dimensions = list(dimensions)
 
                 rule_dimensions.append(
                     {
                         "Name": "Rule",
-                        "Value":
-                            str(
-                                rule_metric_name
-                            ),
+                        "Value": str(rule_metric_name),
                     }
                 )
 
                 requests.append(
                     {
-                        "resource_key":
-                            resource["id"],
-
-                        "metric_group":
-                            "rule",
-
-                        "rule_metric_name":
-                            str(
-                                rule_metric_name
-                            ),
-
-                        "namespace":
-                            namespace,
-
-                        "dimensions":
-                            rule_dimensions,
-
-                        "metric_specs":
-                            rule_specs,
+                        "resource_key": resource["id"],
+                        "metric_group": "rule",
+                        "rule_metric_name": str(rule_metric_name),
+                        "namespace": namespace,
+                        "dimensions": rule_dimensions,
+                        "metric_specs": rule_specs,
                     }
                 )
 
         if not requests:
             return
 
-        raw_results = (
-            self.metric_collector.collect_batch(
-                requests=[
-                    {
-                        "resource_key":
-                            request["resource_key"]
-                            if request.get(
-                                "metric_group"
-                            ) == "acl"
-                            else (
-                                f'{request["resource_key"]}'
-                                f'::rule::'
-                                f'{request.get("rule_metric_name")}'
-                            ),
-
-                        "namespace":
-                            request["namespace"],
-
-                        "dimensions":
-                            request["dimensions"],
-
-                        "metric_specs":
-                            request["metric_specs"],
-                    }
-                    for request in requests
-                ],
-                start=start,
-                end=end,
-                requested_period=requested_period,
-            )
+        raw_results = self.metric_collector.collect_batch(
+            requests=[
+                {
+                    "resource_key": (
+                        request["resource_key"]
+                        if request.get("metric_group") == "acl"
+                        else (
+                            f'{request["resource_key"]}'
+                            f"::rule::"
+                            f'{request.get("rule_metric_name")}'
+                        )
+                    ),
+                    "namespace": request["namespace"],
+                    "dimensions": request["dimensions"],
+                    "metric_specs": request["metric_specs"],
+                }
+                for request in requests
+            ],
+            start=start,
+            end=end,
+            requested_period=requested_period,
         )
 
-        self._metrics_batch_cache = {
-            "results":
-                raw_results
-        }
+        self._metrics_batch_cache = {"results": raw_results}
 
     # ------------------------------------------------------------------
     # Identity
@@ -632,64 +485,23 @@ class WAFCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> str:
 
-        return str(
-            resource.get(
-                "id"
-            )
-        )
+        return str(resource.get("id"))
 
     def collect_identity(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        web_acl = resource.get(
-            "raw"
-        ) or {}
+        web_acl = resource.get("raw") or {}
 
         return {
-            "name":
-                web_acl.get(
-                    "Name"
-                )
-                or resource.get(
-                    "name"
-                ),
-
-            "web_acl_id":
-                resource.get(
-                    "web_acl_id"
-                ),
-
-            "arn":
-                (
-                    web_acl.get(
-                        "ARN"
-                    )
-                    or resource.get(
-                        "arn"
-                    )
-                ),
-
-            "scope":
-                resource.get(
-                    "scope"
-                ),
-
-            "region":
-                resource.get(
-                    "region"
-                ),
-
-            "description":
-                web_acl.get(
-                    "Description"
-                ),
-
-            "tags":
-                self._tags(
-                    resource
-                ),
+            "name": web_acl.get("Name") or resource.get("name"),
+            "web_acl_id": resource.get("web_acl_id"),
+            "arn": (web_acl.get("ARN") or resource.get("arn")),
+            "scope": resource.get("scope"),
+            "region": resource.get("region"),
+            "description": web_acl.get("Description"),
+            "tags": self._tags(resource),
         }
 
     # ------------------------------------------------------------------
@@ -701,9 +513,7 @@ class WAFCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        web_acl = resource.get(
-            "raw"
-        ) or {}
+        web_acl = resource.get("raw") or {}
 
         rules = [
             rule
@@ -735,280 +545,102 @@ class WAFCollector(BaseCollector):
 
         for rule in rules:
 
-            detail = (
-                self._normalize_rule(
-                    rule
-                )
-            )
+            detail = self._normalize_rule(rule)
 
-            rule_details.append(
-                detail
-            )
+            rule_details.append(detail)
 
-            statement = (
-                rule.get(
-                    "Statement"
-                )
-                or {}
-            )
+            statement = rule.get("Statement") or {}
 
-            statement_info = (
-                self._inspect_statement(
-                    statement
-                )
-            )
+            statement_info = self._inspect_statement(statement)
 
-            if statement_info[
-                "managed_rule_group"
-            ]:
-                managed_rule_groups.append(
-                    statement_info[
-                        "managed_rule_group"
-                    ]
-                )
+            if statement_info["managed_rule_group"]:
+                managed_rule_groups.append(statement_info["managed_rule_group"])
 
                 name = str(
-                    statement_info[
-                        "managed_rule_group"
-                    ].get(
-                        "name"
-                    )
-                    or ""
+                    statement_info["managed_rule_group"].get("name") or ""
                 ).lower()
 
                 if "botcontrol" in name:
-                    premium_features.add(
-                        "bot_control"
-                    )
+                    premium_features.add("bot_control")
 
-                if (
-                    "atpruleset" in name
-                    or "accounttakeover" in name
-                ):
-                    premium_features.add(
-                        "account_takeover_prevention"
-                    )
+                if "atpruleset" in name or "accounttakeover" in name:
+                    premium_features.add("account_takeover_prevention")
 
-                if (
-                    "acfpruleset" in name
-                    or "accountcreation" in name
-                ):
-                    premium_features.add(
-                        "account_creation_fraud_prevention"
-                    )
+                if "acfpruleset" in name or "accountcreation" in name:
+                    premium_features.add("account_creation_fraud_prevention")
 
-            elif statement_info[
-                "rule_group"
-            ]:
+            elif statement_info["rule_group"]:
 
-                rule_groups.append(
-                    statement_info[
-                        "rule_group"
-                    ]
-                )
+                rule_groups.append(statement_info["rule_group"])
 
             else:
 
-                custom_rules.append(
-                    rule.get(
-                        "Name"
-                    )
-                )
+                custom_rules.append(rule.get("Name"))
 
-            if statement_info[
-                "captcha"
-            ]:
+            if statement_info["captcha"]:
 
                 captcha_rule_count += 1
-                premium_features.add(
-                    "captcha"
-                )
+                premium_features.add("captcha")
 
-            if statement_info[
-                "challenge"
-            ]:
+            if statement_info["challenge"]:
 
                 challenge_rule_count += 1
-                premium_features.add(
-                    "challenge"
-                )
+                premium_features.add("challenge")
 
-            body_limits = (
-                self._find_body_limits(
-                    statement
-                )
-            )
+            body_limits = self._find_body_limits(statement)
 
-            body_inspection_limits.extend(
-                body_limits
-            )
+            body_inspection_limits.extend(body_limits)
 
-        association_config = (
-            web_acl.get(
-                "AssociationConfig"
-            )
-            or {}
-        )
+        association_config = web_acl.get("AssociationConfig") or {}
 
-        visibility = (
-            web_acl.get(
-                "VisibilityConfig"
-            )
-            or {}
-        )
+        visibility = web_acl.get("VisibilityConfig") or {}
 
-        capacity = self._number(
-            web_acl.get(
-                "Capacity"
-            )
-        )
+        capacity = self._number(web_acl.get("Capacity"))
 
-        associations = (
-            self._collect_associations(
-                resource
-            )
-        )
+        associations = self._collect_associations(resource)
 
-        logging = (
-            self._collect_logging(
-                resource
-            )
-        )
+        logging = self._collect_logging(resource)
 
         return {
-            "web_acl_id":
-                resource.get(
-                    "web_acl_id"
+            "web_acl_id": resource.get("web_acl_id"),
+            "name": resource.get("name"),
+            "arn": resource.get("arn"),
+            "scope": resource.get("scope"),
+            "default_action": self._normalize_default_action(
+                web_acl.get("DefaultAction")
+            ),
+            "rule_count": len(rules),
+            "custom_rule_count": len([rule for rule in custom_rules if rule]),
+            "managed_rule_group_count": len(managed_rule_groups),
+            "customer_rule_group_count": len(rule_groups),
+            "managed_rule_groups": managed_rule_groups,
+            "rule_groups": rule_groups,
+            "custom_rules": [value for value in custom_rules if value],
+            "rules": rule_details,
+            "capacity_wcu": capacity,
+            "capacity_over_1500": (capacity is not None and capacity > 1500),
+            "visibility": visibility,
+            "sampled_requests_enabled": visibility.get("SampledRequestsEnabled"),
+            "cloudwatch_metrics_enabled": visibility.get("CloudWatchMetricsEnabled"),
+            "association_config": self._normalize_association_config(
+                association_config
+            ),
+            "associations": associations,
+            "association_count": len(associations),
+            "logging": logging,
+            "logging_enabled": logging.get(
+                "enabled",
+                False,
+            ),
+            "premium_features": sorted(premium_features),
+            "captcha_rule_count": captcha_rule_count,
+            "challenge_rule_count": challenge_rule_count,
+            "body_inspection": {
+                "configured_limits_kb": body_inspection_limits,
+                "maximum_configured_kb": (
+                    max(body_inspection_limits) if body_inspection_limits else None
                 ),
-
-            "name":
-                resource.get(
-                    "name"
-                ),
-
-            "arn":
-                resource.get(
-                    "arn"
-                ),
-
-            "scope":
-                resource.get(
-                    "scope"
-                ),
-
-            "default_action":
-                self._normalize_default_action(
-                    web_acl.get(
-                        "DefaultAction"
-                    )
-                ),
-
-            "rule_count":
-                len(rules),
-
-            "custom_rule_count":
-                len(
-                    [
-                        rule
-                        for rule in custom_rules
-                        if rule
-                    ]
-                ),
-
-            "managed_rule_group_count":
-                len(
-                    managed_rule_groups
-                ),
-
-            "customer_rule_group_count":
-                len(
-                    rule_groups
-                ),
-
-            "managed_rule_groups":
-                managed_rule_groups,
-
-            "rule_groups":
-                rule_groups,
-
-            "custom_rules":
-                [
-                    value
-                    for value
-                    in custom_rules
-                    if value
-                ],
-
-            "rules":
-                rule_details,
-
-            "capacity_wcu":
-                capacity,
-
-            "capacity_over_1500":
-                (
-                    capacity is not None
-                    and capacity > 1500
-                ),
-
-            "visibility":
-                visibility,
-
-            "sampled_requests_enabled":
-                visibility.get(
-                    "SampledRequestsEnabled"
-                ),
-
-            "cloudwatch_metrics_enabled":
-                visibility.get(
-                    "CloudWatchMetricsEnabled"
-                ),
-
-            "association_config":
-                self._normalize_association_config(
-                    association_config
-                ),
-
-            "associations":
-                associations,
-
-            "association_count":
-                len(associations),
-
-            "logging":
-                logging,
-
-            "logging_enabled":
-                logging.get(
-                    "enabled",
-                    False,
-                ),
-
-            "premium_features":
-                sorted(
-                    premium_features
-                ),
-
-            "captcha_rule_count":
-                captcha_rule_count,
-
-            "challenge_rule_count":
-                challenge_rule_count,
-
-            "body_inspection":
-                {
-                    "configured_limits_kb":
-                        body_inspection_limits,
-
-                    "maximum_configured_kb":
-                        (
-                            max(
-                                body_inspection_limits
-                            )
-                            if body_inspection_limits
-                            else None
-                        ),
-                },
+            },
         }
 
     # ------------------------------------------------------------------
@@ -1021,22 +653,17 @@ class WAFCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         return {
-            "protected_resources":
-                self._collect_associations(
-                    resource
-                ),
-
-            "rules":
-                (
-                    resource.get(
-                        "raw",
-                        {},
-                    ).get(
-                        "Rules",
-                        [],
-                    )
-                    or []
-                ),
+            "protected_resources": self._collect_associations(resource),
+            "rules": (
+                resource.get(
+                    "raw",
+                    {},
+                ).get(
+                    "Rules",
+                    [],
+                )
+                or []
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -1050,12 +677,8 @@ class WAFCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         return {
-            "status":
-                "not_applicable",
-
-            "reason":
-                "AWS WAF optimization does not require "
-                "VPC network topology.",
+            "status": "not_applicable",
+            "reason": "AWS WAF optimization does not require " "VPC network topology.",
         }
 
     # ------------------------------------------------------------------
@@ -1068,175 +691,81 @@ class WAFCollector(BaseCollector):
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        identity = (
-            collected_resource.get(
-                "identity"
-            )
-            or {}
-        )
+        identity = collected_resource.get("identity") or {}
 
-        configuration = (
-            collected_resource.get(
-                "configuration"
-            )
-            or {}
-        )
+        configuration = collected_resource.get("configuration") or {}
 
-        observations = (
-            collected_resource.get(
-                "observations"
-            )
-            or {}
-        )
+        observations = collected_resource.get("observations") or {}
 
-        relationships = (
-            collected_resource.get(
-                "relationships"
-            )
-            or {}
-        )
+        relationships = collected_resource.get("relationships") or {}
 
         return {
             "resource": {
-                "id":
-                    resource.get(
-                        "id"
-                    ),
-
-                "name":
-                    identity.get(
-                        "name"
-                    ),
-
-                "scope":
-                    identity.get(
-                        "scope"
-                    ),
-
-                "region":
-                    identity.get(
-                        "region"
-                    ),
+                "id": resource.get("id"),
+                "name": identity.get("name"),
+                "scope": identity.get("scope"),
+                "region": identity.get("region"),
             },
-
             "configuration": {
                 key: value
-                for key, value
-                in configuration.items()
-                if key not in {
+                for key, value in configuration.items()
+                if key
+                not in {
                     "rules",
                     "managed_rule_groups",
                     "rule_groups",
                     "custom_rules",
                 }
             },
-
             "rules": {
-                "count":
-                    configuration.get(
-                        "rule_count"
-                    ),
-
-                "managed_rule_group_count":
-                    configuration.get(
-                        "managed_rule_group_count"
-                    ),
-
-                "customer_rule_group_count":
-                    configuration.get(
-                        "customer_rule_group_count"
-                    ),
-
-                "rules":
-                    configuration.get(
-                        "rules",
-                        [],
-                    ),
-
-                "managed_rule_groups":
-                    configuration.get(
-                        "managed_rule_groups",
-                        [],
-                    ),
-
-                "rule_groups":
-                    configuration.get(
-                        "rule_groups",
-                        [],
-                    ),
+                "count": configuration.get("rule_count"),
+                "managed_rule_group_count": configuration.get(
+                    "managed_rule_group_count"
+                ),
+                "customer_rule_group_count": configuration.get(
+                    "customer_rule_group_count"
+                ),
+                "rules": configuration.get(
+                    "rules",
+                    [],
+                ),
+                "managed_rule_groups": configuration.get(
+                    "managed_rule_groups",
+                    [],
+                ),
+                "rule_groups": configuration.get(
+                    "rule_groups",
+                    [],
+                ),
             },
-
             "relationships": {
-                "protected_resource_count":
-                    configuration.get(
-                        "association_count"
-                    ),
-
-                "protected_resources":
-                    relationships.get(
-                        "protected_resources",
-                        [],
-                    ),
+                "protected_resource_count": configuration.get("association_count"),
+                "protected_resources": relationships.get(
+                    "protected_resources",
+                    [],
+                ),
             },
-
             "features": {
-                "premium_features":
-                    configuration.get(
-                        "premium_features",
-                        [],
-                    ),
-
-                "captcha_rule_count":
-                    configuration.get(
-                        "captcha_rule_count"
-                    ),
-
-                "challenge_rule_count":
-                    configuration.get(
-                        "challenge_rule_count"
-                    ),
-
-                "logging_enabled":
-                    configuration.get(
-                        "logging_enabled"
-                    ),
-
-                "body_inspection":
-                    configuration.get(
-                        "body_inspection",
-                        {},
-                    ),
+                "premium_features": configuration.get(
+                    "premium_features",
+                    [],
+                ),
+                "captcha_rule_count": configuration.get("captcha_rule_count"),
+                "challenge_rule_count": configuration.get("challenge_rule_count"),
+                "logging_enabled": configuration.get("logging_enabled"),
+                "body_inspection": configuration.get(
+                    "body_inspection",
+                    {},
+                ),
             },
-
-            "traffic": self._build_traffic_summary(
-                observations
-            ),
-
+            "traffic": self._build_traffic_summary(observations),
             "data_quality": {
-                "cloudwatch_available":
-                    bool(
-                        (
-                            observations.get(
-                                "cloudwatch"
-                            )
-                            or {}
-                        ).get(
-                            "metrics"
-                        )
-                    ),
-
-                "configuration_available":
-                    bool(
-                        configuration
-                    ),
-
-                "relationship_available":
-                    bool(
-                        relationships
-                    ),
-
-                "topology_available":
-                    False,
+                "cloudwatch_available": bool(
+                    (observations.get("cloudwatch") or {}).get("metrics")
+                ),
+                "configuration_available": bool(configuration),
+                "relationship_available": bool(relationships),
+                "topology_available": False,
             },
         }
 
@@ -1249,9 +778,7 @@ class WAFCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        cloudwatch_profile = (
-            self._cloudwatch_profile()
-        )
+        cloudwatch_profile = self._cloudwatch_profile()
 
         if (
             not cloudwatch_profile
@@ -1262,48 +789,25 @@ class WAFCollector(BaseCollector):
             is False
         ):
             return {
-                "status":
-                    "disabled",
-
-                "cloudwatch":
-                    {
-                        "metrics":
-                            {}
-                    },
+                "status": "disabled",
+                "cloudwatch": {"metrics": {}},
             }
 
         try:
 
-            start, end = (
-                self.get_analysis_period()
-            )
+            start, end = self.get_analysis_period()
 
         except ValueError as exc:
 
             return {
-                "status":
-                    "error",
-
-                "error":
-                    str(exc),
-
-                "cloudwatch":
-                    {
-                        "metrics":
-                            {}
-                    },
+                "status": "error",
+                "error": str(exc),
+                "cloudwatch": {"metrics": {}},
             }
 
-        cache = (
-            self._metrics_batch_cache.get(
-                "results",
-                {}
-            )
-        )
+        cache = self._metrics_batch_cache.get("results", {})
 
-        resource_id = resource.get(
-            "id"
-        )
+        resource_id = resource.get("id")
 
         acl_results = cache.get(
             resource_id,
@@ -1317,152 +821,80 @@ class WAFCollector(BaseCollector):
 
         for result in acl_results:
 
-            metric_name = (
-                result.get(
-                    "metric_name"
-                )
-            )
+            metric_name = result.get("metric_name")
 
             if metric_name:
-                stored = dict(
-                    result
-                )
+                stored = dict(result)
 
-                stored[
-                    "metric_scope"
-                ] = "web_acl"
+                stored["metric_scope"] = "web_acl"
 
-                stored[
-                    "original_metric_name"
-                ] = metric_name
+                stored["original_metric_name"] = metric_name
 
-                stored[
-                    "metric_name"
-                ] = (
-                    f"acl:{metric_name}"
-                )
+                stored["metric_name"] = f"acl:{metric_name}"
 
-                metrics[
-                    f"acl:{metric_name}"
-                ] = stored
+                metrics[f"acl:{metric_name}"] = stored
 
         rule_results = {}
 
         for key, values in cache.items():
 
-            if not str(
-                key
-            ).startswith(
-                f"{resource_id}::rule::"
-            ):
+            if not str(key).startswith(f"{resource_id}::rule::"):
                 continue
 
-            rule_metric_name = str(
-                key
-            ).split(
+            rule_metric_name = str(key).split(
                 "::rule::",
                 1,
             )[-1]
 
-            rule_results[
-                rule_metric_name
-            ] = []
+            rule_results[rule_metric_name] = []
 
             for result in values:
 
-                metric_name = result.get(
-                    "metric_name"
-                )
+                metric_name = result.get("metric_name")
 
                 if not metric_name:
                     continue
 
-                stored = dict(
-                    result
-                )
+                stored = dict(result)
 
-                stored[
-                    "metric_scope"
-                ] = "rule"
+                stored["metric_scope"] = "rule"
 
-                stored[
-                    "rule_metric_name"
-                ] = rule_metric_name
+                stored["rule_metric_name"] = rule_metric_name
 
-                stored[
-                    "original_metric_name"
-                ] = metric_name
+                stored["original_metric_name"] = metric_name
 
-                stored[
-                    "metric_name"
-                ] = (
-                    f"rule:{rule_metric_name}:"
-                    f"{metric_name}"
-                )
+                stored["metric_name"] = f"rule:{rule_metric_name}:" f"{metric_name}"
 
-                metrics[
-                    stored[
-                        "metric_name"
-                    ]
-                ] = stored
+                metrics[stored["metric_name"]] = stored
 
-                rule_results[
-                    rule_metric_name
-                ].append(
-                    stored
-                )
+                rule_results[rule_metric_name].append(stored)
 
         return {
-            "status":
-                "ok",
-
+            "status": "ok",
             "cloudwatch": {
-                "namespace":
-                    cloudwatch_profile.get(
-                        "namespace",
-                        self.DEFAULT_NAMESPACE,
-                    ),
-
-                "requested_period":
-                    int(
-                        cloudwatch_profile.get(
-                            "period",
-                            self.DEFAULT_PERIOD,
-                        )
-                    ),
-
-                "start":
-                    start.isoformat(),
-
-                "end":
-                    end.isoformat(),
-
-                "metrics":
-                    metrics,
-
-                "acl_metrics":
-                    {
-                        key: value
-                        for key, value
-                        in metrics.items()
-                        if key.startswith(
-                            "acl:"
-                        )
-                    },
-
-                "rule_metrics":
-                    rule_results,
-            },
-
-            "derived":
-                self._build_traffic_summary(
-                    {
-                        "cloudwatch": {
-                            "metrics":
-                                metrics
-                        }
-                    }
+                "namespace": cloudwatch_profile.get(
+                    "namespace",
+                    self.DEFAULT_NAMESPACE,
                 ),
+                "requested_period": int(
+                    cloudwatch_profile.get(
+                        "period",
+                        self.DEFAULT_PERIOD,
+                    )
+                ),
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "metrics": metrics,
+                "acl_metrics": {
+                    key: value
+                    for key, value in metrics.items()
+                    if key.startswith("acl:")
+                },
+                "rule_metrics": rule_results,
+            },
+            "derived": self._build_traffic_summary(
+                {"cloudwatch": {"metrics": metrics}}
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -1474,27 +906,19 @@ class WAFCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> List[str]:
 
-        scope = resource.get(
-            "scope"
-        )
+        scope = resource.get("scope")
 
         if scope != "REGIONAL":
             return []
 
-        web_acl_id = resource.get(
-            "web_acl_id"
-        )
+        web_acl_id = resource.get("web_acl_id")
 
         if not web_acl_id:
             return []
 
         try:
 
-            response = (
-                self.waf.list_resources_for_web_acl(
-                    WebACLId=web_acl_id
-                )
-            )
+            response = self.waf.list_resources_for_web_acl(WebACLId=web_acl_id)
 
         except Exception:
 
@@ -1508,11 +932,7 @@ class WAFCollector(BaseCollector):
             or []
         )
 
-        return [
-            str(value)
-            for value in values
-            if value
-        ]
+        return [str(value) for value in values if value]
 
     # ------------------------------------------------------------------
     # Logging
@@ -1523,9 +943,7 @@ class WAFCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        arn = resource.get(
-            "arn"
-        )
+        arn = resource.get("arn")
 
         if not arn:
             return {
@@ -1534,11 +952,7 @@ class WAFCollector(BaseCollector):
 
         try:
 
-            response = (
-                self.waf.get_logging_configuration(
-                    ResourceArn=arn
-                )
-            )
+            response = self.waf.get_logging_configuration(ResourceArn=arn)
 
         except Exception:
 
@@ -1546,11 +960,7 @@ class WAFCollector(BaseCollector):
                 "enabled": False,
             }
 
-        config = (
-            response.get(
-                "LoggingConfiguration"
-            )
-        )
+        config = response.get("LoggingConfiguration")
 
         if not isinstance(
             config,
@@ -1562,46 +972,28 @@ class WAFCollector(BaseCollector):
 
         return {
             "enabled": True,
-
-            "destination_count":
-                len(
-                    config.get(
-                        "LogDestinationConfigs",
-                        [],
-                    )
-                    or []
-                ),
-
-            "destinations":
-                list(
-                    config.get(
-                        "LogDestinationConfigs",
-                        [],
-                    )
-                    or []
-                ),
-
-            "logging_filter":
+            "destination_count": len(
                 config.get(
-                    "LoggingFilter"
-                ),
-
-            "redacted_fields":
-                config.get(
-                    "RedactedFields",
+                    "LogDestinationConfigs",
                     [],
                 )
-                or [],
-
-            "log_scope":
+                or []
+            ),
+            "destinations": list(
                 config.get(
-                    "LogScope"
-                ),
-
-            "managed_by_firewall_manager":
-                config.get(
-                    "ManagedByFirewallManager"
-                ),
+                    "LogDestinationConfigs",
+                    [],
+                )
+                or []
+            ),
+            "logging_filter": config.get("LoggingFilter"),
+            "redacted_fields": config.get(
+                "RedactedFields",
+                [],
+            )
+            or [],
+            "log_scope": config.get("LogScope"),
+            "managed_by_firewall_manager": config.get("ManagedByFirewallManager"),
         }
 
     # ------------------------------------------------------------------
@@ -1613,100 +1005,27 @@ class WAFCollector(BaseCollector):
         rule: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        statement = (
-            rule.get(
-                "Statement"
-            )
-            or {}
-        )
+        statement = rule.get("Statement") or {}
 
-        statement_info = (
-            self._inspect_statement(
-                statement
-            )
-        )
+        statement_info = self._inspect_statement(statement)
 
         return {
-            "name":
-                rule.get(
-                    "Name"
-                ),
-
-            "priority":
-                rule.get(
-                    "Priority"
-                ),
-
-            "action":
-                self._rule_action(
-                    rule
-                ),
-
-            "override_action":
-                rule.get(
-                    "OverrideAction"
-                ),
-
-            "metric_name":
-                (
-                    (
-                        rule.get(
-                            "VisibilityConfig"
-                        )
-                        or {}
-                    ).get(
-                        "MetricName"
-                    )
-                ),
-
-            "cloudwatch_metrics_enabled":
-                (
-                    (
-                        rule.get(
-                            "VisibilityConfig"
-                        )
-                        or {}
-                    ).get(
-                        "CloudWatchMetricsEnabled"
-                    )
-                ),
-
-            "sampled_requests_enabled":
-                (
-                    (
-                        rule.get(
-                            "VisibilityConfig"
-                        )
-                        or {}
-                    ).get(
-                        "SampledRequestsEnabled"
-                    )
-                ),
-
-            "statement_type":
-                statement_info[
-                    "statement_type"
-                ],
-
-            "managed_rule_group":
-                statement_info[
-                    "managed_rule_group"
-                ],
-
-            "rule_group":
-                statement_info[
-                    "rule_group"
-                ],
-
-            "contains_captcha":
-                statement_info[
-                    "captcha"
-                ],
-
-            "contains_challenge":
-                statement_info[
-                    "challenge"
-                ],
+            "name": rule.get("Name"),
+            "priority": rule.get("Priority"),
+            "action": self._rule_action(rule),
+            "override_action": rule.get("OverrideAction"),
+            "metric_name": ((rule.get("VisibilityConfig") or {}).get("MetricName")),
+            "cloudwatch_metrics_enabled": (
+                (rule.get("VisibilityConfig") or {}).get("CloudWatchMetricsEnabled")
+            ),
+            "sampled_requests_enabled": (
+                (rule.get("VisibilityConfig") or {}).get("SampledRequestsEnabled")
+            ),
+            "statement_type": statement_info["statement_type"],
+            "managed_rule_group": statement_info["managed_rule_group"],
+            "rule_group": statement_info["rule_group"],
+            "contains_captcha": statement_info["captcha"],
+            "contains_challenge": statement_info["challenge"],
         }
 
     # ------------------------------------------------------------------
@@ -1719,20 +1038,11 @@ class WAFCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         result = {
-            "statement_type":
-                None,
-
-            "managed_rule_group":
-                None,
-
-            "rule_group":
-                None,
-
-            "captcha":
-                False,
-
-            "challenge":
-                False,
+            "statement_type": None,
+            "managed_rule_group": None,
+            "rule_group": None,
+            "captcha": False,
+            "challenge": False,
         }
 
         if not isinstance(
@@ -1745,126 +1055,74 @@ class WAFCollector(BaseCollector):
 
             if key == "ManagedRuleGroupStatement":
 
-                result[
-                    "statement_type"
-                ] = "managed_rule_group"
+                result["statement_type"] = "managed_rule_group"
 
                 if isinstance(
                     value,
                     dict,
                 ):
 
-                    result[
-                        "managed_rule_group"
-                    ] = {
-                        "name":
-                            value.get(
-                                "Name"
-                            ),
-
-                        "vendor_name":
-                            value.get(
-                                "VendorName"
-                            ),
-
-                        "version":
-                            value.get(
-                                "Version"
-                            ),
-
-                        "excluded_rules":
-                            [
-                                item.get(
-                                    "Name"
-                                )
-                                for item
-                                in (
-                                    value.get(
-                                        "ExcludedRules",
-                                        [],
-                                    )
-                                    or []
-                                )
-                                if isinstance(
-                                    item,
-                                    dict,
-                                )
-                                and item.get(
-                                    "Name"
-                                )
-                            ],
-
-                        "scope_down":
-                            bool(
+                    result["managed_rule_group"] = {
+                        "name": value.get("Name"),
+                        "vendor_name": value.get("VendorName"),
+                        "version": value.get("Version"),
+                        "excluded_rules": [
+                            item.get("Name")
+                            for item in (
                                 value.get(
-                                    "ScopeDownStatement"
+                                    "ExcludedRules",
+                                    [],
                                 )
-                            ),
+                                or []
+                            )
+                            if isinstance(
+                                item,
+                                dict,
+                            )
+                            and item.get("Name")
+                        ],
+                        "scope_down": bool(value.get("ScopeDownStatement")),
                     }
 
             elif key == "RuleGroupReferenceStatement":
 
-                result[
-                    "statement_type"
-                ] = "rule_group"
+                result["statement_type"] = "rule_group"
 
                 if isinstance(
                     value,
                     dict,
                 ):
 
-                    result[
-                        "rule_group"
-                    ] = {
-                        "arn":
-                            value.get(
-                                "ARN"
-                            ),
-
-                        "excluded_rules":
-                            [
-                                item.get(
-                                    "Name"
+                    result["rule_group"] = {
+                        "arn": value.get("ARN"),
+                        "excluded_rules": [
+                            item.get("Name")
+                            for item in (
+                                value.get(
+                                    "ExcludedRules",
+                                    [],
                                 )
-                                for item
-                                in (
-                                    value.get(
-                                        "ExcludedRules",
-                                        [],
-                                    )
-                                    or []
-                                )
-                                if isinstance(
-                                    item,
-                                    dict,
-                                )
-                                and item.get(
-                                    "Name"
-                                )
-                            ],
+                                or []
+                            )
+                            if isinstance(
+                                item,
+                                dict,
+                            )
+                            and item.get("Name")
+                        ],
                     }
 
             else:
 
-                if result[
-                    "statement_type"
-                ] is None:
+                if result["statement_type"] is None:
 
-                    result[
-                        "statement_type"
-                    ] = key
+                    result["statement_type"] = key
 
-        serialized = str(
-            statement
-        ).lower()
+        serialized = str(statement).lower()
 
-        result[
-            "captcha"
-        ] = "captcha" in serialized
+        result["captcha"] = "captcha" in serialized
 
-        result[
-            "challenge"
-        ] = "challenge" in serialized
+        result["challenge"] = "challenge" in serialized
 
         return result
 
@@ -1882,16 +1140,12 @@ class WAFCollector(BaseCollector):
 
             for key, child in value.items():
 
-                if (
-                    key
-                    in {
-                        "Body",
-                        "JsonBody",
-                    }
-                    and isinstance(
-                        child,
-                        dict,
-                    )
+                if key in {
+                    "Body",
+                    "JsonBody",
+                } and isinstance(
+                    child,
+                    dict,
                 ):
 
                     # OversizeHandling is not itself a size.
@@ -1900,24 +1154,14 @@ class WAFCollector(BaseCollector):
                     # level, so this traversal is intentionally only
                     # structural.
 
-                    nested = child.get(
-                        "Size"
-                    )
+                    nested = child.get("Size")
 
-                    number = self._number(
-                        nested
-                    )
+                    number = self._number(nested)
 
                     if number is not None:
-                        values.append(
-                            number
-                        )
+                        values.append(number)
 
-                values.extend(
-                    self._find_body_limits(
-                        child
-                    )
-                )
+                values.extend(self._find_body_limits(child))
 
         elif isinstance(
             value,
@@ -1925,11 +1169,7 @@ class WAFCollector(BaseCollector):
         ):
 
             for item in value:
-                values.extend(
-                    self._find_body_limits(
-                        item
-                    )
-                )
+                values.extend(self._find_body_limits(item))
 
         return values
 
@@ -1983,12 +1223,7 @@ class WAFCollector(BaseCollector):
         rule: Dict[str, Any],
     ) -> Optional[str]:
 
-        action = (
-            rule.get(
-                "Action"
-            )
-            or {}
-        )
+        action = rule.get("Action") or {}
 
         if isinstance(
             action,
@@ -2006,12 +1241,7 @@ class WAFCollector(BaseCollector):
                 if key in action:
                     return key.lower()
 
-        override_action = (
-            rule.get(
-                "OverrideAction"
-            )
-            or {}
-        )
+        override_action = rule.get("OverrideAction") or {}
 
         if isinstance(
             override_action,
@@ -2036,10 +1266,7 @@ class WAFCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         cloudwatch = (
-            observations.get(
-                "cloudwatch",
-                {}
-            )
+            observations.get("cloudwatch", {})
             if isinstance(
                 observations,
                 dict,
@@ -2048,10 +1275,7 @@ class WAFCollector(BaseCollector):
         )
 
         metrics = (
-            cloudwatch.get(
-                "metrics",
-                {}
-            )
+            cloudwatch.get("metrics", {})
             if isinstance(
                 cloudwatch,
                 dict,
@@ -2079,94 +1303,40 @@ class WAFCollector(BaseCollector):
 
         observed = {}
 
-        for metric_name in (
-            terminal_metrics
-        ):
+        for metric_name in terminal_metrics:
 
             matching = [
                 metric
-                for key, metric
-                in metrics.items()
+                for key, metric in metrics.items()
                 if (
-                    str(key).startswith(
-                        "acl:"
-                    )
-                    and metric.get(
-                        "original_metric_name"
-                    ) == metric_name
+                    str(key).startswith("acl:")
+                    and metric.get("original_metric_name") == metric_name
                 )
             ]
 
-            metric = (
-                matching[0]
-                if matching
-                else {}
-            )
+            metric = matching[0] if matching else {}
 
-            values[
-                metric_name
-            ] = metric_sum_value(
-                metric
-            )
+            values[metric_name] = metric_sum_value(metric)
 
-            observed[
-                metric_name
-            ] = metric_has_observed_data(
-                metric
-            )
+            observed[metric_name] = metric_has_observed_data(metric)
 
-        observed_values = [
-            value
-            for value in values.values()
-            if value is not None
-        ]
+        observed_values = [value for value in values.values() if value is not None]
 
-        request_indicator = (
-            sum(
-                observed_values
-            )
-            if observed_values
-            else None
-        )
+        request_indicator = sum(observed_values) if observed_values else None
 
         requests_millions = (
-            request_indicator / 1_000_000
-            if request_indicator is not None
-            else None
+            request_indicator / 1_000_000 if request_indicator is not None else None
         )
 
         return {
-            "allowed_requests":
-                values[
-                    "AllowedRequests"
-                ],
-
-            "blocked_requests":
-                values[
-                    "BlockedRequests"
-                ],
-
-            "captcha_requests":
-                values[
-                    "CaptchaRequests"
-                ],
-
-            "challenge_requests":
-                values[
-                    "ChallengeRequests"
-                ],
-
-            "terminal_request_indicator":
-                request_indicator,
-
-            "terminal_request_indicator_millions":
-                requests_millions,
-
-            "metric_observation":
-                observed,
-
-            "available":
-                bool(observed_values),
+            "allowed_requests": values["AllowedRequests"],
+            "blocked_requests": values["BlockedRequests"],
+            "captcha_requests": values["CaptchaRequests"],
+            "challenge_requests": values["ChallengeRequests"],
+            "terminal_request_indicator": request_indicator,
+            "terminal_request_indicator_millions": requests_millions,
+            "metric_observation": observed,
+            "available": bool(observed_values),
         }
 
     # ------------------------------------------------------------------
@@ -2178,22 +1348,14 @@ class WAFCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, str]:
 
-        arn = (
-            resource.get(
-                "arn"
-            )
-        )
+        arn = resource.get("arn")
 
         if not arn:
             return {}
 
         try:
 
-            response = (
-                self.waf.list_tags_for_resource(
-                    ResourceARN=arn
-                )
-            )
+            response = self.waf.list_tags_for_resource(ResourceARN=arn)
 
         except Exception:
 
@@ -2211,16 +1373,13 @@ class WAFCollector(BaseCollector):
         )
 
         return {
-            tag.get("Key"):
-                tag.get("Value")
+            tag.get("Key"): tag.get("Value")
             for tag in tags
             if isinstance(
                 tag,
                 dict,
             )
-            and tag.get(
-                "Key"
-            )
+            and tag.get("Key")
         }
 
     # ------------------------------------------------------------------
@@ -2242,9 +1401,7 @@ class WAFCollector(BaseCollector):
             return None
 
         try:
-            return float(
-                value
-            )
+            return float(value)
         except (
             TypeError,
             ValueError,

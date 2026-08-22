@@ -49,7 +49,6 @@ from backend.api.services.analytics_constants import (
     MIN_PRIOR_COST_FOR_PERCENTAGE,
 )
 
-
 # ---------------------------------------------------------------------
 # Cache
 # ---------------------------------------------------------------------
@@ -65,9 +64,7 @@ def _cache_key(*parts: Any) -> str:
         sort_keys=True,
         default=str,
     )
-    return hashlib.sha256(
-        raw.encode("utf-8")
-    ).hexdigest()
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 def _cache_get(
@@ -81,10 +78,7 @@ def _cache_get(
 
     expires_at, value = entry
 
-    if (
-        expires_at is not None
-        and time.time() >= expires_at
-    ):
+    if expires_at is not None and time.time() >= expires_at:
         _QUERY_CACHE.pop(
             key,
             None,
@@ -102,11 +96,7 @@ def _cache_set(
     today: date,
 ) -> None:
 
-    expires_at = (
-        None
-        if end <= today
-        else time.time() + CACHE_TTL_SECONDS
-    )
+    expires_at = None if end <= today else time.time() + CACHE_TTL_SECONDS
 
     _QUERY_CACHE[key] = (
         expires_at,
@@ -167,9 +157,7 @@ class DashboardService:
         value: date,
     ) -> date:
 
-        return value.replace(
-            day=1
-        )
+        return value.replace(day=1)
 
     @staticmethod
     def _next_month(
@@ -194,9 +182,7 @@ class DashboardService:
         value: date,
     ) -> date:
 
-        first = value.replace(
-            day=1
-        )
+        first = value.replace(day=1)
 
         if first.month == 1:
             return date(
@@ -217,23 +203,15 @@ class DashboardService:
         count: int,
     ) -> list[str]:
 
-        cursor = today.replace(
-            day=1
-        )
+        cursor = today.replace(day=1)
 
         values = []
 
         for _ in range(count):
-            values.append(
-                cursor.strftime("%Y-%m")
-            )
-            cursor = DashboardService._previous_month(
-                cursor
-            )
+            values.append(cursor.strftime("%Y-%m"))
+            cursor = DashboardService._previous_month(cursor)
 
-        return list(
-            reversed(values)
-        )
+        return list(reversed(values))
 
     # ================================================================
     # COST EXPLORER CORE QUERY
@@ -268,9 +246,7 @@ class DashboardService:
         )
 
         if not force_refresh:
-            cached = _cache_get(
-                cache_key
-            )
+            cached = _cache_get(cache_key)
 
             if cached is not None:
                 return cached
@@ -281,9 +257,7 @@ class DashboardService:
                 "End": end.isoformat(),
             },
             "Granularity": granularity,
-            "Metrics": [
-                "UnblendedCost"
-            ],
+            "Metrics": ["UnblendedCost"],
         }
 
         if group_by:
@@ -296,9 +270,7 @@ class DashboardService:
                 {
                     "Dimensions": {
                         "Key": "REGION",
-                        "Values": [
-                            region
-                        ],
+                        "Values": [region],
                     }
                 }
             )
@@ -308,9 +280,7 @@ class DashboardService:
                 {
                     "Dimensions": {
                         "Key": "SERVICE",
-                        "Values": [
-                            service
-                        ],
+                        "Values": [service],
                     }
                 }
             )
@@ -321,51 +291,32 @@ class DashboardService:
 
         elif len(filters) > 1:
 
-            params["Filter"] = {
-                "And": filters
-            }
+            params["Filter"] = {"And": filters}
 
         results_by_period: dict[
             str,
             dict[str, Any],
         ] = {}
 
-        response = self.client.get_cost_and_usage(
-            **params
-        )
+        response = self.client.get_cost_and_usage(**params)
 
         self._merge_response(
             results_by_period,
             response,
         )
 
-        while response.get(
-            "NextPageToken"
-        ):
+        while response.get("NextPageToken"):
 
-            params["NextPageToken"] = (
-                response[
-                    "NextPageToken"
-                ]
-            )
+            params["NextPageToken"] = response["NextPageToken"]
 
-            response = (
-                self.client.get_cost_and_usage(
-                    **params
-                )
-            )
+            response = self.client.get_cost_and_usage(**params)
 
             self._merge_response(
                 results_by_period,
                 response,
             )
 
-        result = [
-            results_by_period[key]
-            for key in sorted(
-                results_by_period
-            )
-        ]
+        result = [results_by_period[key] for key in sorted(results_by_period)]
 
         _cache_set(
             cache_key,
@@ -395,9 +346,7 @@ class DashboardService:
                 {},
             )
 
-            start = period.get(
-                "Start"
-            )
+            start = period.get("Start")
 
             if not start:
                 continue
@@ -417,9 +366,7 @@ class DashboardService:
                     ),
                 }
 
-            destination[start][
-                "Groups"
-            ].extend(
+            destination[start]["Groups"].extend(
                 block.get(
                     "Groups",
                     [],
@@ -441,18 +388,14 @@ class DashboardService:
         ):
             return 0.0
 
-        metrics = value.get(
-            "Metrics"
-        )
+        metrics = value.get("Metrics")
 
         if isinstance(
             metrics,
             dict,
         ):
 
-            cost = metrics.get(
-                "UnblendedCost"
-            )
+            cost = metrics.get("UnblendedCost")
 
             if isinstance(
                 cost,
@@ -472,9 +415,7 @@ class DashboardService:
                 ):
                     return 0.0
 
-        cost = value.get(
-            "UnblendedCost"
-        )
+        cost = value.get("UnblendedCost")
 
         if isinstance(
             cost,
@@ -509,13 +450,9 @@ class DashboardService:
 
         today = today or date.today()
 
-        start = self._month_start(
-            today
-        )
+        start = self._month_start(today)
 
-        end = today + timedelta(
-            days=1
-        )
+        end = today + timedelta(days=1)
 
         results = self._query(
             start,
@@ -545,9 +482,7 @@ class DashboardService:
         )
 
         return {
-            "month": start.strftime(
-                "%Y-%m"
-            ),
+            "month": start.strftime("%Y-%m"),
             "start_date": start.isoformat(),
             "end_date": today.isoformat(),
             "amount": round(
@@ -578,13 +513,9 @@ class DashboardService:
 
         today = today or date.today()
 
-        month_start = self._month_start(
-            today
-        )
+        month_start = self._month_start(today)
 
-        next_month = self._next_month(
-            today
-        )
+        next_month = self._next_month(today)
 
         if actual_mtd is None:
 
@@ -602,20 +533,14 @@ class DashboardService:
 
         else:
 
-            actual_mtd = float(
-                actual_mtd
-            )
+            actual_mtd = float(actual_mtd)
 
-        forecast_start = today + timedelta(
-            days=1
-        )
+        forecast_start = today + timedelta(days=1)
 
         if forecast_start >= next_month:
 
             return {
-                "month": month_start.strftime(
-                    "%Y-%m"
-                ),
+                "month": month_start.strftime("%Y-%m"),
                 "forecast": round(
                     actual_mtd,
                     2,
@@ -634,12 +559,7 @@ class DashboardService:
                     2,
                 ),
                 "forecast_start": today.isoformat(),
-                "forecast_end": (
-                    next_month
-                    - timedelta(
-                        days=1
-                    )
-                ).isoformat(),
+                "forecast_end": (next_month - timedelta(days=1)).isoformat(),
                 "currency": self.CURRENCY,
                 "source": "aws_cost_explorer",
                 "status": "current_period_complete",
@@ -657,9 +577,7 @@ class DashboardService:
 
         if not force_refresh:
 
-            forecast_data = _cache_get(
-                cache_key
-            )
+            forecast_data = _cache_get(cache_key)
 
         if forecast_data is None:
 
@@ -677,9 +595,7 @@ class DashboardService:
             except Exception as exc:
 
                 return {
-                    "month": month_start.strftime(
-                        "%Y-%m"
-                    ),
+                    "month": month_start.strftime("%Y-%m"),
                     "forecast": None,
                     "actual_mtd": round(
                         actual_mtd,
@@ -708,10 +624,7 @@ class DashboardService:
             or 0.0
         )
 
-        projected = (
-            actual_mtd
-            + remaining
-        )
+        projected = actual_mtd + remaining
 
         lower_bound = None
         upper_bound = None
@@ -726,41 +639,23 @@ class DashboardService:
             lower_values = [
                 row["lower_bound"]
                 for row in result_rows
-                if row.get(
-                    "lower_bound"
-                )
-                is not None
+                if row.get("lower_bound") is not None
             ]
 
             upper_values = [
                 row["upper_bound"]
                 for row in result_rows
-                if row.get(
-                    "upper_bound"
-                )
-                is not None
+                if row.get("upper_bound") is not None
             ]
 
             if lower_values:
-                lower_bound = (
-                    actual_mtd
-                    + sum(
-                        lower_values
-                    )
-                )
+                lower_bound = actual_mtd + sum(lower_values)
 
             if upper_values:
-                upper_bound = (
-                    actual_mtd
-                    + sum(
-                        upper_values
-                    )
-                )
+                upper_bound = actual_mtd + sum(upper_values)
 
         return {
-            "month": month_start.strftime(
-                "%Y-%m"
-            ),
+            "month": month_start.strftime("%Y-%m"),
             "forecast": round(
                 projected,
                 2,
@@ -790,12 +685,7 @@ class DashboardService:
                 else None
             ),
             "forecast_start": forecast_start.isoformat(),
-            "forecast_end": (
-                next_month
-                - timedelta(
-                    days=1
-                )
-            ).isoformat(),
+            "forecast_end": (next_month - timedelta(days=1)).isoformat(),
             "currency": self.CURRENCY,
             "source": "aws_cost_explorer",
             "metric": "UNBLENDED_COST",
@@ -821,9 +711,7 @@ class DashboardService:
         dimension = dimension.upper()
 
         if dimension not in self.DIMENSIONS:
-            raise ValueError(
-                f"Unsupported dimension: {dimension}"
-            )
+            raise ValueError(f"Unsupported dimension: {dimension}")
 
         results = self._query(
             start,
@@ -859,9 +747,7 @@ class DashboardService:
                 if not keys:
                     continue
 
-                amount = self._amount(
-                    group
-                )
+                amount = self._amount(group)
 
                 if amount < self.MIN_VISIBLE_COST:
                     continue
@@ -876,9 +762,7 @@ class DashboardService:
                     + amount
                 )
 
-        total = sum(
-            totals.values()
-        )
+        total = sum(totals.values())
 
         rows = []
 
@@ -897,9 +781,7 @@ class DashboardService:
                     ),
                     "share_pct": (
                         round(
-                            amount
-                            / total
-                            * 100,
+                            amount / total * 100,
                             2,
                         )
                         if total
@@ -986,16 +868,10 @@ class DashboardService:
 
         for block in results:
 
-            month = (
-                block
-                .get(
-                    "TimePeriod",
-                    {},
-                )
-                .get(
-                    "Start"
-                )
-            )
+            month = block.get(
+                "TimePeriod",
+                {},
+            ).get("Start")
 
             if not month:
                 continue
@@ -1013,27 +889,16 @@ class DashboardService:
                 if len(keys) < 2:
                     continue
 
-                amount = DashboardService._amount(
-                    group
-                )
+                amount = DashboardService._amount(group)
 
-                if (
-                    amount
-                    < DashboardService.MIN_VISIBLE_COST
-                ):
+                if amount < DashboardService.MIN_VISIBLE_COST:
                     continue
 
                 rows.append(
                     {
-                        "month": month[
-                            :7
-                        ],
-                        "key1": keys[
-                            0
-                        ],
-                        "key2": keys[
-                            1
-                        ],
+                        "month": month[:7],
+                        "key1": keys[0],
+                        "key2": keys[1],
                         "cost": amount,
                     }
                 )
@@ -1048,9 +913,7 @@ class DashboardService:
         key_name: str,
     ) -> dict[str, float]:
 
-        start_key = start.strftime(
-            "%Y-%m"
-        )
+        start_key = start.strftime("%Y-%m")
 
         # `rows` are already at monthly granularity (one row per
         # calendar month), but `end` is a day-precision exclusive
@@ -1059,9 +922,7 @@ class DashboardService:
         # to "%Y-%m" and comparing with >= would wrongly exclude the
         # entire current month. Anchor the inclusive upper bound to
         # the last day actually covered by the window instead.
-        end_key = (
-            end - timedelta(days=1)
-        ).strftime("%Y-%m")
+        end_key = (end - timedelta(days=1)).strftime("%Y-%m")
 
         totals: dict[
             str,
@@ -1070,9 +931,7 @@ class DashboardService:
 
         for row in rows:
 
-            month = row[
-                "month"
-            ]
+            month = row["month"]
 
             if month < start_key:
                 continue
@@ -1080,18 +939,14 @@ class DashboardService:
             if month > end_key:
                 continue
 
-            key = row[
-                key_name
-            ]
+            key = row[key_name]
 
             totals[key] = (
                 totals.get(
                     key,
                     0.0,
                 )
-                + row[
-                    "cost"
-                ]
+                + row["cost"]
             )
 
         return totals
@@ -1105,14 +960,9 @@ class DashboardService:
         limit: int = 15,
     ) -> list[dict[str, Any]]:
 
-        total_current = sum(
-            current.values()
-        )
+        total_current = sum(current.values())
 
-        keys = (
-            set(current)
-            | set(previous)
-        )
+        keys = set(current) | set(previous)
 
         rows = []
 
@@ -1128,17 +978,11 @@ class DashboardService:
                 0.0,
             )
 
-            change = (
-                current_cost
-                - previous_cost
-            )
+            change = current_cost - previous_cost
 
             change_pct = (
-                change
-                / previous_cost
-                * 100
-                if previous_cost
-                >= self.MIN_PRIOR_COST_FOR_PERCENTAGE
+                change / previous_cost * 100
+                if previous_cost >= self.MIN_PRIOR_COST_FOR_PERCENTAGE
                 else None
             )
 
@@ -1166,15 +1010,12 @@ class DashboardService:
                             change_pct,
                             2,
                         )
-                        if change_pct
-                        is not None
+                        if change_pct is not None
                         else None
                     ),
                     "share_pct": (
                         round(
-                            current_cost
-                            / total_current
-                            * 100,
+                            current_cost / total_current * 100,
                             2,
                         )
                         if total_current
@@ -1185,9 +1026,7 @@ class DashboardService:
             )
 
         rows.sort(
-            key=lambda row: row[
-                "cost"
-            ],
+            key=lambda row: row["cost"],
             reverse=True,
         )
 
@@ -1226,27 +1065,17 @@ class DashboardService:
             ),
         )
 
-        current_start = self._month_start(
-            today
-        )
+        current_start = self._month_start(today)
 
-        current_end = today + timedelta(
-            days=1
-        )
+        current_end = today + timedelta(days=1)
 
-        previous_start = self._previous_month(
-            today
-        )
+        previous_start = self._previous_month(today)
 
         previous_end = current_start
 
-        current_month_key = current_start.strftime(
-            "%Y-%m"
-        )
+        current_month_key = current_start.strftime("%Y-%m")
 
-        previous_month_key = previous_start.strftime(
-            "%Y-%m"
-        )
+        previous_month_key = previous_start.strftime("%Y-%m")
 
         # Anchor the shared fetch window directly from
         # history_months instead of a separate get_monthly_cost()
@@ -1256,33 +1085,21 @@ class DashboardService:
         # than three more Cost Explorer round trips.
         fetch_start_date = current_start
 
-        for _ in range(
-            history_months - 1
-        ):
-            fetch_start_date = self._previous_month(
-                fetch_start_date
-            )
+        for _ in range(history_months - 1):
+            fetch_start_date = self._previous_month(fetch_start_date)
 
-        fetch_end = self._next_month(
-            current_start
+        fetch_end = self._next_month(current_start)
+
+        service_region_raw, service_usage_raw = self._get_monthly_service_region_usage(
+            fetch_start_date,
+            fetch_end,
+            region=region,
+            force_refresh=force_refresh,
         )
 
-        service_region_raw, service_usage_raw = (
-            self._get_monthly_service_region_usage(
-                fetch_start_date,
-                fetch_end,
-                region=region,
-                force_refresh=force_refresh,
-            )
-        )
+        sr_rows = self._flatten_groups(service_region_raw)
 
-        sr_rows = self._flatten_groups(
-            service_region_raw
-        )
-
-        su_rows = self._flatten_groups(
-            service_usage_raw
-        )
+        su_rows = self._flatten_groups(service_usage_raw)
 
         monthly_totals: dict[
             str,
@@ -1291,9 +1108,7 @@ class DashboardService:
 
         for row in sr_rows:
 
-            monthly_totals[
-                row["month"]
-            ] = (
+            monthly_totals[row["month"]] = (
                 monthly_totals.get(
                     row["month"],
                     0.0,
@@ -1305,34 +1120,20 @@ class DashboardService:
 
         cursor = fetch_start_date
 
-        for _ in range(
-            history_months
-        ):
+        for _ in range(history_months):
 
-            month_key = cursor.strftime(
-                "%Y-%m"
-            )
+            month_key = cursor.strftime("%Y-%m")
 
-            is_current = (
-                month_key
-                == current_month_key
-            )
+            is_current = month_key == current_month_key
 
-            month_end_exclusive = self._next_month(
-                cursor
-            )
+            month_end_exclusive = self._next_month(cursor)
 
             history.append(
                 {
                     "month": month_key,
                     "start_date": cursor.isoformat(),
                     "end_date": (
-                        today
-                        if is_current
-                        else month_end_exclusive
-                        - timedelta(
-                            days=1
-                        )
+                        today if is_current else month_end_exclusive - timedelta(days=1)
                     ).isoformat(),
                     "amount": round(
                         monthly_totals.get(
@@ -1346,9 +1147,7 @@ class DashboardService:
                 }
             )
 
-            cursor = self._next_month(
-                cursor
-            )
+            cursor = self._next_month(cursor)
 
         current_total = round(
             monthly_totals.get(
@@ -1378,25 +1177,15 @@ class DashboardService:
         previous_month = {
             "month": previous_month_key,
             "start_date": previous_start.isoformat(),
-            "end_date": (
-                previous_end
-                - timedelta(days=1)
-            ).isoformat(),
+            "end_date": (previous_end - timedelta(days=1)).isoformat(),
             "amount": previous_total,
             "currency": self.CURRENCY,
         }
 
-        difference = (
-            current_total
-            - previous_total
-        )
+        difference = current_total - previous_total
 
         percentage_change = (
-            difference
-            / previous_total
-            * 100
-            if previous_total > 0
-            else None
+            difference / previous_total * 100 if previous_total > 0 else None
         )
 
         if difference > self.MIN_CHANGE_AMOUNT:
@@ -1465,9 +1254,7 @@ class DashboardService:
                     ),
                     "share_pct": (
                         round(
-                            value
-                            / current_total
-                            * 100,
+                            value / current_total * 100,
                             2,
                         )
                         if current_total
@@ -1475,18 +1262,12 @@ class DashboardService:
                     ),
                     "currency": self.CURRENCY,
                 }
-                for key, value
-                in current_usage.items()
-                if value
-                >= self.MIN_VISIBLE_COST
+                for key, value in current_usage.items()
+                if value >= self.MIN_VISIBLE_COST
             ),
-            key=lambda row: row[
-                "cost"
-            ],
+            key=lambda row: row["cost"],
             reverse=True,
-        )[
-            : self.DEFAULT_DIMENSION_LIMIT
-        ]
+        )[: self.DEFAULT_DIMENSION_LIMIT]
 
         service_changes = [
             row
@@ -1496,15 +1277,12 @@ class DashboardService:
                     "change_amount",
                     0.0,
                 )
-            ) >= self.MIN_CHANGE_AMOUNT
+            )
+            >= self.MIN_CHANGE_AMOUNT
         ]
 
         service_changes.sort(
-            key=lambda row: abs(
-                row[
-                    "change_amount"
-                ]
-            ),
+            key=lambda row: abs(row["change_amount"]),
             reverse=True,
         )
 
@@ -1525,14 +1303,8 @@ class DashboardService:
                 {},
             )
 
-            monthly_service_map[
-                row["month"]
-            ][
-                row["key1"]
-            ] = (
-                monthly_service_map[
-                    row["month"]
-                ].get(
+            monthly_service_map[row["month"]][row["key1"]] = (
+                monthly_service_map[row["month"]].get(
                     row["key1"],
                     0.0,
                 )
@@ -1544,14 +1316,8 @@ class DashboardService:
                 {},
             )
 
-            monthly_region_map[
-                row["month"]
-            ][
-                row["key2"]
-            ] = (
-                monthly_region_map[
-                    row["month"]
-                ].get(
+            monthly_region_map[row["month"]][row["key2"]] = (
+                monthly_region_map[row["month"]].get(
                     row["key2"],
                     0.0,
                 )
@@ -1560,9 +1326,7 @@ class DashboardService:
 
         monthly_service_cost = []
 
-        for month_key in sorted(
-            monthly_service_map
-        ):
+        for month_key in sorted(monthly_service_map):
 
             monthly_service_cost.append(
                 {
@@ -1575,14 +1339,9 @@ class DashboardService:
                                 2,
                             ),
                         }
-                        for name, amount
-                        in sorted(
-                            monthly_service_map[
-                                month_key
-                            ].items(),
-                            key=lambda item: item[
-                                1
-                            ],
+                        for name, amount in sorted(
+                            monthly_service_map[month_key].items(),
+                            key=lambda item: item[1],
                             reverse=True,
                         )
                     ],
@@ -1591,9 +1350,7 @@ class DashboardService:
 
         monthly_region_cost = []
 
-        for month_key in sorted(
-            monthly_region_map
-        ):
+        for month_key in sorted(monthly_region_map):
 
             monthly_region_cost.append(
                 {
@@ -1606,14 +1363,9 @@ class DashboardService:
                                 2,
                             ),
                         }
-                        for name, amount
-                        in sorted(
-                            monthly_region_map[
-                                month_key
-                            ].items(),
-                            key=lambda item: item[
-                                1
-                            ],
+                        for name, amount in sorted(
+                            monthly_region_map[month_key].items(),
+                            key=lambda item: item[1],
                             reverse=True,
                         )
                     ],
@@ -1629,20 +1381,10 @@ class DashboardService:
             )
         ]
 
-        completed_total = sum(
-            float(
-                row["amount"]
-            )
-            for row in completed_months
-        )
+        completed_total = sum(float(row["amount"]) for row in completed_months)
 
         completed_average = (
-            completed_total
-            / len(
-                completed_months
-            )
-            if completed_months
-            else 0.0
+            completed_total / len(completed_months) if completed_months else 0.0
         )
 
         forecast = self.get_current_month_forecast(
@@ -1656,22 +1398,15 @@ class DashboardService:
             "source": "aws_cost_explorer",
             "currency": self.CURRENCY,
             "current_date": today.isoformat(),
-
             "period": {
                 "mode": "live",
                 "label": "Live dashboard",
                 "supports_forecast": True,
-                "current_month": current_start.strftime(
-                    "%Y-%m"
-                ),
-                "previous_month": previous_start.strftime(
-                    "%Y-%m"
-                ),
+                "current_month": current_start.strftime("%Y-%m"),
+                "previous_month": previous_start.strftime("%Y-%m"),
                 "history_months": history_months,
             },
-
             "region_filter": region,
-
             "mtd": {
                 "current": current_mtd,
                 "previous": previous_month,
@@ -1684,40 +1419,23 @@ class DashboardService:
                         percentage_change,
                         2,
                     )
-                    if percentage_change
-                    is not None
+                    if percentage_change is not None
                     else None
                 ),
                 "direction": direction,
             },
-
             "forecast": forecast,
-
             "monthly_cost": history,
-
             "monthly_service_cost": monthly_service_cost,
-
             "monthly_region_cost": monthly_region_cost,
-
             "services": services,
-
             "regions": regions,
-
             "usage_types": usage_types,
-
-            "service_changes": service_changes[
-                : self.SERVICE_CHANGE_LIMIT
-            ],
-
+            "service_changes": service_changes[: self.SERVICE_CHANGE_LIMIT],
             "latest_scan": latest_scan,
-
             "history": {
-                "months": len(
-                    history
-                ),
-                "completed_months": len(
-                    completed_months
-                ),
+                "months": len(history),
+                "completed_months": len(completed_months),
                 "completed_total_spend": round(
                     completed_total,
                     2,
@@ -1727,19 +1445,11 @@ class DashboardService:
                     2,
                 ),
                 "collected_total_spend": round(
-                    sum(
-                        float(
-                            row["amount"]
-                        )
-                        for row in history
-                    ),
+                    sum(float(row["amount"]) for row in history),
                     2,
                 ),
             },
-
-            "retrieved_at": datetime.now(
-                timezone.utc
-            ).isoformat(),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
 
     # ================================================================
@@ -1758,20 +1468,13 @@ class DashboardService:
 
         today = today or date.today()
 
-        date_type = (
-            date_type
-            or "current"
-        ).lower()
+        date_type = (date_type or "current").lower()
 
         if date_type == "current":
 
-            start = self._month_start(
-                today
-            )
+            start = self._month_start(today)
 
-            end = today + timedelta(
-                days=1
-            )
+            end = today + timedelta(days=1)
 
             return {
                 "type": "current",
@@ -1782,43 +1485,29 @@ class DashboardService:
 
         if date_type == "previous":
 
-            start = self._previous_month(
-                today
-            )
+            start = self._previous_month(today)
 
-            end = self._month_start(
-                today
-            )
+            end = self._month_start(today)
 
             return {
                 "type": "previous",
                 "start": start,
                 "end": end,
-                "label": start.strftime(
-                    "%B %Y"
-                ),
+                "label": start.strftime("%B %Y"),
             }
 
         if date_type == "three_months":
 
-            target = self._previous_month(
-                self._previous_month(
-                    today
-                )
-            )
+            target = self._previous_month(self._previous_month(today))
 
             start = target
-            end = self._next_month(
-                target
-            )
+            end = self._next_month(target)
 
             return {
                 "type": "three_months",
                 "start": start,
                 "end": end,
-                "label": start.strftime(
-                    "%B %Y"
-                ),
+                "label": start.strftime("%B %Y"),
             }
 
         if date_type == "six_months":
@@ -1826,40 +1515,28 @@ class DashboardService:
             target = self._previous_month(
                 self._previous_month(
                     self._previous_month(
-                        self._previous_month(
-                            self._previous_month(
-                                today
-                            )
-                        )
+                        self._previous_month(self._previous_month(today))
                     )
                 )
             )
 
             start = target
-            end = self._next_month(
-                target
-            )
+            end = self._next_month(target)
 
             return {
                 "type": "six_months",
                 "start": start,
                 "end": end,
-                "label": start.strftime(
-                    "%B %Y"
-                ),
+                "label": start.strftime("%B %Y"),
             }
 
         if date_type == "month":
 
             if not month:
-                raise ValueError(
-                    "month is required"
-                )
+                raise ValueError("month is required")
 
             try:
-                year, month_number = (
-                    month.split("-")
-                )
+                year, month_number = month.split("-")
 
                 target = date(
                     int(year),
@@ -1868,61 +1545,39 @@ class DashboardService:
                 )
 
             except Exception as exc:
-                raise ValueError(
-                    "month must use YYYY-MM"
-                ) from exc
+                raise ValueError("month must use YYYY-MM") from exc
 
-            if target == self._month_start(
-                today
-            ):
+            if target == self._month_start(today):
 
-                end = today + timedelta(
-                    days=1
-                )
+                end = today + timedelta(days=1)
 
             else:
 
-                end = self._next_month(
-                    target
-                )
+                end = self._next_month(target)
 
             return {
                 "type": "month",
                 "start": target,
                 "end": end,
-                "label": target.strftime(
-                    "%B %Y"
-                ),
+                "label": target.strftime("%B %Y"),
             }
 
         if date_type == "custom":
 
             if not start_date or not end_date:
-                raise ValueError(
-                    "start_date and end_date are required"
-                )
+                raise ValueError("start_date and end_date are required")
 
             if start_date > end_date:
-                raise ValueError(
-                    "start_date must not be after end_date"
-                )
+                raise ValueError("start_date must not be after end_date")
 
             return {
                 "type": "custom",
                 "start": start_date,
-                "end": end_date + timedelta(
-                    days=1
-                ),
-                "label": (
-                    f"{start_date.isoformat()} "
-                    f"→ "
-                    f"{end_date.isoformat()}"
-                ),
+                "end": end_date + timedelta(days=1),
+                "label": (f"{start_date.isoformat()} " f"→ " f"{end_date.isoformat()}"),
             }
 
-        raise ValueError(
-            f"Unknown date_type: {date_type}"
-        )
+        raise ValueError(f"Unknown date_type: {date_type}")
 
     # ================================================================
     # COST EXPLORER MAIN
@@ -1944,9 +1599,7 @@ class DashboardService:
         dimension = dimension.upper()
 
         if dimension not in self.DIMENSIONS:
-            raise ValueError(
-                "dimension must be SERVICE, REGION or USAGE_TYPE"
-            )
+            raise ValueError("dimension must be SERVICE, REGION or USAGE_TYPE")
 
         scope = self.resolve_explorer_scope(
             date_type=date_type,
@@ -1964,10 +1617,7 @@ class DashboardService:
             limit=limit,
         )
 
-        total = sum(
-            row["cost"]
-            for row in rows
-        )
+        total = sum(row["cost"] for row in rows)
 
         return {
             "source": "aws_cost_explorer",
@@ -1976,18 +1626,9 @@ class DashboardService:
             "region": region,
             "date": {
                 "type": scope["type"],
-                "start": scope[
-                    "start"
-                ].isoformat(),
-                "end": (
-                    scope["end"]
-                    - timedelta(
-                        days=1
-                    )
-                ).isoformat(),
-                "label": scope[
-                    "label"
-                ],
+                "start": scope["start"].isoformat(),
+                "end": (scope["end"] - timedelta(days=1)).isoformat(),
+                "label": scope["label"],
             },
             "total_cost": round(
                 total,
@@ -2014,9 +1655,7 @@ class DashboardService:
     ) -> dict[str, Any]:
 
         if not service:
-            raise ValueError(
-                "service is required"
-            )
+            raise ValueError("service is required")
 
         scope = self.resolve_explorer_scope(
             date_type=date_type,
@@ -2084,12 +1723,7 @@ class DashboardService:
                 {},
             )
 
-            month_key = (
-                period.get(
-                    "Start"
-                )
-                or ""
-            )[:7]
+            month_key = (period.get("Start") or "")[:7]
 
             for group in block.get(
                 "Groups",
@@ -2104,18 +1738,14 @@ class DashboardService:
                 if len(keys) < 2:
                     continue
 
-                amount = self._amount(
-                    group
-                )
+                amount = self._amount(group)
 
                 if amount < self.MIN_VISIBLE_COST:
                     continue
 
                 usage = keys[1]
 
-                usage_totals[
-                    usage
-                ] = (
+                usage_totals[usage] = (
                     usage_totals.get(
                         usage,
                         0.0,
@@ -2123,9 +1753,7 @@ class DashboardService:
                     + amount
                 )
 
-                monthly_totals[
-                    month_key
-                ] = (
+                monthly_totals[month_key] = (
                     monthly_totals.get(
                         month_key,
                         0.0,
@@ -2148,20 +1776,14 @@ class DashboardService:
                 if len(keys) < 2:
                     continue
 
-                amount = self._amount(
-                    group
-                )
+                amount = self._amount(group)
 
                 if amount < self.MIN_VISIBLE_COST:
                     continue
 
-                region_name = keys[
-                    1
-                ]
+                region_name = keys[1]
 
-                region_totals[
-                    region_name
-                ] = (
+                region_totals[region_name] = (
                     region_totals.get(
                         region_name,
                         0.0,
@@ -2169,13 +1791,9 @@ class DashboardService:
                     + amount
                 )
 
-        usage_total = sum(
-            usage_totals.values()
-        )
+        usage_total = sum(usage_totals.values())
 
-        region_total = sum(
-            region_totals.values()
-        )
+        region_total = sum(region_totals.values())
 
         usage_types = [
             {
@@ -2186,25 +1804,18 @@ class DashboardService:
                 ),
                 "share_pct": (
                     round(
-                        amount
-                        / usage_total
-                        * 100,
+                        amount / usage_total * 100,
                         2,
                     )
                     if usage_total
                     else 0.0
                 ),
             }
-            for key, amount
-            in sorted(
+            for key, amount in sorted(
                 usage_totals.items(),
-                key=lambda item: item[
-                    1
-                ],
+                key=lambda item: item[1],
                 reverse=True,
-            )[
-                :limit
-            ]
+            )[:limit]
         ]
 
         regions = [
@@ -2216,25 +1827,18 @@ class DashboardService:
                 ),
                 "share_pct": (
                     round(
-                        amount
-                        / region_total
-                        * 100,
+                        amount / region_total * 100,
                         2,
                     )
                     if region_total
                     else 0.0
                 ),
             }
-            for key, amount
-            in sorted(
+            for key, amount in sorted(
                 region_totals.items(),
-                key=lambda item: item[
-                    1
-                ],
+                key=lambda item: item[1],
                 reverse=True,
-            )[
-                :limit
-            ]
+            )[:limit]
         ]
 
         monthly = [
@@ -2245,10 +1849,7 @@ class DashboardService:
                     2,
                 ),
             }
-            for month_key, amount
-            in sorted(
-                monthly_totals.items()
-            )
+            for month_key, amount in sorted(monthly_totals.items())
         ]
 
         return {
@@ -2258,18 +1859,9 @@ class DashboardService:
             "region": region,
             "date": {
                 "type": scope["type"],
-                "start": scope[
-                    "start"
-                ].isoformat(),
-                "end": (
-                    scope["end"]
-                    - timedelta(
-                        days=1
-                    )
-                ).isoformat(),
-                "label": scope[
-                    "label"
-                ],
+                "start": scope["start"].isoformat(),
+                "end": (scope["end"] - timedelta(days=1)).isoformat(),
+                "label": scope["label"],
             },
             "total_cost": round(
                 usage_total,

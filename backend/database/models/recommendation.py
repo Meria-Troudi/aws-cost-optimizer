@@ -26,11 +26,9 @@ from sqlalchemy.orm import (
 
 from ..base import Base
 
-
 recommendation_findings = Table(
     "recommendation_findings",
     Base.metadata,
-
     Column(
         "recommendation_id",
         ForeignKey(
@@ -39,7 +37,6 @@ recommendation_findings = Table(
         ),
         primary_key=True,
     ),
-
     Column(
         "finding_id",
         ForeignKey(

@@ -161,17 +161,9 @@ class EksCollector(BaseCollector):
             self.region,
         )
 
-        self.metric_collector = (
-            CloudWatchMetricCollector(
-                self.cloudwatch
-            )
-        )
+        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
 
-        self.topology_collector = (
-            NetworkTopologyCollector(
-                self.region
-            )
-        )
+        self.topology_collector = NetworkTopologyCollector(self.region)
 
         # ClusterName -> collected CloudWatch series.
         #
@@ -213,41 +205,29 @@ class EksCollector(BaseCollector):
             {},
         )
 
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
-        )
+        return value if isinstance(value, dict) else {}
 
     def _cloudwatch_profile(
         self,
     ) -> Dict[str, Any]:
 
-        observations = self._profile_section(
-            "observations"
-        )
+        observations = self._profile_section("observations")
 
         value = observations.get(
             "cloudwatch",
             {},
         )
 
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
-        )
+        return value if isinstance(value, dict) else {}
 
     def _metric_specs(
         self,
         name: str,
     ) -> List[Dict[str, Any]]:
 
-        values = (
-            self._cloudwatch_profile().get(
-                name,
-                [],
-            )
+        values = self._cloudwatch_profile().get(
+            name,
+            [],
         )
 
         if not isinstance(
@@ -297,13 +277,9 @@ class EksCollector(BaseCollector):
         self,
     ) -> List[Dict[str, Any]]:
 
-        clusters: List[
-            Dict[str, Any]
-        ] = []
+        clusters: List[Dict[str, Any]] = []
 
-        paginator = self.eks.get_paginator(
-            "list_clusters"
-        )
+        paginator = self.eks.get_paginator("list_clusters")
 
         for page in paginator.paginate():
 
@@ -317,31 +293,18 @@ class EksCollector(BaseCollector):
 
                 try:
 
-                    response = (
-                        self.eks.describe_cluster(
-                            name=cluster_name
-                        )
-                    )
+                    response = self.eks.describe_cluster(name=cluster_name)
 
-                    cluster = response.get(
-                        "cluster"
-                    )
+                    cluster = response.get("cluster")
 
                     if cluster:
-                        clusters.append(
-                            cluster
-                        )
+                        clusters.append(cluster)
 
                 except Exception as exc:
 
-                    print(
-                        f"[EKS] Failed to describe "
-                        f"{cluster_name}: {exc}"
-                    )
+                    print(f"[EKS] Failed to describe " f"{cluster_name}: {exc}")
 
-        self._prefetch_metrics(
-            clusters
-        )
+        self._prefetch_metrics(clusters)
 
         return clusters
 
@@ -357,9 +320,7 @@ class EksCollector(BaseCollector):
         if not clusters:
             return
 
-        cloudwatch_profile = (
-            self._cloudwatch_profile()
-        )
+        cloudwatch_profile = self._cloudwatch_profile()
 
         if not cloudwatch_profile:
             return
@@ -375,44 +336,25 @@ class EksCollector(BaseCollector):
 
         try:
 
-            start, end = (
-                self.get_analysis_period()
-            )
+            start, end = self.get_analysis_period()
 
         except Exception as exc:
 
-            print(
-                f"[EKS] CloudWatch analysis period "
-                f"unavailable: {exc}"
-            )
+            print(f"[EKS] CloudWatch analysis period " f"unavailable: {exc}")
 
             return
 
         namespace = self._namespace()
 
-        cluster_specs = (
-            self._metric_specs(
-                "cluster_metrics"
-            )
-        )
+        cluster_specs = self._metric_specs("cluster_metrics")
 
-        node_specs = (
-            self._metric_specs(
-                "node_metrics"
-            )
-        )
+        node_specs = self._metric_specs("node_metrics")
 
-        pod_specs = (
-            self._metric_specs(
-                "pod_metrics"
-            )
-        )
+        pod_specs = self._metric_specs("pod_metrics")
 
         for cluster in clusters:
 
-            cluster_name = (
-                cluster.get("name")
-            )
+            cluster_name = cluster.get("name")
 
             if not cluster_name:
                 continue
@@ -431,45 +373,29 @@ class EksCollector(BaseCollector):
 
                 requests = [
                     {
-                        "resource_key":
-                            self._series_key(
-                                cluster_name,
-                                "cluster",
-                                index,
-                                spec,
-                            ),
-
-                        "namespace":
-                            namespace,
-
+                        "resource_key": self._series_key(
+                            cluster_name,
+                            "cluster",
+                            index,
+                            spec,
+                        ),
+                        "namespace": namespace,
                         "dimensions": [
                             {
-                                "Name":
-                                    "ClusterName",
-
-                                "Value":
-                                    cluster_name,
+                                "Name": "ClusterName",
+                                "Value": cluster_name,
                             }
                         ],
-
-                        "metric_specs":
-                            [spec],
+                        "metric_specs": [spec],
                     }
-                    for index, spec
-                    in enumerate(
-                        cluster_specs
-                    )
+                    for index, spec in enumerate(cluster_specs)
                 ]
 
-                response = (
-                    self.metric_collector.collect_batch(
-                        requests,
-                        start=start,
-                        end=end,
-                        requested_period=(
-                            self._requested_period()
-                        ),
-                    )
+                response = self.metric_collector.collect_batch(
+                    requests,
+                    start=start,
+                    end=end,
+                    requested_period=(self._requested_period()),
                 )
 
                 for series in response.values():
@@ -477,17 +403,13 @@ class EksCollector(BaseCollector):
                     if not series:
                         continue
 
-                    result["cluster"].extend(
-                        series
-                    )
+                    result["cluster"].extend(series)
 
             # ----------------------------------------------------------
             # Node metrics
             # ----------------------------------------------------------
 
-            for index, spec in enumerate(
-                node_specs
-            ):
+            for index, spec in enumerate(node_specs):
 
                 metric_name = str(
                     spec.get(
@@ -499,13 +421,11 @@ class EksCollector(BaseCollector):
                 if not metric_name:
                     continue
 
-                dimension_sets = (
-                    self._discover_metric_dimensions(
-                        namespace=namespace,
-                        metric_name=metric_name,
-                        cluster_name=cluster_name,
-                        group="node",
-                    )
+                dimension_sets = self._discover_metric_dimensions(
+                    namespace=namespace,
+                    metric_name=metric_name,
+                    cluster_name=cluster_name,
+                    group="node",
                 )
 
                 # IMPORTANT: do not fall back to a ClusterName-only
@@ -519,61 +439,44 @@ class EksCollector(BaseCollector):
 
                 requests = []
 
-                for series_index, dimensions in enumerate(
-                    dimension_sets
-                ):
+                for series_index, dimensions in enumerate(dimension_sets):
 
                     requests.append(
                         {
-                            "resource_key":
-                                self._series_key(
-                                    cluster_name,
-                                    "node",
-                                    (
-                                        index,
-                                        series_index,
-                                    ),
-                                    spec,
+                            "resource_key": self._series_key(
+                                cluster_name,
+                                "node",
+                                (
+                                    index,
+                                    series_index,
                                 ),
-
-                            "namespace":
-                                namespace,
-
-                            "dimensions":
-                                dimensions,
-
-                            "metric_specs":
-                                [spec],
+                                spec,
+                            ),
+                            "namespace": namespace,
+                            "dimensions": dimensions,
+                            "metric_specs": [spec],
                         }
                     )
 
                 if requests:
 
-                    response = (
-                        self.metric_collector.collect_batch(
-                            requests,
-                            start=start,
-                            end=end,
-                            requested_period=(
-                                self._requested_period()
-                            ),
-                        )
+                    response = self.metric_collector.collect_batch(
+                        requests,
+                        start=start,
+                        end=end,
+                        requested_period=(self._requested_period()),
                     )
 
                     for series in response.values():
 
                         if series:
-                            result["nodes"].extend(
-                                series
-                            )
+                            result["nodes"].extend(series)
 
             # ----------------------------------------------------------
             # Pod metrics
             # ----------------------------------------------------------
 
-            for index, spec in enumerate(
-                pod_specs
-            ):
+            for index, spec in enumerate(pod_specs):
 
                 metric_name = str(
                     spec.get(
@@ -585,13 +488,11 @@ class EksCollector(BaseCollector):
                 if not metric_name:
                     continue
 
-                dimension_sets = (
-                    self._discover_metric_dimensions(
-                        namespace=namespace,
-                        metric_name=metric_name,
-                        cluster_name=cluster_name,
-                        group="pod",
-                    )
+                dimension_sets = self._discover_metric_dimensions(
+                    namespace=namespace,
+                    metric_name=metric_name,
+                    cluster_name=cluster_name,
+                    group="pod",
                 )
 
                 # IMPORTANT: do not fall back to a ClusterName-only
@@ -605,57 +506,40 @@ class EksCollector(BaseCollector):
 
                 requests = []
 
-                for series_index, dimensions in enumerate(
-                    dimension_sets
-                ):
+                for series_index, dimensions in enumerate(dimension_sets):
 
                     requests.append(
                         {
-                            "resource_key":
-                                self._series_key(
-                                    cluster_name,
-                                    "pod",
-                                    (
-                                        index,
-                                        series_index,
-                                    ),
-                                    spec,
+                            "resource_key": self._series_key(
+                                cluster_name,
+                                "pod",
+                                (
+                                    index,
+                                    series_index,
                                 ),
-
-                            "namespace":
-                                namespace,
-
-                            "dimensions":
-                                dimensions,
-
-                            "metric_specs":
-                                [spec],
+                                spec,
+                            ),
+                            "namespace": namespace,
+                            "dimensions": dimensions,
+                            "metric_specs": [spec],
                         }
                     )
 
                 if requests:
 
-                    response = (
-                        self.metric_collector.collect_batch(
-                            requests,
-                            start=start,
-                            end=end,
-                            requested_period=(
-                                self._requested_period()
-                            ),
-                        )
+                    response = self.metric_collector.collect_batch(
+                        requests,
+                        start=start,
+                        end=end,
+                        requested_period=(self._requested_period()),
                     )
 
                     for series in response.values():
 
                         if series:
-                            result["pods"].extend(
-                                series
-                            )
+                            result["pods"].extend(series)
 
-            self._metrics_batch_cache[
-                cluster_name
-            ] = result
+            self._metrics_batch_cache[cluster_name] = result
 
     def _discover_metric_dimensions(
         self,
@@ -664,9 +548,7 @@ class EksCollector(BaseCollector):
         metric_name: str,
         cluster_name: str,
         group: str,
-    ) -> List[
-        List[Dict[str, str]]
-    ]:
+    ) -> List[List[Dict[str, str]]]:
 
         cache_key = (
             namespace,
@@ -674,43 +556,28 @@ class EksCollector(BaseCollector):
             f"{group}:{cluster_name}",
         )
 
-        cached = (
-            self._metric_dimension_cache.get(
-                cache_key
-            )
-        )
+        cached = self._metric_dimension_cache.get(cache_key)
 
         if cached is not None:
             return cached
 
         expected_dimensions = (
-            self.NODE_DIMENSIONS
-            if group == "node"
-            else self.POD_DIMENSIONS
+            self.NODE_DIMENSIONS if group == "node" else self.POD_DIMENSIONS
         )
 
-        dimensions_sets: List[
-            List[Dict[str, str]]
-        ] = []
+        dimensions_sets: List[List[Dict[str, str]]] = []
 
         try:
 
-            paginator = (
-                self.cloudwatch.get_paginator(
-                    "list_metrics"
-                )
-            )
+            paginator = self.cloudwatch.get_paginator("list_metrics")
 
             for page in paginator.paginate(
                 Namespace=namespace,
                 MetricName=metric_name,
                 Dimensions=[
                     {
-                        "Name":
-                            "ClusterName",
-
-                        "Value":
-                            cluster_name,
+                        "Name": "ClusterName",
+                        "Value": cluster_name,
                     }
                 ],
             ):
@@ -720,11 +587,9 @@ class EksCollector(BaseCollector):
                     [],
                 ):
 
-                    raw_dimensions = (
-                        metric.get(
-                            "Dimensions",
-                            [],
-                        )
+                    raw_dimensions = metric.get(
+                        "Dimensions",
+                        [],
                     )
 
                     if not isinstance(
@@ -735,9 +600,7 @@ class EksCollector(BaseCollector):
 
                     normalized = []
 
-                    for dimension in (
-                        raw_dimensions
-                    ):
+                    for dimension in raw_dimensions:
 
                         if not isinstance(
                             dimension,
@@ -745,37 +608,23 @@ class EksCollector(BaseCollector):
                         ):
                             continue
 
-                        name = dimension.get(
-                            "Name"
-                        )
+                        name = dimension.get("Name")
 
-                        value = dimension.get(
-                            "Value"
-                        )
+                        value = dimension.get("Value")
 
                         if not name or value is None:
                             continue
 
                         normalized.append(
                             {
-                                "Name":
-                                    str(name),
-
-                                "Value":
-                                    str(value),
+                                "Name": str(name),
+                                "Value": str(value),
                             }
                         )
 
-                    names = {
-                        item["Name"]
-                        for item in normalized
-                    }
+                    names = {item["Name"] for item in normalized}
 
-                    if not all(
-                        required in names
-                        for required
-                        in expected_dimensions
-                    ):
+                    if not all(required in names for required in expected_dimensions):
                         continue
 
                     # Keep exactly the expected identity dimensions.
@@ -786,15 +635,11 @@ class EksCollector(BaseCollector):
                     selected = [
                         item
                         for item in normalized
-                        if item["Name"]
-                        in expected_dimensions
+                        if item["Name"] in expected_dimensions
                     ]
 
                     selected.sort(
-                        key=lambda item:
-                            expected_dimensions.index(
-                                item["Name"]
-                            )
+                        key=lambda item: expected_dimensions.index(item["Name"])
                     )
 
                     signature = tuple(
@@ -802,8 +647,7 @@ class EksCollector(BaseCollector):
                             item["Name"],
                             item["Value"],
                         )
-                        for item
-                        in selected
+                        for item in selected
                     )
 
                     existing_signatures = {
@@ -812,17 +656,13 @@ class EksCollector(BaseCollector):
                                 item["Name"],
                                 item["Value"],
                             )
-                            for item
-                            in existing
+                            for item in existing
                         )
-                        for existing
-                        in dimensions_sets
+                        for existing in dimensions_sets
                     }
 
                     if signature not in existing_signatures:
-                        dimensions_sets.append(
-                            selected
-                        )
+                        dimensions_sets.append(selected)
 
         except Exception as exc:
 
@@ -832,9 +672,7 @@ class EksCollector(BaseCollector):
                 f"{metric_name}: {exc}"
             )
 
-        self._metric_dimension_cache[
-            cache_key
-        ] = dimensions_sets
+        self._metric_dimension_cache[cache_key] = dimensions_sets
 
         return dimensions_sets
 
@@ -846,18 +684,9 @@ class EksCollector(BaseCollector):
         spec: Dict[str, Any],
     ) -> str:
 
-        metric_key = (
-            spec.get("key")
-            or spec.get("name")
-            or "metric"
-        )
+        metric_key = spec.get("key") or spec.get("name") or "metric"
 
-        return (
-            f"{cluster_name}:"
-            f"{group}:"
-            f"{index}:"
-            f"{metric_key}"
-        )
+        return f"{cluster_name}:" f"{group}:" f"{index}:" f"{metric_key}"
 
     # ==================================================================
     # RESOURCE ID
@@ -868,16 +697,10 @@ class EksCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> str:
 
-        value = (
-            resource.get("arn")
-            or resource.get("name")
-            or resource.get("id")
-        )
+        value = resource.get("arn") or resource.get("name") or resource.get("id")
 
         if not value:
-            raise ValueError(
-                "EKS cluster has no ARN or name"
-            )
+            raise ValueError("EKS cluster has no ARN or name")
 
         return str(value)
 
@@ -891,51 +714,22 @@ class EksCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         return {
-            "name":
-                resource.get("name"),
-
-            "arn":
-                resource.get("arn"),
-
-            "cluster_id":
-                resource.get("id"),
-
-            "status":
-                resource.get("status"),
-
-            "version":
-                resource.get("version"),
-
-            "platform_version":
-                resource.get(
-                    "platformVersion"
-                ),
-
-            "created_at":
-                self._isoformat(
-                    resource.get(
-                        "createdAt"
-                    )
-                ),
-
-            "tags":
-                resource.get(
-                    "tags",
-                    {},
-                ),
-
+            "name": resource.get("name"),
+            "arn": resource.get("arn"),
+            "cluster_id": resource.get("id"),
+            "status": resource.get("status"),
+            "version": resource.get("version"),
+            "platform_version": resource.get("platformVersion"),
+            "created_at": self._isoformat(resource.get("createdAt")),
+            "tags": resource.get(
+                "tags",
+                {},
+            ),
             "support_assessment": {
-                "version":
-                    resource.get(
-                        "version"
-                    ),
-
+                "version": resource.get("version"),
                 # Deliberately not guessed.
-                "support_type":
-                    None,
-
-                "support_status":
-                    "requires_pricing_catalog_or_explicit_profile",
+                "support_type": None,
+                "support_status": "requires_pricing_catalog_or_explicit_profile",
             },
         }
 
@@ -948,9 +742,7 @@ class EksCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        cluster_name = resource.get(
-            "name"
-        )
+        cluster_name = resource.get("name")
 
         vpc_config = (
             resource.get(
@@ -978,154 +770,71 @@ class EksCollector(BaseCollector):
 
         return {
             "cluster": {
-                "name":
-                    resource.get("name"),
-
-                "arn":
-                    resource.get("arn"),
-
-                "id":
-                    resource.get("id"),
-
-                "status":
-                    resource.get("status"),
-
-                "version":
-                    resource.get("version"),
-
-                "platform_version":
-                    resource.get(
-                        "platformVersion"
-                    ),
-
-                "created_at":
-                    self._isoformat(
-                        resource.get(
-                            "createdAt"
-                        )
-                    ),
-
-                "endpoint":
-                    resource.get(
-                        "endpoint"
-                    ),
-
-                "role_arn":
-                    resource.get(
-                        "roleArn"
-                    ),
-
-                "deletion_protection":
-                    resource.get(
-                        "deletionProtection"
-                    ),
-
-                "control_plane_scaling":
-                    resource.get(
-                        "controlPlaneScalingConfig",
-                        {},
-                    ),
-            },
-
-            "network": {
-                "vpc_id":
-                    vpc_config.get("vpcId"),
-
-                "subnet_ids":
-                    list(
-                        vpc_config.get(
-                            "subnetIds",
-                            [],
-                        )
-                        or []
-                    ),
-
-                "security_group_ids":
-                    list(
-                        vpc_config.get(
-                            "securityGroupIds",
-                            [],
-                        )
-                        or []
-                    ),
-
-                "cluster_security_group_id":
-                    vpc_config.get(
-                        "clusterSecurityGroupId"
-                    ),
-
-                "endpoint_public_access":
-                    vpc_config.get(
-                        "endpointPublicAccess"
-                    ),
-
-                "endpoint_private_access":
-                    vpc_config.get(
-                        "endpointPrivateAccess"
-                    ),
-
-                "public_access_cidrs":
-                    list(
-                        vpc_config.get(
-                            "publicAccessCidrs",
-                            [],
-                        )
-                        or []
-                    ),
-
-                "ip_family":
-                    kubernetes_network.get(
-                        "ipFamily"
-                    ),
-            },
-
-            "kubernetes_network": {
-                "service_ipv4_cidr":
-                    kubernetes_network.get(
-                        "serviceIpv4Cidr"
-                    ),
-
-                "service_ipv6_cidr":
-                    kubernetes_network.get(
-                        "serviceIpv6Cidr"
-                    ),
-            },
-
-            "access": {
-                "authentication_mode":
-                    access_config.get(
-                        "authenticationMode"
-                    ),
-
-                "bootstrap_cluster_creator_admin_permissions":
-                    access_config.get(
-                        "bootstrapClusterCreatorAdminPermissions"
-                    ),
-            },
-
-            "encryption":
-                self._normalize_encryption(
-                    resource.get(
-                        "encryptionConfig",
-                        [],
-                    )
-                ),
-
-            "logging":
-                resource.get(
-                    "logging",
+                "name": resource.get("name"),
+                "arn": resource.get("arn"),
+                "id": resource.get("id"),
+                "status": resource.get("status"),
+                "version": resource.get("version"),
+                "platform_version": resource.get("platformVersion"),
+                "created_at": self._isoformat(resource.get("createdAt")),
+                "endpoint": resource.get("endpoint"),
+                "role_arn": resource.get("roleArn"),
+                "deletion_protection": resource.get("deletionProtection"),
+                "control_plane_scaling": resource.get(
+                    "controlPlaneScalingConfig",
                     {},
                 ),
-
-            "compute":
-                self._collect_compute(
-                    cluster_name
+            },
+            "network": {
+                "vpc_id": vpc_config.get("vpcId"),
+                "subnet_ids": list(
+                    vpc_config.get(
+                        "subnetIds",
+                        [],
+                    )
+                    or []
                 ),
-
-            "addons":
-                self._collect_addons(
-                    cluster_name
+                "security_group_ids": list(
+                    vpc_config.get(
+                        "securityGroupIds",
+                        [],
+                    )
+                    or []
                 ),
+                "cluster_security_group_id": vpc_config.get("clusterSecurityGroupId"),
+                "endpoint_public_access": vpc_config.get("endpointPublicAccess"),
+                "endpoint_private_access": vpc_config.get("endpointPrivateAccess"),
+                "public_access_cidrs": list(
+                    vpc_config.get(
+                        "publicAccessCidrs",
+                        [],
+                    )
+                    or []
+                ),
+                "ip_family": kubernetes_network.get("ipFamily"),
+            },
+            "kubernetes_network": {
+                "service_ipv4_cidr": kubernetes_network.get("serviceIpv4Cidr"),
+                "service_ipv6_cidr": kubernetes_network.get("serviceIpv6Cidr"),
+            },
+            "access": {
+                "authentication_mode": access_config.get("authenticationMode"),
+                "bootstrap_cluster_creator_admin_permissions": access_config.get(
+                    "bootstrapClusterCreatorAdminPermissions"
+                ),
+            },
+            "encryption": self._normalize_encryption(
+                resource.get(
+                    "encryptionConfig",
+                    [],
+                )
+            ),
+            "logging": resource.get(
+                "logging",
+                {},
+            ),
+            "compute": self._collect_compute(cluster_name),
+            "addons": self._collect_addons(cluster_name),
         }
 
     # ==================================================================
@@ -1140,51 +849,27 @@ class EksCollector(BaseCollector):
         if not cluster_name:
 
             return {
-                "inventory_status":
-                    "incomplete",
-
-                "inventory_errors": [
-                    "Cluster name unavailable."
-                ],
-
+                "inventory_status": "incomplete",
+                "inventory_errors": ["Cluster name unavailable."],
                 "nodegroups": [],
                 "fargate_profiles": [],
                 "ec2_instances": [],
-
                 "summary": {},
             }
 
         errors: List[str] = []
 
-        nodegroups, nodegroup_errors = (
-            self._collect_nodegroups(
-                cluster_name
-            )
-        )
+        nodegroups, nodegroup_errors = self._collect_nodegroups(cluster_name)
 
-        errors.extend(
-            nodegroup_errors
-        )
+        errors.extend(nodegroup_errors)
 
-        fargate_profiles, fargate_errors = (
-            self._collect_fargate_profiles(
-                cluster_name
-            )
-        )
+        fargate_profiles, fargate_errors = self._collect_fargate_profiles(cluster_name)
 
-        errors.extend(
-            fargate_errors
-        )
+        errors.extend(fargate_errors)
 
-        ec2_instances, ec2_errors = (
-            self._collect_ec2_instances(
-                nodegroups
-            )
-        )
+        ec2_instances, ec2_errors = self._collect_ec2_instances(nodegroups)
 
-        errors.extend(
-            ec2_errors
-        )
+        errors.extend(ec2_errors)
 
         desired = 0
         minimum = 0
@@ -1200,65 +885,25 @@ class EksCollector(BaseCollector):
                 or {}
             )
 
-            desired += self._number_or_zero(
-                scaling.get(
-                    "desired_size"
-                )
-            )
+            desired += self._number_or_zero(scaling.get("desired_size"))
 
-            minimum += self._number_or_zero(
-                scaling.get(
-                    "min_size"
-                )
-            )
+            minimum += self._number_or_zero(scaling.get("min_size"))
 
-            maximum += self._number_or_zero(
-                scaling.get(
-                    "max_size"
-                )
-            )
+            maximum += self._number_or_zero(scaling.get("max_size"))
 
         return {
-            "inventory_status": (
-                "complete"
-                if not errors
-                else "partial"
-            ),
-
-            "inventory_errors":
-                errors,
-
-            "nodegroups":
-                nodegroups,
-
-            "fargate_profiles":
-                fargate_profiles,
-
-            "ec2_instances":
-                ec2_instances,
-
+            "inventory_status": ("complete" if not errors else "partial"),
+            "inventory_errors": errors,
+            "nodegroups": nodegroups,
+            "fargate_profiles": fargate_profiles,
+            "ec2_instances": ec2_instances,
             "summary": {
-                "nodegroup_count":
-                    len(nodegroups),
-
-                "fargate_profile_count":
-                    len(
-                        fargate_profiles
-                    ),
-
-                "ec2_instance_count":
-                    len(
-                        ec2_instances
-                    ),
-
-                "desired_node_count":
-                    desired,
-
-                "minimum_node_count":
-                    minimum,
-
-                "maximum_node_count":
-                    maximum,
+                "nodegroup_count": len(nodegroups),
+                "fargate_profile_count": len(fargate_profiles),
+                "ec2_instance_count": len(ec2_instances),
+                "desired_node_count": desired,
+                "minimum_node_count": minimum,
+                "maximum_node_count": maximum,
             },
         }
 
@@ -1274,23 +919,15 @@ class EksCollector(BaseCollector):
         List[str],
     ]:
 
-        result: List[
-            Dict[str, Any]
-        ] = []
+        result: List[Dict[str, Any]] = []
 
         errors: List[str] = []
 
         try:
 
-            paginator = (
-                self.eks.get_paginator(
-                    "list_nodegroups"
-                )
-            )
+            paginator = self.eks.get_paginator("list_nodegroups")
 
-            for page in paginator.paginate(
-                clusterName=cluster_name
-            ):
+            for page in paginator.paginate(clusterName=cluster_name):
 
                 for nodegroup_name in page.get(
                     "nodegroups",
@@ -1299,11 +936,9 @@ class EksCollector(BaseCollector):
 
                     try:
 
-                        response = (
-                            self.eks.describe_nodegroup(
-                                clusterName=cluster_name,
-                                nodegroupName=nodegroup_name,
-                            )
+                        response = self.eks.describe_nodegroup(
+                            clusterName=cluster_name,
+                            nodegroupName=nodegroup_name,
                         )
 
                         nodegroup = response.get(
@@ -1353,157 +988,76 @@ class EksCollector(BaseCollector):
 
                         result.append(
                             {
-                                "name":
+                                "name": nodegroup.get("nodegroupName"),
+                                "arn": nodegroup.get("nodegroupArn"),
+                                "status": nodegroup.get("status"),
+                                "created_at": self._isoformat(
+                                    nodegroup.get("createdAt")
+                                ),
+                                "modified_at": self._isoformat(
+                                    nodegroup.get("modifiedAt")
+                                ),
+                                "instance_types": list(
                                     nodegroup.get(
-                                        "nodegroupName"
-                                    ),
-
-                                "arn":
+                                        "instanceTypes",
+                                        [],
+                                    )
+                                    or []
+                                ),
+                                "capacity_type": nodegroup.get("capacityType"),
+                                "ami_type": nodegroup.get("amiType"),
+                                "disk_size_gib": nodegroup.get("diskSize"),
+                                "subnets": list(
                                     nodegroup.get(
-                                        "nodegroupArn"
-                                    ),
-
-                                "status":
-                                    nodegroup.get(
-                                        "status"
-                                    ),
-
-                                "created_at":
-                                    self._isoformat(
-                                        nodegroup.get(
-                                            "createdAt"
-                                        )
-                                    ),
-
-                                "modified_at":
-                                    self._isoformat(
-                                        nodegroup.get(
-                                            "modifiedAt"
-                                        )
-                                    ),
-
-                                "instance_types":
-                                    list(
-                                        nodegroup.get(
-                                            "instanceTypes",
-                                            [],
-                                        )
-                                        or []
-                                    ),
-
-                                "capacity_type":
-                                    nodegroup.get(
-                                        "capacityType"
-                                    ),
-
-                                "ami_type":
-                                    nodegroup.get(
-                                        "amiType"
-                                    ),
-
-                                "disk_size_gib":
-                                    nodegroup.get(
-                                        "diskSize"
-                                    ),
-
-                                "subnets":
-                                    list(
-                                        nodegroup.get(
-                                            "subnets",
-                                            [],
-                                        )
-                                        or []
-                                    ),
-
-                                "node_role":
-                                    nodegroup.get(
-                                        "nodeRole"
-                                    ),
-
+                                        "subnets",
+                                        [],
+                                    )
+                                    or []
+                                ),
+                                "node_role": nodegroup.get("nodeRole"),
                                 "scaling": {
-                                    "min_size":
-                                        scaling.get(
-                                            "minSize"
-                                        ),
-
-                                    "max_size":
-                                        scaling.get(
-                                            "maxSize"
-                                        ),
-
-                                    "desired_size":
-                                        scaling.get(
-                                            "desiredSize"
-                                        ),
+                                    "min_size": scaling.get("minSize"),
+                                    "max_size": scaling.get("maxSize"),
+                                    "desired_size": scaling.get("desiredSize"),
                                 },
-
                                 "update": {
-                                    "max_unavailable":
-                                        update.get(
-                                            "maxUnavailable"
-                                        ),
-
-                                    "max_unavailable_percentage":
-                                        update.get(
-                                            "maxUnavailablePercentage"
-                                        ),
-                                },
-
-                                "launch_template": {
-                                    "id":
-                                        launch_template.get(
-                                            "id"
-                                        ),
-
-                                    "name":
-                                        launch_template.get(
-                                            "name"
-                                        ),
-
-                                    "version":
-                                        launch_template.get(
-                                            "version"
-                                        ),
-                                },
-
-                                "resources": {
-                                    "auto_scaling_groups":
-                                        resources.get(
-                                            "autoScalingGroups",
-                                            [],
-                                        ),
-
-                                    "remote_access_security_group":
-                                        resources.get(
-                                            "remoteAccessSecurityGroup"
-                                        ),
-                                },
-
-                                "health": {
-                                    "issues":
-                                        health.get(
-                                            "issues",
-                                            [],
-                                        ),
-                                },
-
-                                "labels":
-                                    nodegroup.get(
-                                        "labels",
-                                        {},
+                                    "max_unavailable": update.get("maxUnavailable"),
+                                    "max_unavailable_percentage": update.get(
+                                        "maxUnavailablePercentage"
                                     ),
-
-                                "taints":
-                                    nodegroup.get(
-                                        "taints",
+                                },
+                                "launch_template": {
+                                    "id": launch_template.get("id"),
+                                    "name": launch_template.get("name"),
+                                    "version": launch_template.get("version"),
+                                },
+                                "resources": {
+                                    "auto_scaling_groups": resources.get(
+                                        "autoScalingGroups",
                                         [],
                                     ),
-
-                                "tags":
-                                    nodegroup.get(
-                                        "tags",
-                                        {},
+                                    "remote_access_security_group": resources.get(
+                                        "remoteAccessSecurityGroup"
                                     ),
+                                },
+                                "health": {
+                                    "issues": health.get(
+                                        "issues",
+                                        [],
+                                    ),
+                                },
+                                "labels": nodegroup.get(
+                                    "labels",
+                                    {},
+                                ),
+                                "taints": nodegroup.get(
+                                    "taints",
+                                    [],
+                                ),
+                                "tags": nodegroup.get(
+                                    "tags",
+                                    {},
+                                ),
                             }
                         )
 
@@ -1520,12 +1074,7 @@ class EksCollector(BaseCollector):
 
         except Exception as exc:
 
-            errors.append(
-                (
-                    "Failed to list nodegroups "
-                    f"for {cluster_name}: {exc}"
-                )
-            )
+            errors.append(("Failed to list nodegroups " f"for {cluster_name}: {exc}"))
 
         return result, errors
 
@@ -1541,9 +1090,7 @@ class EksCollector(BaseCollector):
         List[str],
     ]:
 
-        result: List[
-            Dict[str, Any]
-        ] = []
+        result: List[Dict[str, Any]] = []
 
         errors: List[str] = []
 
@@ -1581,33 +1128,20 @@ class EksCollector(BaseCollector):
                 ):
                     continue
 
-                asg_name = asg.get(
-                    "name"
-                )
+                asg_name = asg.get("name")
 
                 if not asg_name:
                     continue
 
                 try:
 
-                    response = (
-                        self.ec2
-                        .describe_auto_scaling_groups(
-                            AutoScalingGroupNames=[
-                                asg_name
-                            ]
-                        )
+                    response = self.ec2.describe_auto_scaling_groups(
+                        AutoScalingGroupNames=[asg_name]
                     )
 
                 except Exception as exc:
 
-                    errors.append(
-                        (
-                            f"Failed to inspect "
-                            f"ASG {asg_name}: "
-                            f"{exc}"
-                        )
-                    )
+                    errors.append((f"Failed to inspect " f"ASG {asg_name}: " f"{exc}"))
 
                     continue
 
@@ -1626,32 +1160,20 @@ class EksCollector(BaseCollector):
                         or []
                     ):
 
-                        instance_id = instance.get(
-                            "InstanceId"
-                        )
+                        instance_id = instance.get("InstanceId")
 
                         if not instance_id:
                             continue
 
-                        if (
-                            instance_id
-                            in seen_instance_ids
-                        ):
+                        if instance_id in seen_instance_ids:
                             continue
 
-                        seen_instance_ids.add(
-                            instance_id
-                        )
+                        seen_instance_ids.add(instance_id)
 
                         try:
 
-                            ec2_response = (
-                                self.ec2
-                                .describe_instances(
-                                    InstanceIds=[
-                                        instance_id
-                                    ]
-                                )
+                            ec2_response = self.ec2.describe_instances(
+                                InstanceIds=[instance_id]
                             )
 
                         except Exception as exc:
@@ -1668,11 +1190,9 @@ class EksCollector(BaseCollector):
 
                             continue
 
-                        for reservation in (
-                            ec2_response.get(
-                                "Reservations",
-                                [],
-                            )
+                        for reservation in ec2_response.get(
+                            "Reservations",
+                            [],
                         ):
 
                             for ec2_instance in (
@@ -1745,20 +1265,9 @@ class EksCollector(BaseCollector):
 
             block_devices.append(
                 {
-                    "device_name":
-                        device.get(
-                            "DeviceName"
-                        ),
-
-                    "volume_id":
-                        ebs.get(
-                            "VolumeId"
-                        ),
-
-                    "delete_on_termination":
-                        ebs.get(
-                            "DeleteOnTermination"
-                        ),
+                    "device_name": device.get("DeviceName"),
+                    "volume_id": ebs.get("VolumeId"),
+                    "delete_on_termination": ebs.get("DeleteOnTermination"),
                 }
             )
 
@@ -1778,16 +1287,10 @@ class EksCollector(BaseCollector):
             ):
                 continue
 
-            network_interface_id = (
-                eni.get(
-                    "NetworkInterfaceId"
-                )
-            )
+            network_interface_id = eni.get("NetworkInterfaceId")
 
             if network_interface_id:
-                network_interfaces.append(
-                    network_interface_id
-                )
+                network_interfaces.append(network_interface_id)
 
         security_groups = []
 
@@ -1805,117 +1308,38 @@ class EksCollector(BaseCollector):
             ):
                 continue
 
-            group_id = group.get(
-                "GroupId"
-            )
+            group_id = group.get("GroupId")
 
             if group_id:
-                security_groups.append(
-                    group_id
-                )
+                security_groups.append(group_id)
 
         return {
-            "instance_id":
+            "instance_id": instance.get("InstanceId"),
+            "instance_type": instance.get("InstanceType"),
+            "state": state.get("Name"),
+            "availability_zone": placement.get("AvailabilityZone"),
+            "subnet_id": instance.get("SubnetId"),
+            "vpc_id": instance.get("VpcId"),
+            "private_ip": instance.get("PrivateIpAddress"),
+            "launch_time": self._isoformat(instance.get("LaunchTime")),
+            "ami_id": instance.get("ImageId"),
+            "architecture": instance.get("Architecture"),
+            "platform": instance.get("Platform"),
+            "ebs_optimized": instance.get("EbsOptimized"),
+            "instance_lifecycle": instance.get("InstanceLifecycle"),
+            "root_device_name": instance.get("RootDeviceName"),
+            "root_device_type": instance.get("RootDeviceType"),
+            "block_devices": block_devices,
+            "network_interface_ids": network_interfaces,
+            "security_group_ids": security_groups,
+            "tags": self._tags_to_dict(
                 instance.get(
-                    "InstanceId"
-                ),
-
-            "instance_type":
-                instance.get(
-                    "InstanceType"
-                ),
-
-            "state":
-                state.get(
-                    "Name"
-                ),
-
-            "availability_zone":
-                placement.get(
-                    "AvailabilityZone"
-                ),
-
-            "subnet_id":
-                instance.get(
-                    "SubnetId"
-                ),
-
-            "vpc_id":
-                instance.get(
-                    "VpcId"
-                ),
-
-            "private_ip":
-                instance.get(
-                    "PrivateIpAddress"
-                ),
-
-            "launch_time":
-                self._isoformat(
-                    instance.get(
-                        "LaunchTime"
-                    )
-                ),
-
-            "ami_id":
-                instance.get(
-                    "ImageId"
-                ),
-
-            "architecture":
-                instance.get(
-                    "Architecture"
-                ),
-
-            "platform":
-                instance.get(
-                    "Platform"
-                ),
-
-            "ebs_optimized":
-                instance.get(
-                    "EbsOptimized"
-                ),
-
-            "instance_lifecycle":
-                instance.get(
-                    "InstanceLifecycle"
-                ),
-
-            "root_device_name":
-                instance.get(
-                    "RootDeviceName"
-                ),
-
-            "root_device_type":
-                instance.get(
-                    "RootDeviceType"
-                ),
-
-            "block_devices":
-                block_devices,
-
-            "network_interface_ids":
-                network_interfaces,
-
-            "security_group_ids":
-                security_groups,
-
-            "tags":
-                self._tags_to_dict(
-                    instance.get(
-                        "Tags",
-                        [],
-                    )
-                ),
-
-            "nodegroup":
-                nodegroup.get(
-                    "name"
-                ),
-
-            "autoscaling_group":
-                asg_name,
+                    "Tags",
+                    [],
+                )
+            ),
+            "nodegroup": nodegroup.get("name"),
+            "autoscaling_group": asg_name,
         }
 
     # ==================================================================
@@ -1930,23 +1354,15 @@ class EksCollector(BaseCollector):
         List[str],
     ]:
 
-        result: List[
-            Dict[str, Any]
-        ] = []
+        result: List[Dict[str, Any]] = []
 
         errors: List[str] = []
 
         try:
 
-            paginator = (
-                self.eks.get_paginator(
-                    "list_fargate_profiles"
-                )
-            )
+            paginator = self.eks.get_paginator("list_fargate_profiles")
 
-            for page in paginator.paginate(
-                clusterName=cluster_name
-            ):
+            for page in paginator.paginate(clusterName=cluster_name):
 
                 for profile_name in page.get(
                     "fargateProfileNames",
@@ -1955,73 +1371,43 @@ class EksCollector(BaseCollector):
 
                     try:
 
-                        response = (
-                            self.eks
-                            .describe_fargate_profile(
-                                clusterName=cluster_name,
-                                fargateProfileName=profile_name,
-                            )
+                        response = self.eks.describe_fargate_profile(
+                            clusterName=cluster_name,
+                            fargateProfileName=profile_name,
                         )
 
-                        profile = (
-                            response.get(
-                                "fargateProfile",
-                                {},
-                            )
+                        profile = response.get(
+                            "fargateProfile",
+                            {},
                         )
 
                         result.append(
                             {
-                                "name":
+                                "name": profile.get("fargateProfileName"),
+                                "arn": profile.get("fargateProfileArn"),
+                                "status": profile.get("status"),
+                                "created_at": self._isoformat(profile.get("createdAt")),
+                                "pod_execution_role_arn": profile.get(
+                                    "podExecutionRoleArn"
+                                ),
+                                "subnets": list(
                                     profile.get(
-                                        "fargateProfileName"
-                                    ),
-
-                                "arn":
+                                        "subnets",
+                                        [],
+                                    )
+                                    or []
+                                ),
+                                "selectors": list(
                                     profile.get(
-                                        "fargateProfileArn"
-                                    ),
-
-                                "status":
-                                    profile.get(
-                                        "status"
-                                    ),
-
-                                "created_at":
-                                    self._isoformat(
-                                        profile.get(
-                                            "createdAt"
-                                        )
-                                    ),
-
-                                "pod_execution_role_arn":
-                                    profile.get(
-                                        "podExecutionRoleArn"
-                                    ),
-
-                                "subnets":
-                                    list(
-                                        profile.get(
-                                            "subnets",
-                                            [],
-                                        )
-                                        or []
-                                    ),
-
-                                "selectors":
-                                    list(
-                                        profile.get(
-                                            "selectors",
-                                            [],
-                                        )
-                                        or []
-                                    ),
-
-                                "tags":
-                                    profile.get(
-                                        "tags",
-                                        {},
-                                    ),
+                                        "selectors",
+                                        [],
+                                    )
+                                    or []
+                                ),
+                                "tags": profile.get(
+                                    "tags",
+                                    {},
+                                ),
                             }
                         )
 
@@ -2039,11 +1425,7 @@ class EksCollector(BaseCollector):
         except Exception as exc:
 
             errors.append(
-                (
-                    "Failed to list Fargate "
-                    f"profiles for {cluster_name}: "
-                    f"{exc}"
-                )
+                ("Failed to list Fargate " f"profiles for {cluster_name}: " f"{exc}")
             )
 
         return result, errors
@@ -2060,21 +1442,13 @@ class EksCollector(BaseCollector):
         if not cluster_name:
             return []
 
-        result: List[
-            Dict[str, Any]
-        ] = []
+        result: List[Dict[str, Any]] = []
 
         try:
 
-            paginator = (
-                self.eks.get_paginator(
-                    "list_addons"
-                )
-            )
+            paginator = self.eks.get_paginator("list_addons")
 
-            for page in paginator.paginate(
-                clusterName=cluster_name
-            ):
+            for page in paginator.paginate(clusterName=cluster_name):
 
                 for addon_name in page.get(
                     "addons",
@@ -2083,11 +1457,9 @@ class EksCollector(BaseCollector):
 
                     try:
 
-                        response = (
-                            self.eks.describe_addon(
-                                clusterName=cluster_name,
-                                addonName=addon_name,
-                            )
+                        response = self.eks.describe_addon(
+                            clusterName=cluster_name,
+                            addonName=addon_name,
                         )
 
                         addon = response.get(
@@ -2097,59 +1469,20 @@ class EksCollector(BaseCollector):
 
                         result.append(
                             {
-                                "name":
-                                    addon.get(
-                                        "addonName"
-                                    ),
-
-                                "version":
-                                    addon.get(
-                                        "addonVersion"
-                                    ),
-
-                                "status":
-                                    addon.get(
-                                        "status"
-                                    ),
-
-                                "created_at":
-                                    self._isoformat(
-                                        addon.get(
-                                            "createdAt"
-                                        )
-                                    ),
-
-                                "modified_at":
-                                    self._isoformat(
-                                        addon.get(
-                                            "modifiedAt"
-                                        )
-                                    ),
-
-                                "service_account_role_arn":
-                                    addon.get(
-                                        "serviceAccountRoleArn"
-                                    ),
-
-                                "owner":
-                                    addon.get(
-                                        "owner"
-                                    ),
-
-                                "publisher":
-                                    addon.get(
-                                        "publisher"
-                                    ),
-
-                                "configuration_values":
-                                    addon.get(
-                                        "configurationValues"
-                                    ),
-
-                                "health":
-                                    addon.get(
-                                        "health"
-                                    ),
+                                "name": addon.get("addonName"),
+                                "version": addon.get("addonVersion"),
+                                "status": addon.get("status"),
+                                "created_at": self._isoformat(addon.get("createdAt")),
+                                "modified_at": self._isoformat(addon.get("modifiedAt")),
+                                "service_account_role_arn": addon.get(
+                                    "serviceAccountRoleArn"
+                                ),
+                                "owner": addon.get("owner"),
+                                "publisher": addon.get("publisher"),
+                                "configuration_values": addon.get(
+                                    "configurationValues"
+                                ),
+                                "health": addon.get("health"),
                             }
                         )
 
@@ -2163,10 +1496,7 @@ class EksCollector(BaseCollector):
 
         except Exception as exc:
 
-            print(
-                f"[EKS] Failed to list addons "
-                f"for {cluster_name}: {exc}"
-            )
+            print(f"[EKS] Failed to list addons " f"for {cluster_name}: {exc}")
 
         return result
 
@@ -2179,32 +1509,24 @@ class EksCollector(BaseCollector):
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        cluster_name = resource.get(
-            "name"
-        )
+        cluster_name = resource.get("name")
 
         if not cluster_name:
 
             return {
                 "cloudwatch": {
-                    "status":
-                        "incomplete",
-
+                    "status": "incomplete",
                     "metrics": {},
                 }
             }
 
-        start, end = (
-            self.get_analysis_period()
-        )
+        start, end = self.get_analysis_period()
 
         namespace = self._namespace()
 
-        cached = (
-            self._metrics_batch_cache.get(
-                cluster_name,
-                {},
-            )
+        cached = self._metrics_batch_cache.get(
+            cluster_name,
+            {},
         )
 
         cluster_series = (
@@ -2243,77 +1565,45 @@ class EksCollector(BaseCollector):
             else []
         )
 
-        cluster_group = (
-            self._build_metric_group(
-                cluster_series,
-                group="cluster",
-            )
+        cluster_group = self._build_metric_group(
+            cluster_series,
+            group="cluster",
         )
 
-        node_group = (
-            self._build_metric_group(
-                node_series,
-                group="nodes",
-            )
+        node_group = self._build_metric_group(
+            node_series,
+            group="nodes",
         )
 
-        pod_group = (
-            self._build_metric_group(
-                pod_series,
-                group="pods",
-            )
+        pod_group = self._build_metric_group(
+            pod_series,
+            group="pods",
         )
 
         cloudwatch = {
-            "status":
-                "ok",
-
-            "namespace":
-                namespace,
-
-            "cluster_name":
-                cluster_name,
-
-            "analysis_start":
-                self._isoformat(
-                    start
-                ),
-
-            "analysis_end":
-                self._isoformat(
-                    end
-                ),
-
-            "requested_period":
-                self._requested_period(),
-
-            "cluster":
+            "status": "ok",
+            "namespace": namespace,
+            "cluster_name": cluster_name,
+            "analysis_start": self._isoformat(start),
+            "analysis_end": self._isoformat(end),
+            "requested_period": self._requested_period(),
+            "cluster": cluster_group,
+            "nodes": node_group,
+            "pods": pod_group,
+            "data_quality": self._combine_metric_quality(
                 cluster_group,
-
-            "nodes":
                 node_group,
-
-            "pods":
                 pod_group,
-
-            "data_quality":
-                self._combine_metric_quality(
-                    cluster_group,
-                    node_group,
-                    pod_group,
-                ),
+            ),
         }
 
         return {
-            "cloudwatch":
-                cloudwatch,
-
-            "derived":
-                self._build_derived_observations(
-                    cluster_group,
-                    node_group,
-                    pod_group,
-                ),
+            "cloudwatch": cloudwatch,
+            "derived": self._build_derived_observations(
+                cluster_group,
+                node_group,
+                pod_group,
+            ),
         }
 
     # ==================================================================
@@ -2346,14 +1636,7 @@ class EksCollector(BaseCollector):
             ):
                 continue
 
-            metric_name = (
-                metric.get(
-                    "metric_name"
-                )
-                or metric.get(
-                    "metric_key"
-                )
-            )
+            metric_name = metric.get("metric_name") or metric.get("metric_key")
 
             if not metric_name:
                 continue
@@ -2361,11 +1644,7 @@ class EksCollector(BaseCollector):
             metrics_by_name.setdefault(
                 str(metric_name),
                 [],
-            ).append(
-                self._enrich_metric(
-                    metric
-                )
-            )
+            ).append(self._enrich_metric(metric))
 
         # Keep a compatibility aggregate under metrics[name].
         #
@@ -2377,79 +1656,32 @@ class EksCollector(BaseCollector):
             Dict[str, Any],
         ] = {}
 
-        for name, entries in (
-            metrics_by_name.items()
-        ):
+        for name, entries in metrics_by_name.items():
 
-            aggregate_metrics[name] = (
-                self._aggregate_series(
-                    name,
-                    entries,
-                )
+            aggregate_metrics[name] = self._aggregate_series(
+                name,
+                entries,
             )
 
         return {
-            "status":
-                "ok",
-
-            "group":
-                group,
-
-            "metrics":
-                aggregate_metrics,
-
-            "series":
-                {
-                    name:
-                        entries
-                    for name, entries
-                    in metrics_by_name.items()
-                },
-
-            "data_quality":
-                {
-                    "queried_metric_count":
-                        len(series),
-
-                    "observed_metric_count":
-                        sum(
-                            1
-                            for metric
-                            in series
-                            if (
-                                metric.get(
-                                    "status"
-                                )
-                                == "ok"
-                                and metric.get(
-                                    "has_data"
-                                )
-                                is True
-                            )
-                        ),
-
-                    "no_data_metric_count":
-                        sum(
-                            1
-                            for metric
-                            in series
-                            if metric.get(
-                                "status"
-                            )
-                            == "no_data"
-                        ),
-
-                    "metric_error_count":
-                        sum(
-                            1
-                            for metric
-                            in series
-                            if metric.get(
-                                "status"
-                            )
-                            == "error"
-                        ),
-                },
+            "status": "ok",
+            "group": group,
+            "metrics": aggregate_metrics,
+            "series": {name: entries for name, entries in metrics_by_name.items()},
+            "data_quality": {
+                "queried_metric_count": len(series),
+                "observed_metric_count": sum(
+                    1
+                    for metric in series
+                    if (metric.get("status") == "ok" and metric.get("has_data") is True)
+                ),
+                "no_data_metric_count": sum(
+                    1 for metric in series if metric.get("status") == "no_data"
+                ),
+                "metric_error_count": sum(
+                    1 for metric in series if metric.get("status") == "error"
+                ),
+            },
         }
 
     @classmethod
@@ -2465,10 +1697,13 @@ class EksCollector(BaseCollector):
             [],
         )
 
-        if isinstance(
-            raw_datapoints,
-            list,
-        ) and raw_datapoints:
+        if (
+            isinstance(
+                raw_datapoints,
+                list,
+            )
+            and raw_datapoints
+        ):
 
             values = []
 
@@ -2480,15 +1715,11 @@ class EksCollector(BaseCollector):
                 ):
                     continue
 
-                value = point.get(
-                    "value"
-                )
+                value = point.get("value")
 
                 try:
                     if value is not None:
-                        values.append(
-                            float(value)
-                        )
+                        values.append(float(value))
                 except (
                     TypeError,
                     ValueError,
@@ -2497,22 +1728,13 @@ class EksCollector(BaseCollector):
 
             if values:
 
-                result["average"] = (
-                    sum(values)
-                    / len(values)
-                )
+                result["average"] = sum(values) / len(values)
 
-                result["minimum"] = min(
-                    values
-                )
+                result["minimum"] = min(values)
 
-                result["maximum"] = max(
-                    values
-                )
+                result["maximum"] = max(values)
 
-                result["datapoint_count"] = (
-                    len(values)
-                )
+                result["datapoint_count"] = len(values)
 
         summary = result.get(
             "summary",
@@ -2526,59 +1748,32 @@ class EksCollector(BaseCollector):
             summary = {}
 
         result["summary"] = {
-            "average":
-                cls._number(
-                    summary.get(
-                        "average",
-                        result.get(
-                            "average"
-                        ),
-                    )
-                ),
-
-            "minimum":
-                cls._number(
-                    summary.get(
-                        "minimum",
-                        result.get(
-                            "minimum"
-                        ),
-                    )
-                ),
-
-            "maximum":
-                cls._number(
-                    summary.get(
-                        "maximum",
-                        result.get(
-                            "maximum"
-                        ),
-                    )
-                ),
-
-            "datapoint_count":
-                cls._number(
-                    summary.get(
-                        "datapoint_count",
-                        result.get(
-                            "datapoint_count"
-                        ),
-                    )
-                ),
-
-            "coverage_ratio":
-                cls._number(
-                    result.get(
-                        "coverage_ratio"
-                    )
-                ),
-
-            "coverage_percent":
-                cls._number(
-                    result.get(
-                        "coverage_percent"
-                    )
-                ),
+            "average": cls._number(
+                summary.get(
+                    "average",
+                    result.get("average"),
+                )
+            ),
+            "minimum": cls._number(
+                summary.get(
+                    "minimum",
+                    result.get("minimum"),
+                )
+            ),
+            "maximum": cls._number(
+                summary.get(
+                    "maximum",
+                    result.get("maximum"),
+                )
+            ),
+            "datapoint_count": cls._number(
+                summary.get(
+                    "datapoint_count",
+                    result.get("datapoint_count"),
+                )
+            ),
+            "coverage_ratio": cls._number(result.get("coverage_ratio")),
+            "coverage_percent": cls._number(result.get("coverage_percent")),
         }
 
         return result
@@ -2593,16 +1788,7 @@ class EksCollector(BaseCollector):
         observed = [
             item
             for item in entries
-            if (
-                item.get(
-                    "status"
-                )
-                == "ok"
-                and item.get(
-                    "has_data"
-                )
-                is True
-            )
+            if (item.get("status") == "ok" and item.get("has_data") is True)
         ]
 
         averages = [
@@ -2610,150 +1796,70 @@ class EksCollector(BaseCollector):
                 item.get(
                     "summary",
                     {},
-                ).get(
-                    "average"
-                )
+                ).get("average")
             )
             for item in observed
         ]
 
-        averages = [
-            value
-            for value in averages
-            if value is not None
-        ]
+        averages = [value for value in averages if value is not None]
 
         maximums = [
             cls._number(
                 item.get(
                     "summary",
                     {},
-                ).get(
-                    "maximum"
-                )
+                ).get("maximum")
             )
             for item in observed
         ]
 
-        maximums = [
-            value
-            for value in maximums
-            if value is not None
-        ]
+        maximums = [value for value in maximums if value is not None]
 
         minimums = [
             cls._number(
                 item.get(
                     "summary",
                     {},
-                ).get(
-                    "minimum"
-                )
+                ).get("minimum")
             )
             for item in observed
         ]
 
-        minimums = [
-            value
-            for value in minimums
-            if value is not None
-        ]
+        minimums = [value for value in minimums if value is not None]
 
         coverage_values = [
-            cls._number(
-                item.get(
-                    "coverage_percent"
-                )
-            )
-            for item in observed
+            cls._number(item.get("coverage_percent")) for item in observed
         ]
 
-        coverage_values = [
-            value
-            for value in coverage_values
-            if value is not None
-        ]
+        coverage_values = [value for value in coverage_values if value is not None]
 
         if not averages:
 
             return {
-                "metric_name":
-                    metric_name,
-
-                "status":
-                    "no_data",
-
-                "has_data":
-                    False,
-
-                "series_count":
-                    len(entries),
-
-                "observed_series_count":
-                    0,
-
-                "average":
-                    None,
-
-                "minimum":
-                    None,
-
-                "maximum":
-                    None,
-
-                "coverage_percent":
-                    (
-                        min(coverage_values)
-                        if coverage_values
-                        else None
-                    ),
+                "metric_name": metric_name,
+                "status": "no_data",
+                "has_data": False,
+                "series_count": len(entries),
+                "observed_series_count": 0,
+                "average": None,
+                "minimum": None,
+                "maximum": None,
+                "coverage_percent": (min(coverage_values) if coverage_values else None),
             }
 
         # For an aggregate of resource series, an unweighted arithmetic
         # mean is deliberately used. It is presented as an operational
         # aggregate, not as billing usage.
         return {
-            "metric_name":
-                metric_name,
-
-            "status":
-                "ok",
-
-            "has_data":
-                True,
-
-            "series_count":
-                len(entries),
-
-            "observed_series_count":
-                len(observed),
-
-            "average":
-                (
-                    sum(averages)
-                    / len(averages)
-                ),
-
-            "minimum":
-                (
-                    min(minimums)
-                    if minimums
-                    else None
-                ),
-
-            "maximum":
-                (
-                    max(maximums)
-                    if maximums
-                    else None
-                ),
-
-            "coverage_percent":
-                (
-                    min(coverage_values)
-                    if coverage_values
-                    else None
-                ),
+            "metric_name": metric_name,
+            "status": "ok",
+            "has_data": True,
+            "series_count": len(entries),
+            "observed_series_count": len(observed),
+            "average": (sum(averages) / len(averages)),
+            "minimum": (min(minimums) if minimums else None),
+            "maximum": (max(maximums) if maximums else None),
+            "coverage_percent": (min(coverage_values) if coverage_values else None),
         }
 
     # ==================================================================
@@ -2769,59 +1875,28 @@ class EksCollector(BaseCollector):
 
         return {
             "cluster": {
-                "node_count":
-                    self._metric_aggregate_value(
-                        cluster_group,
-                        "cluster_node_count",
-                    ),
-
-                "failed_node_count":
-                    self._metric_aggregate_value(
-                        cluster_group,
-                        "cluster_failed_node_count",
-                    ),
+                "node_count": self._metric_aggregate_value(
+                    cluster_group,
+                    "cluster_node_count",
+                ),
+                "failed_node_count": self._metric_aggregate_value(
+                    cluster_group,
+                    "cluster_failed_node_count",
+                ),
             },
-
             "nodes": {
-                "series_count":
-                    self._series_count(
-                        node_group
-                    ),
-
-                "identified_node_count":
-                    self._identified_node_count(
-                        node_group
-                    ),
+                "series_count": self._series_count(node_group),
+                "identified_node_count": self._identified_node_count(node_group),
             },
-
             "pods": {
-                "series_count":
-                    self._series_count(
-                        pod_group
-                    ),
-
-                "identified_pod_count":
-                    self._identified_pod_count(
-                        pod_group
-                    ),
+                "series_count": self._series_count(pod_group),
+                "identified_pod_count": self._identified_pod_count(pod_group),
             },
-
             "semantics": {
-                "metric_aggregates_are_operational":
-                    True,
-
-                "missing_is_zero":
-                    False,
-
-                "node_series_identity":
-                    list(
-                        self.NODE_DIMENSIONS
-                    ),
-
-                "pod_series_identity":
-                    list(
-                        self.POD_DIMENSIONS
-                    ),
+                "metric_aggregates_are_operational": True,
+                "missing_is_zero": False,
+                "node_series_identity": list(self.NODE_DIMENSIONS),
+                "pod_series_identity": list(self.POD_DIMENSIONS),
             },
         }
 
@@ -2842,9 +1917,7 @@ class EksCollector(BaseCollector):
         ):
             return None
 
-        metric = metrics.get(
-            metric_name
-        )
+        metric = metrics.get(metric_name)
 
         if not isinstance(
             metric,
@@ -2852,9 +1925,7 @@ class EksCollector(BaseCollector):
         ):
             return None
 
-        return metric.get(
-            "average"
-        )
+        return metric.get("average")
 
     @staticmethod
     def _series_count(
@@ -2909,11 +1980,9 @@ class EksCollector(BaseCollector):
 
             for entry in entries:
 
-                dimensions = (
-                    entry.get(
-                        "dimensions",
-                        [],
-                    )
+                dimensions = entry.get(
+                    "dimensions",
+                    [],
                 )
 
                 if not isinstance(
@@ -2923,12 +1992,7 @@ class EksCollector(BaseCollector):
                     continue
 
                 mapping = {
-                    item.get(
-                        "Name"
-                    ):
-                        item.get(
-                            "Value"
-                        )
+                    item.get("Name"): item.get("Value")
                     for item in dimensions
                     if isinstance(
                         item,
@@ -2936,14 +2000,10 @@ class EksCollector(BaseCollector):
                     )
                 }
 
-                value = mapping.get(
-                    "InstanceId"
-                )
+                value = mapping.get("InstanceId")
 
                 if value:
-                    ids.add(
-                        str(value)
-                    )
+                    ids.add(str(value))
 
         return len(ids)
 
@@ -2975,11 +2035,9 @@ class EksCollector(BaseCollector):
 
             for entry in entries:
 
-                dimensions = (
-                    entry.get(
-                        "dimensions",
-                        [],
-                    )
+                dimensions = entry.get(
+                    "dimensions",
+                    [],
                 )
 
                 if not isinstance(
@@ -2989,12 +2047,7 @@ class EksCollector(BaseCollector):
                     continue
 
                 mapping = {
-                    item.get(
-                        "Name"
-                    ):
-                        item.get(
-                            "Value"
-                        )
+                    item.get("Name"): item.get("Value")
                     for item in dimensions
                     if isinstance(
                         item,
@@ -3002,23 +2055,13 @@ class EksCollector(BaseCollector):
                     )
                 }
 
-                cluster = mapping.get(
-                    "ClusterName"
-                )
+                cluster = mapping.get("ClusterName")
 
-                namespace = mapping.get(
-                    "Namespace"
-                )
+                namespace = mapping.get("Namespace")
 
-                pod = mapping.get(
-                    "PodName"
-                )
+                pod = mapping.get("PodName")
 
-                if (
-                    cluster
-                    and namespace
-                    and pod
-                ):
+                if cluster and namespace and pod:
                     ids.add(
                         (
                             str(cluster),
@@ -3039,73 +2082,35 @@ class EksCollector(BaseCollector):
         collected_resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        configuration = self._dict(
-            collected_resource.get(
-                "configuration"
-            )
+        configuration = self._dict(collected_resource.get("configuration"))
+
+        compute = self._dict(configuration.get("compute"))
+
+        observations = self._dict(collected_resource.get("observations"))
+
+        cloudwatch = self._dict(observations.get("cloudwatch"))
+
+        cluster_metrics = self._dict(cloudwatch.get("cluster"))
+
+        node_metrics = self._dict(cloudwatch.get("nodes"))
+
+        pod_metrics = self._dict(cloudwatch.get("pods"))
+
+        summary = self._dict(compute.get("summary"))
+
+        nodegroups = compute.get(
+            "nodegroups",
+            [],
         )
 
-        compute = self._dict(
-            configuration.get(
-                "compute"
-            )
+        fargate_profiles = compute.get(
+            "fargate_profiles",
+            [],
         )
 
-        observations = self._dict(
-            collected_resource.get(
-                "observations"
-            )
-        )
-
-        cloudwatch = self._dict(
-            observations.get(
-                "cloudwatch"
-            )
-        )
-
-        cluster_metrics = self._dict(
-            cloudwatch.get(
-                "cluster"
-            )
-        )
-
-        node_metrics = self._dict(
-            cloudwatch.get(
-                "nodes"
-            )
-        )
-
-        pod_metrics = self._dict(
-            cloudwatch.get(
-                "pods"
-            )
-        )
-
-        summary = self._dict(
-            compute.get(
-                "summary"
-            )
-        )
-
-        nodegroups = (
-            compute.get(
-                "nodegroups",
-                [],
-            )
-        )
-
-        fargate_profiles = (
-            compute.get(
-                "fargate_profiles",
-                [],
-            )
-        )
-
-        ec2_instances = (
-            compute.get(
-                "ec2_instances",
-                [],
-            )
+        ec2_instances = compute.get(
+            "ec2_instances",
+            [],
         )
 
         if not isinstance(
@@ -3128,15 +2133,9 @@ class EksCollector(BaseCollector):
 
         return {
             "cost_model": {
-                "control_plane_driver":
-                    "eks_cluster_runtime",
-
-                "worker_driver":
-                    "ec2_instance_runtime",
-
-                "fargate_driver":
-                    "fargate_pod_runtime",
-
+                "control_plane_driver": "eks_cluster_runtime",
+                "worker_driver": "ec2_instance_runtime",
+                "fargate_driver": "fargate_pod_runtime",
                 "related_cost_drivers": [
                     "EBS",
                     "Elastic Load Balancing",
@@ -3145,263 +2144,113 @@ class EksCollector(BaseCollector):
                     "Data Transfer",
                 ],
             },
-
             "cluster": {
-                "cluster_id":
-                    resource.get("id"),
-
-                "cluster_name":
-                    resource.get("name"),
-
-                "status":
-                    resource.get("status"),
-
-                "version":
-                    resource.get("version"),
-
-                "created_at":
-                    self._isoformat(
-                        resource.get(
-                            "createdAt"
-                        )
-                    ),
-
-                "deletion_protection":
-                    resource.get(
-                        "deletionProtection"
-                    ),
+                "cluster_id": resource.get("id"),
+                "cluster_name": resource.get("name"),
+                "status": resource.get("status"),
+                "version": resource.get("version"),
+                "created_at": self._isoformat(resource.get("createdAt")),
+                "deletion_protection": resource.get("deletionProtection"),
             },
-
             "capacity": {
-                "inventory_status":
-                    compute.get(
-                        "inventory_status"
-                    ),
-
-                "inventory_errors":
-                    compute.get(
-                        "inventory_errors",
-                        [],
-                    ),
-
-                "nodegroup_count":
-                    len(nodegroups),
-
-                "ec2_instance_count":
-                    len(ec2_instances),
-
-                "fargate_profile_count":
-                    len(fargate_profiles),
-
-                "desired_nodes":
-                    summary.get(
-                        "desired_node_count"
-                    ),
-
-                "minimum_nodes":
-                    summary.get(
-                        "minimum_node_count"
-                    ),
-
-                "maximum_nodes":
-                    summary.get(
-                        "maximum_node_count"
-                    ),
-
-                "nodegroups":
-                    nodegroups,
-
-                "ec2_instances":
-                    ec2_instances,
-
-                "fargate_profiles":
-                    fargate_profiles,
+                "inventory_status": compute.get("inventory_status"),
+                "inventory_errors": compute.get(
+                    "inventory_errors",
+                    [],
+                ),
+                "nodegroup_count": len(nodegroups),
+                "ec2_instance_count": len(ec2_instances),
+                "fargate_profile_count": len(fargate_profiles),
+                "desired_nodes": summary.get("desired_node_count"),
+                "minimum_nodes": summary.get("minimum_node_count"),
+                "maximum_nodes": summary.get("maximum_node_count"),
+                "nodegroups": nodegroups,
+                "ec2_instances": ec2_instances,
+                "fargate_profiles": fargate_profiles,
             },
-
             "utilization": {
-                "cluster":
-                    self._metric_group_summary(
-                        cluster_metrics
-                    ),
-
-                "nodes":
-                    self._metric_group_summary(
-                        node_metrics
-                    ),
-
-                "pods":
-                    self._metric_group_summary(
-                        pod_metrics
-                    ),
+                "cluster": self._metric_group_summary(cluster_metrics),
+                "nodes": self._metric_group_summary(node_metrics),
+                "pods": self._metric_group_summary(pod_metrics),
             },
-
             "signals": {
-                "cluster_active":
-                    str(
-                        resource.get(
-                            "status"
-                        )
-                        or ""
-                    ).upper()
-                    == "ACTIVE",
-
-                "has_managed_nodegroups":
-                    bool(
-                        nodegroups
-                    ),
-
-                "has_fargate":
-                    bool(
-                        fargate_profiles
-                    ),
-
-                "has_ec2_workers":
-                    bool(
-                        ec2_instances
-                    ),
+                "cluster_active": str(resource.get("status") or "").upper() == "ACTIVE",
+                "has_managed_nodegroups": bool(nodegroups),
+                "has_fargate": bool(fargate_profiles),
+                "has_ec2_workers": bool(ec2_instances),
             },
-
             "relationships": {
-                "vpc_id":
-                    self._dict(
-                        configuration.get(
-                            "network"
-                        )
-                    ).get(
-                        "vpc_id"
-                    ),
-
-                "subnet_ids":
-                    list(
-                        self._dict(
-                            configuration.get(
-                                "network"
-                            )
-                        ).get(
-                            "subnet_ids",
-                            [],
-                        )
-                        or []
-                    ),
-
-                "security_group_ids":
-                    list(
-                        self._dict(
-                            configuration.get(
-                                "network"
-                            )
-                        ).get(
-                            "security_group_ids",
-                            [],
-                        )
-                        or []
-                    ),
-
-                "ec2_instance_ids":
-                    [
-                        item.get(
-                            "instance_id"
-                        )
-                        for item in ec2_instances
+                "vpc_id": self._dict(configuration.get("network")).get("vpc_id"),
+                "subnet_ids": list(
+                    self._dict(configuration.get("network")).get(
+                        "subnet_ids",
+                        [],
+                    )
+                    or []
+                ),
+                "security_group_ids": list(
+                    self._dict(configuration.get("network")).get(
+                        "security_group_ids",
+                        [],
+                    )
+                    or []
+                ),
+                "ec2_instance_ids": [
+                    item.get("instance_id")
+                    for item in ec2_instances
+                    if isinstance(
+                        item,
+                        dict,
+                    )
+                    and item.get("instance_id")
+                ],
+                "ebs_volume_ids": sorted(
+                    {
+                        volume_id
+                        for instance in ec2_instances
                         if isinstance(
-                            item,
+                            instance,
                             dict,
                         )
-                        and item.get(
-                            "instance_id"
+                        for volume in instance.get(
+                            "block_devices",
+                            [],
                         )
-                    ],
-
-                "ebs_volume_ids":
-                    sorted(
-                        {
-                            volume_id
-                            for instance
-                            in ec2_instances
-                            if isinstance(
-                                instance,
-                                dict,
-                            )
-                            for volume
-                            in instance.get(
-                                "block_devices",
-                                [],
-                            )
-                            if isinstance(
-                                volume,
-                                dict,
-                            )
-                            for volume_id in [
-                                volume.get(
-                                    "volume_id"
-                                )
-                            ]
-                            if volume_id
-                        }
-                    ),
-
-                "network_interface_ids":
-                    sorted(
-                        {
-                            interface_id
-                            for instance
-                            in ec2_instances
-                            if isinstance(
-                                instance,
-                                dict,
-                            )
-                            for interface_id
-                            in instance.get(
-                                "network_interface_ids",
-                                [],
-                            )
-                            if interface_id
-                        }
-                    ),
+                        if isinstance(
+                            volume,
+                            dict,
+                        )
+                        for volume_id in [volume.get("volume_id")]
+                        if volume_id
+                    }
+                ),
+                "network_interface_ids": sorted(
+                    {
+                        interface_id
+                        for instance in ec2_instances
+                        if isinstance(
+                            instance,
+                            dict,
+                        )
+                        for interface_id in instance.get(
+                            "network_interface_ids",
+                            [],
+                        )
+                        if interface_id
+                    }
+                ),
             },
-
             "data_quality": {
-                "cloudwatch_available":
-                    bool(
-                        cloudwatch
-                    ),
-
-                "cluster_metrics_available":
-                    bool(
-                        cluster_metrics.get(
-                            "metrics"
-                        )
-                    ),
-
-                "node_metrics_available":
-                    bool(
-                        node_metrics.get(
-                            "metrics"
-                        )
-                    ),
-
-                "pod_metrics_available":
-                    bool(
-                        pod_metrics.get(
-                            "metrics"
-                        )
-                    ),
-
-                "identified_node_count":
-                    self._identified_node_count(
-                        node_metrics
-                    ),
-
-                "identified_pod_count":
-                    self._identified_pod_count(
-                        pod_metrics
-                    ),
-
-                "collector":
-                    collected_resource.get(
-                        "data_quality",
-                        {},
-                    ),
+                "cloudwatch_available": bool(cloudwatch),
+                "cluster_metrics_available": bool(cluster_metrics.get("metrics")),
+                "node_metrics_available": bool(node_metrics.get("metrics")),
+                "pod_metrics_available": bool(pod_metrics.get("metrics")),
+                "identified_node_count": self._identified_node_count(node_metrics),
+                "identified_pod_count": self._identified_pod_count(pod_metrics),
+                "collector": collected_resource.get(
+                    "data_quality",
+                    {},
+                ),
             },
         }
 
@@ -3416,14 +2265,9 @@ class EksCollector(BaseCollector):
             dict,
         ):
             return {
-                "status":
-                    "missing",
-
-                "metrics":
-                    {},
-
-                "series":
-                    {},
+                "status": "missing",
+                "metrics": {},
+                "series": {},
             }
 
         metrics = group.get(
@@ -3449,37 +2293,22 @@ class EksCollector(BaseCollector):
             series = {}
 
         return {
-            "status":
-                group.get(
-                    "status"
-                ),
-
-            "metrics":
-                {
-                    str(key):
-                        cls._metric_summary(
-                            metrics.get(
-                                key
-                            )
-                        )
-                    for key in metrics
-                },
-
-            "series_count":
-                sum(
-                    len(value)
-                    for value in series.values()
-                    if isinstance(
-                        value,
-                        list,
-                    )
-                ),
-
-            "data_quality":
-                group.get(
-                    "data_quality",
-                    {},
-                ),
+            "status": group.get("status"),
+            "metrics": {
+                str(key): cls._metric_summary(metrics.get(key)) for key in metrics
+            },
+            "series_count": sum(
+                len(value)
+                for value in series.values()
+                if isinstance(
+                    value,
+                    list,
+                )
+            ),
+            "data_quality": group.get(
+                "data_quality",
+                {},
+            ),
         }
 
     @classmethod
@@ -3493,78 +2322,23 @@ class EksCollector(BaseCollector):
             dict,
         ):
             return {
-                "status":
-                    "missing",
-
-                "has_data":
-                    False,
-
-                "average":
-                    None,
-
-                "minimum":
-                    None,
-
-                "maximum":
-                    None,
-
-                "coverage_percent":
-                    None,
+                "status": "missing",
+                "has_data": False,
+                "average": None,
+                "minimum": None,
+                "maximum": None,
+                "coverage_percent": None,
             }
 
         return {
-            "status":
-                metric.get(
-                    "status"
-                ),
-
-            "has_data":
-                metric.get(
-                    "has_data"
-                )
-                is True,
-
-            "series_count":
-                cls._number(
-                    metric.get(
-                        "series_count"
-                    )
-                ),
-
-            "observed_series_count":
-                cls._number(
-                    metric.get(
-                        "observed_series_count"
-                    )
-                ),
-
-            "average":
-                cls._number(
-                    metric.get(
-                        "average"
-                    )
-                ),
-
-            "minimum":
-                cls._number(
-                    metric.get(
-                        "minimum"
-                    )
-                ),
-
-            "maximum":
-                cls._number(
-                    metric.get(
-                        "maximum"
-                    )
-                ),
-
-            "coverage_percent":
-                cls._number(
-                    metric.get(
-                        "coverage_percent"
-                    )
-                ),
+            "status": metric.get("status"),
+            "has_data": metric.get("has_data") is True,
+            "series_count": cls._number(metric.get("series_count")),
+            "observed_series_count": cls._number(metric.get("observed_series_count")),
+            "average": cls._number(metric.get("average")),
+            "minimum": cls._number(metric.get("minimum")),
+            "maximum": cls._number(metric.get("maximum")),
+            "coverage_percent": cls._number(metric.get("coverage_percent")),
         }
 
     # ==================================================================
@@ -3601,43 +2375,17 @@ class EksCollector(BaseCollector):
         )
 
         return {
-            "status":
-                "ok",
-
+            "status": "ok",
             "cluster": {
-                "name":
-                    resource.get(
-                        "name"
-                    ),
-
-                "arn":
-                    resource.get(
-                        "arn"
-                    ),
+                "name": resource.get("name"),
+                "arn": resource.get("arn"),
             },
-
-            "vpc_id":
-                vpc_config.get(
-                    "vpcId"
-                ),
-
-            "subnets":
-                subnet_ids,
-
-            "security_groups":
-                security_group_ids,
-
-            "cluster_security_group":
-                vpc_config.get(
-                    "clusterSecurityGroupId"
-                ),
-
+            "vpc_id": vpc_config.get("vpcId"),
+            "subnets": subnet_ids,
+            "security_groups": security_group_ids,
+            "cluster_security_group": vpc_config.get("clusterSecurityGroupId"),
             "summary": {
-                "related_resource_count":
-                    len(subnet_ids)
-                    + len(
-                        security_group_ids
-                    ),
+                "related_resource_count": len(subnet_ids) + len(security_group_ids),
             },
         }
 
@@ -3657,44 +2405,28 @@ class EksCollector(BaseCollector):
                 {},
             )
             or {}
-        ).get(
-            "vpcId"
-        )
+        ).get("vpcId")
 
         if not vpc_id:
 
             return {
-                "status":
-                    "incomplete",
-
-                "reason":
-                    "EKS cluster has no VPC ID",
+                "status": "incomplete",
+                "reason": "EKS cluster has no VPC ID",
             }
 
         try:
 
-            return (
-                self.topology_collector.collect(
-                    vpc_id=vpc_id,
-                    resource_type=(
-                        self.resource_type
-                    ),
-                    resource_id=(
-                        self.get_resource_id(
-                            resource
-                        )
-                    ),
-                )
+            return self.topology_collector.collect(
+                vpc_id=vpc_id,
+                resource_type=(self.resource_type),
+                resource_id=(self.get_resource_id(resource)),
             )
 
         except Exception as exc:
 
             return {
-                "status":
-                    "error",
-
-                "error":
-                    str(exc),
+                "status": "error",
+                "error": str(exc),
             }
 
     # ==================================================================
@@ -3707,17 +2439,10 @@ class EksCollector(BaseCollector):
     ) -> Dict[str, Any]:
 
         quality = {
-            "queried_metric_count":
-                0,
-
-            "observed_metric_count":
-                0,
-
-            "no_data_metric_count":
-                0,
-
-            "metric_error_count":
-                0,
+            "queried_metric_count": 0,
+            "observed_metric_count": 0,
+            "no_data_metric_count": 0,
+            "metric_error_count": 0,
         }
 
         for group in groups:
@@ -3728,11 +2453,9 @@ class EksCollector(BaseCollector):
             ):
                 continue
 
-            data_quality = (
-                group.get(
-                    "data_quality",
-                    {},
-                )
+            data_quality = group.get(
+                "data_quality",
+                {},
             )
 
             if not isinstance(
@@ -3752,9 +2475,7 @@ class EksCollector(BaseCollector):
                     value,
                     (int, float),
                 ):
-                    quality[key] += int(
-                        value
-                    )
+                    quality[key] += int(value)
 
         return quality
 
@@ -3770,9 +2491,7 @@ class EksCollector(BaseCollector):
             value,
             bool,
         ):
-            return float(
-                int(value)
-            )
+            return float(int(value))
 
         try:
             return float(value)
@@ -3788,9 +2507,7 @@ class EksCollector(BaseCollector):
         value: Any,
     ) -> int:
 
-        parsed = cls._number(
-            value
-        )
+        parsed = cls._number(value)
 
         if parsed is None:
             return 0
@@ -3835,15 +2552,11 @@ class EksCollector(BaseCollector):
             ):
                 continue
 
-            key = tag.get(
-                "Key"
-            )
+            key = tag.get("Key")
 
             if key:
 
-                result[
-                    str(key)
-                ] = str(
+                result[str(key)] = str(
                     tag.get(
                         "Value",
                         "",
@@ -3857,9 +2570,7 @@ class EksCollector(BaseCollector):
         encryption_config: Any,
     ) -> List[Dict[str, Any]]:
 
-        result: List[
-            Dict[str, Any]
-        ] = []
+        result: List[Dict[str, Any]] = []
 
         if not isinstance(
             encryption_config,
@@ -3891,16 +2602,11 @@ class EksCollector(BaseCollector):
 
             result.append(
                 {
-                    "resources":
-                        item.get(
-                            "resources",
-                            [],
-                        ),
-
-                    "key_arn":
-                        provider.get(
-                            "keyArn"
-                        ),
+                    "resources": item.get(
+                        "resources",
+                        [],
+                    ),
+                    "key_arn": provider.get("keyArn"),
                 }
             )
 
@@ -3920,13 +2626,9 @@ class EksCollector(BaseCollector):
         ):
 
             if value.tzinfo is None:
-                return value.replace(
-                    tzinfo=timezone.utc
-                )
+                return value.replace(tzinfo=timezone.utc)
 
-            return value.astimezone(
-                timezone.utc
-            )
+            return value.astimezone(timezone.utc)
 
         if isinstance(
             value,
@@ -3950,33 +2652,17 @@ class EksCollector(BaseCollector):
             if not text:
                 return None
 
-            if text.endswith(
-                "Z"
-            ):
-                text = (
-                    text[:-1]
-                    + "+00:00"
-                )
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
 
-            parsed = (
-                datetime.fromisoformat(
-                    text
-                )
-            )
+            parsed = datetime.fromisoformat(text)
 
             if parsed.tzinfo is None:
-                parsed = parsed.replace(
-                    tzinfo=timezone.utc
-                )
+                parsed = parsed.replace(tzinfo=timezone.utc)
 
-            return parsed.astimezone(
-                timezone.utc
-            )
+            return parsed.astimezone(timezone.utc)
 
-        raise TypeError(
-            "Unsupported datetime value: "
-            f"{type(value).__name__}"
-        )
+        raise TypeError("Unsupported datetime value: " f"{type(value).__name__}")
 
     @classmethod
     def _isoformat(
@@ -3987,11 +2673,7 @@ class EksCollector(BaseCollector):
         if value is None:
             return None
 
-        normalized = (
-            cls._normalize_datetime(
-                value
-            )
-        )
+        normalized = cls._normalize_datetime(value)
 
         if normalized is not None:
             return normalized.isoformat()

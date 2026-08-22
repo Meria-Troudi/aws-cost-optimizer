@@ -49,11 +49,8 @@ class FindingAggregator:
         default_scope: str = DEFAULT_SCOPE,
     ) -> None:
 
-        self.default_scope = (
-            self._normalize_scope(
-                default_scope
-            )
-        )
+        self.default_scope = self._normalize_scope(default_scope)
+
     def aggregate(
         self,
         findings: list[Finding],
@@ -72,44 +69,31 @@ class FindingAggregator:
             ):
                 continue
 
-            scope = self._resolve_scope(
-                finding
-            )
+            scope = self._resolve_scope(finding)
 
             groups[
                 self._group_key(
                     finding,
                     scope,
                 )
-            ].append(
-                finding
-            )
+            ].append(finding)
 
-        result: list[
-            dict[str, Any]
-        ] = []
+        result: list[dict[str, Any]] = []
 
         for group in groups.values():
 
-            normalized = (
-                self._deduplicate_group(
-                    group
-                )
-            )
+            normalized = self._deduplicate_group(group)
 
             if not normalized:
                 continue
 
-            result.append(
-                self._build_group(
-                    normalized
-                )
-            )
+            result.append(self._build_group(normalized))
 
         return sorted(
             result,
             key=self._sort_key,
         )
+
     def _resolve_scope(
         self,
         finding: Finding,
@@ -119,9 +103,7 @@ class FindingAggregator:
 
         if explicit is not None:
 
-            return self._normalize_scope(
-                explicit
-            )
+            return self._normalize_scope(explicit)
 
         return self.default_scope
 
@@ -131,10 +113,7 @@ class FindingAggregator:
         value: Any,
     ) -> str:
 
-        scope = str(
-            value
-            or cls.DEFAULT_SCOPE
-        ).strip().lower()
+        scope = str(value or cls.DEFAULT_SCOPE).strip().lower()
 
         if scope not in cls.VALID_SCOPES:
 
@@ -145,6 +124,7 @@ class FindingAggregator:
             )
 
         return scope
+
     def _group_key(
         self,
         finding: Finding,
@@ -152,30 +132,18 @@ class FindingAggregator:
     ) -> tuple[str, str, str, str, str]:
 
         finding_key = str(
-            finding.finding_key
-            or finding.finding_type
-            or "unknown"
+            finding.finding_key or finding.finding_type or "unknown"
         ).strip()
 
-        resource_type = str(
-            finding.resource_type
-            or "unknown"
-        ).strip()
+        resource_type = str(finding.resource_type or "unknown").strip()
 
         account_id = str(
-            finding.account_id
-            or finding.metadata.get(
-                "account_id"
-            )
-            or "unknown"
+            finding.account_id or finding.metadata.get("account_id") or "unknown"
         ).strip()
 
         if scope == "resource":
 
-            scope_value = str(
-                finding.resource_id
-                or "unknown"
-            ).strip()
+            scope_value = str(finding.resource_id or "unknown").strip()
 
         elif scope == "account":
 
@@ -183,15 +151,11 @@ class FindingAggregator:
 
         elif scope == "service":
 
-            scope_value = self._service(
-                finding
-            )
+            scope_value = self._service(finding)
 
         else:
 
-            scope_value = self._region(
-                finding
-            )
+            scope_value = self._region(finding)
 
         return (
             finding_key,
@@ -200,6 +164,7 @@ class FindingAggregator:
             account_id,
             scope_value,
         )
+
     @staticmethod
     def _deduplicate_group(
         findings: list[Finding],
@@ -207,46 +172,26 @@ class FindingAggregator:
 
         result: list[Finding] = []
 
-        seen: set[
-            tuple[str, str, str, str]
-        ] = set()
+        seen: set[tuple[str, str, str, str]] = set()
 
         for finding in findings:
 
             key = (
-                str(
-                    finding.account_id
-                    or "unknown"
-                ),
-
-                str(
-                    finding.finding_key
-                    or finding.finding_type
-                ),
-
-                str(
-                    finding.resource_type
-                    or "unknown"
-                ),
-
-                str(
-                    finding.resource_id
-                    or "unknown"
-                ),
+                str(finding.account_id or "unknown"),
+                str(finding.finding_key or finding.finding_type),
+                str(finding.resource_type or "unknown"),
+                str(finding.resource_id or "unknown"),
             )
 
             if key in seen:
                 continue
 
-            seen.add(
-                key
-            )
+            seen.add(key)
 
-            result.append(
-                finding
-            )
+            result.append(finding)
 
         return result
+
     def _build_group(
         self,
         findings: list[Finding],
@@ -254,38 +199,26 @@ class FindingAggregator:
 
         first = findings[0]
 
-        scope = self._resolve_scope(
-            first
-        )
+        scope = self._resolve_scope(first)
 
         resource_ids = self._unique(
-            finding.resource_id
-            for finding in findings
-            if finding.resource_id
+            finding.resource_id for finding in findings if finding.resource_id
         )
 
         source_finding_stable_ids = self._unique(
-            finding.finding_id
-            for finding in findings
-            if finding.finding_id
+            finding.finding_id for finding in findings if finding.finding_id
         )
 
         eligible_resource_ids = self._unique(
             finding.resource_id
             for finding in findings
-            if (
-                finding.recommendation_eligible
-                and finding.resource_id
-            )
+            if (finding.recommendation_eligible and finding.resource_id)
         )
 
         ineligible_resource_ids = self._unique(
             finding.resource_id
             for finding in findings
-            if (
-                not finding.recommendation_eligible
-                and finding.resource_id
-            )
+            if (not finding.recommendation_eligible and finding.resource_id)
         )
 
         affected_resources = []
@@ -294,289 +227,117 @@ class FindingAggregator:
 
             affected_resources.append(
                 {
-                    "resource_id":
-                        finding.resource_id,
-
-                    "resource_type":
-                        finding.resource_type,
-
-                    "severity":
-                        finding.severity,
-
-                    "confidence":
-                        finding.confidence,
-
-                    "recommendation_eligible":
-                        finding.recommendation_eligible,
-
-                    "reason":
-                        finding.reason,
-
-                    "evidence_summary":
-                        list(
-                            finding.evidence_summary
-                        ),
-
-                    "metadata":
-                        dict(
-                            finding.metadata
-                        ),
-
-                    "limitations":
-                        list(
-                            finding.limitations
-                        ),
-
-                    "account_id":
-                        finding.account_id,
-
-                    "region":
-                        self._region(
-                            finding
-                        ),
-
-                    "finding_id":
-                        finding.finding_id,
-
-                    "database_id":
-                        finding.database_id,
+                    "resource_id": finding.resource_id,
+                    "resource_type": finding.resource_type,
+                    "severity": finding.severity,
+                    "confidence": finding.confidence,
+                    "recommendation_eligible": finding.recommendation_eligible,
+                    "reason": finding.reason,
+                    "evidence_summary": list(finding.evidence_summary),
+                    "metadata": dict(finding.metadata),
+                    "limitations": list(finding.limitations),
+                    "account_id": finding.account_id,
+                    "region": self._region(finding),
+                    "finding_id": finding.finding_id,
+                    "database_id": finding.database_id,
                 }
             )
 
         return {
-            "finding_id":
-                self._aggregate_id(
-                    findings,
-                    scope,
-                ),
-
-            "finding_key":
-                (
-                    first.finding_key
-                    or first.finding_type
-                ),
-
-            "finding_type":
-                first.finding_type,
-
-            "source_finding_stable_ids":
-                source_finding_stable_ids,
-
+            "finding_id": self._aggregate_id(
+                findings,
+                scope,
+            ),
+            "finding_key": (first.finding_key or first.finding_type),
+            "finding_type": first.finding_type,
+            "source_finding_stable_ids": source_finding_stable_ids,
             # Will be populated by FindingEngine after raw finding
             # persistence.
-            "source_finding_ids":
-                [],
-
-            "category":
-                first.category,
-
-            "title":
-                self._aggregate_title(
-                    findings
-                ),
-
-            "resource_type":
-                first.resource_type,
-
-            "analyzer":
-                first.analyzer,
-
-            "analyzer_version":
-                self._highest_version(
-                    findings
-                ),
-
-            "severity":
-                self._highest(
-                    findings,
-                    "severity",
-                    self.SEVERITY_RANK,
-                ),
-
-            "confidence":
-                self._lowest(
-                    findings,
-                    "confidence",
-                    self.CONFIDENCE_RANK,
-                ),
-
-            "status":
-                self._aggregate_status(
-                    findings
-                ),
-
-            "reason":
-                self._aggregate_reason(
-                    findings
-                ),
-
-            "resource_count":
-                len(resource_ids),
-
-            "resource_ids":
-                resource_ids,
-
-            "recommendation_eligible":
-                bool(
-                    eligible_resource_ids
-                ),
-
-            "recommendation_eligible_count":
-                len(
-                    eligible_resource_ids
-                ),
-
-            "recommendation_eligible_resource_ids":
-                eligible_resource_ids,
-
-            "recommendation_ineligible_resource_ids":
-                ineligible_resource_ids,
-
-            "evidence_summary":
-                self._aggregate_evidence_summary(
-                    findings
-                ),
-
-            "conditions":
-                [
-                    {
-                        "resource_id":
-                            finding.resource_id,
-
-                        "finding_id":
-                            finding.finding_id,
-
-                        "database_id":
-                            finding.database_id,
-
-                        "conditions":
-                            [
-                                condition.to_dict()
-                                for condition
-                                in finding.conditions
-                            ],
-                    }
-                    for finding in findings
-                ],
-
-            "evidence":
-                [
-                    {
-                        "resource_id":
-                            finding.resource_id,
-
-                        "finding_id":
-                            finding.finding_id,
-
-                        "database_id":
-                            finding.database_id,
-
-                        "evidence":
-                            finding.evidence.to_dict(),
-
-                        "observation_period":
-                            (
-                                finding.observation_period.to_dict()
-                                if finding.observation_period
-                                else None
-                            ),
-                    }
-                    for finding in findings
-                ],
-
-            "affected_resources":
-                affected_resources,
-
-            "resource_evidence":
-                [
-                    {
-                        "resource_id":
-                            finding.resource_id,
-
-                        "finding_id":
-                            finding.finding_id,
-
-                        "database_id":
-                            finding.database_id,
-
-                        "evidence_summary":
-                            list(
-                                finding.evidence_summary
-                            ),
-
-                        "metadata":
-                            dict(
-                                finding.metadata
-                            ),
-
-                        "limitations":
-                            list(
-                                finding.limitations
-                            ),
-
-                        "billing":
-                            dict(
-                                finding.evidence.billing
-                            ),
-                    }
-                    for finding in findings
-                ],
-
-            "observation_periods":
-                [
-                    (
+            "source_finding_ids": [],
+            "category": first.category,
+            "title": self._aggregate_title(findings),
+            "resource_type": first.resource_type,
+            "analyzer": first.analyzer,
+            "analyzer_version": self._highest_version(findings),
+            "severity": self._highest(
+                findings,
+                "severity",
+                self.SEVERITY_RANK,
+            ),
+            "confidence": self._lowest(
+                findings,
+                "confidence",
+                self.CONFIDENCE_RANK,
+            ),
+            "status": self._aggregate_status(findings),
+            "reason": self._aggregate_reason(findings),
+            "resource_count": len(resource_ids),
+            "resource_ids": resource_ids,
+            "recommendation_eligible": bool(eligible_resource_ids),
+            "recommendation_eligible_count": len(eligible_resource_ids),
+            "recommendation_eligible_resource_ids": eligible_resource_ids,
+            "recommendation_ineligible_resource_ids": ineligible_resource_ids,
+            "evidence_summary": self._aggregate_evidence_summary(findings),
+            "conditions": [
+                {
+                    "resource_id": finding.resource_id,
+                    "finding_id": finding.finding_id,
+                    "database_id": finding.database_id,
+                    "conditions": [
+                        condition.to_dict() for condition in finding.conditions
+                    ],
+                }
+                for finding in findings
+            ],
+            "evidence": [
+                {
+                    "resource_id": finding.resource_id,
+                    "finding_id": finding.finding_id,
+                    "database_id": finding.database_id,
+                    "evidence": finding.evidence.to_dict(),
+                    "observation_period": (
                         finding.observation_period.to_dict()
                         if finding.observation_period
                         else None
-                    )
-                    for finding in findings
-                ],
-
-            "limitations":
-                self._limitations(
-                    findings
-                ),
-
-            "metadata":
-                [
-                    dict(
-                        finding.metadata
-                    )
-                    for finding in findings
-                ],
-
-            "billing":
-                self._aggregate_billing(
-                    findings
-                ),
-
-            "impact":
-                self._aggregate_impact(
-                    findings
-                ),
-
-            "scope":
-                self._scope(
-                    first,
-                    scope,
-                ),
-
-            "aggregation_scope":
+                    ),
+                }
+                for finding in findings
+            ],
+            "affected_resources": affected_resources,
+            "resource_evidence": [
+                {
+                    "resource_id": finding.resource_id,
+                    "finding_id": finding.finding_id,
+                    "database_id": finding.database_id,
+                    "evidence_summary": list(finding.evidence_summary),
+                    "metadata": dict(finding.metadata),
+                    "limitations": list(finding.limitations),
+                    "billing": dict(finding.evidence.billing),
+                }
+                for finding in findings
+            ],
+            "observation_periods": [
+                (
+                    finding.observation_period.to_dict()
+                    if finding.observation_period
+                    else None
+                )
+                for finding in findings
+            ],
+            "limitations": self._limitations(findings),
+            "metadata": [dict(finding.metadata) for finding in findings],
+            "billing": self._aggregate_billing(findings),
+            "impact": self._aggregate_impact(findings),
+            "scope": self._scope(
+                first,
                 scope,
-
-            "account_id":
-                first.account_id,
-
-            "region":
-                self._region(
-                    first
-                ),
-
-            "service":
-                self._service(
-                    first
-                ),
+            ),
+            "aggregation_scope": scope,
+            "account_id": first.account_id,
+            "region": self._region(first),
+            "service": self._service(first),
         }
+
     @staticmethod
     def _aggregate_reason(
         findings: list[Finding],
@@ -584,46 +345,28 @@ class FindingAggregator:
 
         if not findings:
 
-            return (
-                "No finding details available."
-            )
+            return "No finding details available."
 
         resource_ids = {
-            finding.resource_id
-            for finding in findings
-            if finding.resource_id
+            finding.resource_id for finding in findings if finding.resource_id
         }
 
         count = len(resource_ids)
 
-        resource_type = (
-            str(
-                findings[0].resource_type
-                or "resource"
-            )
-            .replace(
-                "_",
-                " ",
-            )
+        resource_type = str(findings[0].resource_type or "resource").replace(
+            "_",
+            " ",
         )
 
         reasons: list[str] = []
 
         for finding in findings:
 
-            reason = str(
-                finding.reason
-                or ""
-            ).strip()
+            reason = str(finding.reason or "").strip()
 
-            if (
-                reason
-                and reason not in reasons
-            ):
+            if reason and reason not in reasons:
 
-                reasons.append(
-                    reason
-                )
+                reasons.append(reason)
 
         prefix = (
             f"{count} "
@@ -634,12 +377,10 @@ class FindingAggregator:
 
         if len(reasons) == 1:
 
-            return (
-                f"{prefix} "
-                f"{reasons[0]}"
-            )
+            return f"{prefix} " f"{reasons[0]}"
 
         return prefix
+
     @classmethod
     def _aggregate_evidence_summary(
         cls,
@@ -650,28 +391,18 @@ class FindingAggregator:
 
         for finding in findings:
 
-            for item in (
-                finding.evidence_summary
-                or []
-            ):
+            for item in finding.evidence_summary or []:
 
-                text = str(
-                    item
-                ).strip()
+                text = str(item).strip()
 
                 if not text:
                     continue
 
-                rendered = (
-                    f"{finding.resource_id}: "
-                    f"{text}"
-                )
+                rendered = f"{finding.resource_id}: " f"{text}"
 
                 if rendered not in result:
 
-                    result.append(
-                        rendered
-                    )
+                    result.append(rendered)
 
         return result[:100]
 
@@ -684,25 +415,16 @@ class FindingAggregator:
 
         for finding in findings:
 
-            for limitation in (
-                finding.limitations
-                or []
-            ):
+            for limitation in finding.limitations or []:
 
-                text = str(
-                    limitation
-                ).strip()
+                text = str(limitation).strip()
 
-                if (
-                    text
-                    and text not in result
-                ):
+                if text and text not in result:
 
-                    result.append(
-                        text
-                    )
+                    result.append(text)
 
         return result
+
     @staticmethod
     def _aggregate_billing(
         findings: list[Finding],
@@ -712,9 +434,7 @@ class FindingAggregator:
 
         for finding in findings:
 
-            billing = (
-                finding.evidence.billing
-            )
+            billing = finding.evidence.billing
 
             if not isinstance(
                 billing,
@@ -722,47 +442,28 @@ class FindingAggregator:
             ):
                 continue
 
-            contexts.append(
-                dict(billing)
-            )
+            contexts.append(dict(billing))
 
         if not contexts:
 
-            return {
-                "available": False
-            }
+            return {"available": False}
 
         resource_costs = [
             context
             for context in contexts
             if (
-                context.get(
-                    "attribution_scope"
-                )
-                == "resource"
-                and
-                context.get(
-                    "resource_cost_attributed"
-                )
-                is True
+                context.get("attribution_scope") == "resource"
+                and context.get("resource_cost_attributed") is True
             )
         ]
 
         collection_plan_amounts = [
-            context.get(
-                "amount"
-            )
+            context.get("amount")
             for context in contexts
             if (
-                context.get(
-                    "attribution_scope"
-                )
-                == "collection_plan"
-                and
-                isinstance(
-                    context.get(
-                        "amount"
-                    ),
+                context.get("attribution_scope") == "collection_plan"
+                and isinstance(
+                    context.get("amount"),
                     (int, float),
                 )
             )
@@ -777,9 +478,7 @@ class FindingAggregator:
         if resource_costs:
 
             amount = sum(
-                float(
-                    context["amount"]
-                )
+                float(context["amount"])
                 for context in resource_costs
                 if isinstance(
                     context.get("amount"),
@@ -787,31 +486,22 @@ class FindingAggregator:
                 )
             )
 
-            result[
-                "resource_attributed_cost"
-            ] = round(
+            result["resource_attributed_cost"] = round(
                 amount,
                 2,
             )
 
-            result[
-                "resource_cost_attributed"
-            ] = True
+            result["resource_cost_attributed"] = True
 
         if collection_plan_amounts:
 
-            result[
-                "collection_plan_cost"
-            ] = round(
-                sum(
-                    float(value)
-                    for value
-                    in collection_plan_amounts
-                ),
+            result["collection_plan_cost"] = round(
+                sum(float(value) for value in collection_plan_amounts),
                 2,
             )
 
         return result
+
     @staticmethod
     def _aggregate_impact(
         findings: list[Finding],
@@ -842,9 +532,7 @@ class FindingAggregator:
             ):
                 continue
 
-            finding_cost = impact.get(
-                "observed_monthly_cost"
-            )
+            finding_cost = impact.get("observed_monthly_cost")
 
             if not isinstance(
                 finding_cost,
@@ -852,17 +540,13 @@ class FindingAggregator:
             ):
                 continue
 
-            if (
-                best_cost is None
-                or finding_cost > best_cost
-            ):
+            if best_cost is None or finding_cost > best_cost:
 
                 best_cost = finding_cost
                 best_impact = impact
 
-        return normalize_financial_impact(
-            best_impact
-        )
+        return normalize_financial_impact(best_impact)
+
     def _scope(
         self,
         finding: Finding,
@@ -871,87 +555,48 @@ class FindingAggregator:
 
         if scope == "resource":
 
-            return (
-                "resource:"
-                + str(
-                    finding.resource_id
-                    or "unknown"
-                )
-            )
+            return "resource:" + str(finding.resource_id or "unknown")
 
         if scope == "account":
 
-            return (
-                "account:"
-                + str(
-                    finding.account_id
-                    or "unknown"
-                )
-            )
+            return "account:" + str(finding.account_id or "unknown")
 
         if scope == "service":
 
-            return (
-                "service:"
-                + self._service(
-                    finding
-                )
-            )
+            return "service:" + self._service(finding)
 
-        return (
-            "region:"
-            + str(
-                self._region(
-                    finding
-                )
-                or "unknown"
-            )
-        )
+        return "region:" + str(self._region(finding) or "unknown")
+
     @staticmethod
     def _region(
         finding: Finding,
     ) -> str:
 
-        resource = (
-            finding.evidence.resource
-        )
+        resource = finding.evidence.resource
 
         if isinstance(
             resource,
             dict,
         ):
 
-            value = resource.get(
-                "region"
-            )
+            value = resource.get("region")
 
             if value:
                 return str(value)
 
-        value = finding.metadata.get(
-            "region"
-        )
+        value = finding.metadata.get("region")
 
-        return (
-            str(value)
-            if value
-            else "unknown"
-        )
+        return str(value) if value else "unknown"
 
     @staticmethod
     def _service(
         finding: Finding,
     ) -> str:
 
-        value = finding.metadata.get(
-            "service"
-        )
+        value = finding.metadata.get("service")
 
-        return (
-            str(value)
-            if value
-            else "unknown"
-        )
+        return str(value) if value else "unknown"
+
     def _aggregate_id(
         self,
         findings: list[Finding],
@@ -961,59 +606,38 @@ class FindingAggregator:
         first = findings[0]
 
         payload = {
-            "account_id":
-                first.account_id,
-
-            "finding_key":
-                (
-                    first.finding_key
-                    or first.finding_type
-                ),
-
-            "resource_type":
-                first.resource_type,
-
-            "scope":
-                self._scope(
-                    first,
-                    scope,
-                ),
+            "account_id": first.account_id,
+            "finding_key": (first.finding_key or first.finding_type),
+            "resource_type": first.resource_type,
+            "scope": self._scope(
+                first,
+                scope,
+            ),
         }
 
         encoded = json.dumps(
             payload,
             sort_keys=True,
             default=str,
-        ).encode(
-            "utf-8"
-        )
+        ).encode("utf-8")
 
-        digest = hashlib.sha256(
-            encoded
-        ).hexdigest()
+        digest = hashlib.sha256(encoded).hexdigest()
 
-        return (
-            f"finding-group-{digest[:20]}"
-        )
+        return f"finding-group-{digest[:20]}"
+
     @staticmethod
     def _aggregate_status(
         findings: list[Finding],
     ) -> str:
 
-        statuses = {
-            str(
-                finding.status
-            ).lower()
-            for finding in findings
-        }
+        statuses = {str(finding.status).lower() for finding in findings}
 
-        if statuses == {
-            "informational"
-        }:
+        if statuses == {"informational"}:
 
             return "informational"
 
         return "active"
+
     @classmethod
     def _highest(
         cls,
@@ -1038,11 +662,10 @@ class FindingAggregator:
 
         return max(
             values,
-            key=lambda value:
-                ranking.get(
-                    value,
-                    0,
-                ),
+            key=lambda value: ranking.get(
+                value,
+                0,
+            ),
         )
 
     @classmethod
@@ -1069,37 +692,27 @@ class FindingAggregator:
 
         return min(
             values,
-            key=lambda value:
-                ranking.get(
-                    value,
-                    0,
-                ),
+            key=lambda value: ranking.get(
+                value,
+                0,
+            ),
         )
+
     @staticmethod
     def _aggregate_title(
         findings: list[Finding],
     ) -> str:
 
         titles = {
-            str(
-                finding.title
-                or ""
-            ).strip()
-            for finding in findings
-            if finding.title
+            str(finding.title or "").strip() for finding in findings if finding.title
         }
 
         if len(titles) == 1:
 
-            return next(
-                iter(titles)
-            )
+            return next(iter(titles))
 
-        return (
-            findings[0].title
-            if findings
-            else "Finding"
-        )
+        return findings[0].title if findings else "Finding"
+
     @staticmethod
     def _version_tuple(
         value: str,
@@ -1107,9 +720,7 @@ class FindingAggregator:
 
         parts = []
 
-        for token in str(
-            value or "1.0"
-        ).split("."):
+        for token in str(value or "1.0").split("."):
 
             number = ""
 
@@ -1120,11 +731,7 @@ class FindingAggregator:
                 else:
                     break
 
-            parts.append(
-                int(number)
-                if number
-                else 0
-            )
+            parts.append(int(number) if number else 0)
 
         return tuple(parts)
 
@@ -1135,16 +742,11 @@ class FindingAggregator:
     ) -> str:
 
         return max(
-            (
-                str(
-                    finding.analyzer_version
-                    or "1.0"
-                )
-                for finding in findings
-            ),
+            (str(finding.analyzer_version or "1.0") for finding in findings),
             key=cls._version_tuple,
             default="1.0",
         )
+
     @classmethod
     def _sort_key(
         cls,
@@ -1161,21 +763,18 @@ class FindingAggregator:
                 ).lower(),
                 0,
             ),
-
             str(
                 finding.get(
                     "title",
                     "",
                 )
             ),
-
             str(
                 finding.get(
                     "resource_type",
                     "",
                 )
             ),
-
             str(
                 finding.get(
                     "scope",
@@ -1183,6 +782,7 @@ class FindingAggregator:
                 )
             ),
         )
+
     @staticmethod
     def _unique(
         values,
@@ -1197,20 +797,13 @@ class FindingAggregator:
             if value is None:
                 continue
 
-            text = str(
-                value
-            ).strip()
+            text = str(value).strip()
 
-            if (
-                not text
-                or text in seen
-            ):
+            if not text or text in seen:
                 continue
 
             seen.add(text)
 
-            result.append(
-                text
-            )
+            result.append(text)
 
         return result

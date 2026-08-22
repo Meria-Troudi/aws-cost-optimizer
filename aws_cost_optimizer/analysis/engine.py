@@ -26,11 +26,8 @@ class AnalysisEngine:
         analyzers: list[Analyzer] | None = None,
     ) -> None:
 
-        self.analyzers = (
-            analyzers
-            if analyzers is not None
-            else get_analyzers()
-        )
+        self.analyzers = analyzers if analyzers is not None else get_analyzers()
+
     def analyze(
         self,
         resources: list[dict[str, Any]],
@@ -73,17 +70,13 @@ class AnalysisEngine:
 
                 try:
 
-                    if not analyzer.supports(
-                        context
-                    ):
+                    if not analyzer.supports(context):
                         continue
 
                 except Exception as exc:
 
                     stat["errors"] += 1
-                    stat["last_error"] = (
-                        f"supports(): {type(exc).__name__}: {exc}"
-                    )
+                    stat["last_error"] = f"supports(): {type(exc).__name__}: {exc}"
 
                     print(
                         "[ERROR] Analyzer "
@@ -97,16 +90,12 @@ class AnalysisEngine:
 
                 try:
 
-                    results = analyzer.analyze(
-                        context
-                    )
+                    results = analyzer.analyze(context)
 
                 except Exception as exc:
 
                     stat["errors"] += 1
-                    stat["last_error"] = (
-                        f"analyze(): {type(exc).__name__}: {exc}"
-                    )
+                    stat["last_error"] = f"analyze(): {type(exc).__name__}: {exc}"
 
                     print(
                         "[ERROR] Analyzer "
@@ -151,21 +140,16 @@ class AnalysisEngine:
 
                     stat["findings"] += 1
 
-                    findings.append(
-                        finding
-                    )
+                    findings.append(finding)
 
         self._report_analyzer_health(stats)
 
-        return self._deduplicate_findings(
-            findings
-        )
+        return self._deduplicate_findings(findings)
 
     @staticmethod
     def _report_analyzer_health(
         stats: dict[str, dict[str, Any]],
     ) -> None:
-
 
         broken: list[str] = []
 
@@ -203,6 +187,7 @@ class AnalysisEngine:
                 + "\nThis is a code defect (wrong signature, "
                 "missing attribute, bad argument), not bad data."
             )
+
     @staticmethod
     def _normalize_finding(
         *,
@@ -212,24 +197,14 @@ class AnalysisEngine:
     ) -> None:
         if not finding.resource_id:
 
-            finding.resource_id = (
-                context.resource_id
-                or "unknown"
-            )
+            finding.resource_id = context.resource_id or "unknown"
 
         if not finding.resource_type:
 
-            finding.resource_type = (
-                context.resource_type
-                or "unknown"
-            )
+            finding.resource_type = context.resource_type or "unknown"
         if not finding.account_id:
 
-            finding.account_id = (
-                str(account_id)
-                if account_id is not None
-                else None
-            )
+            finding.account_id = str(account_id) if account_id is not None else None
         if context.region:
 
             finding.metadata.setdefault(
@@ -244,12 +219,9 @@ class AnalysisEngine:
                 str(account_id),
             )
 
- 
         billing = context.billing()
 
-        billing_service = billing.get(
-            "service"
-        )
+        billing_service = billing.get("service")
 
         if billing_service:
 
@@ -263,9 +235,7 @@ class AnalysisEngine:
                 str(billing_service),
             )
 
-        usage_type = billing.get(
-            "usage_type"
-        )
+        usage_type = billing.get("usage_type")
 
         if usage_type:
 
@@ -274,19 +244,13 @@ class AnalysisEngine:
                 str(usage_type),
             )
 
-
         if not finding.impact:
 
             impact = calculate_savings(
                 billing.get("amount"),
                 confidence=finding.confidence,
-                attribution_scope=billing.get(
-                    "attribution_scope"
-                ),
-                full_elimination=(
-                    finding.cost_optimization_type
-                    == "elimination"
-                ),
+                attribution_scope=billing.get("attribution_scope"),
+                full_elimination=(finding.cost_optimization_type == "elimination"),
             )
 
             currency = billing.get("currency")
@@ -294,19 +258,12 @@ class AnalysisEngine:
             if currency:
                 impact["currency"] = str(currency)
 
-            finding.impact = normalize_financial_impact(
-                impact
-            )
+            finding.impact = normalize_financial_impact(impact)
 
+        finding.finding_key = finding.finding_key or finding.build_finding_key()
 
-        finding.finding_key = (
-            finding.finding_key
-            or finding.build_finding_key()
-        )
+        finding.finding_id = finding.build_stable_id()
 
-        finding.finding_id = (
-            finding.build_stable_id()
-        )
     @staticmethod
     def _deduplicate_findings(
         findings: list[Finding],
@@ -327,44 +284,22 @@ class AnalysisEngine:
         for finding in findings:
 
             key = (
-                str(
-                    finding.account_id
-                    or "unknown"
-                ),
-
-                str(
-                    finding.finding_key
-                    or finding.finding_type
-                ),
-
-                str(
-                    finding.resource_type
-                    or "unknown"
-                ),
-
-                str(
-                    finding.resource_id
-                    or "unknown"
-                ),
-
-                str(
-                    finding._region()
-                    or "unknown"
-                ),
+                str(finding.account_id or "unknown"),
+                str(finding.finding_key or finding.finding_type),
+                str(finding.resource_type or "unknown"),
+                str(finding.resource_id or "unknown"),
+                str(finding._region() or "unknown"),
             )
 
             if key in seen:
                 continue
 
-            seen.add(
-                key
-            )
+            seen.add(key)
 
-            result.append(
-                finding
-            )
+            result.append(finding)
 
         return result
+
     @staticmethod
     def _build_context(
         resource: dict[str, Any],
@@ -374,20 +309,8 @@ class AnalysisEngine:
 
         return AnalysisContext(
             resource=resource,
-
             scan_id=scan_id,
-
             account_id=account_id,
-
-            observation_period=(
-                resource.get(
-                    "observation_period"
-                )
-            ),
-
-            cost_context=(
-                resource.get(
-                    "cost_context"
-                )
-            ),
+            observation_period=(resource.get("observation_period")),
+            cost_context=(resource.get("cost_context")),
         )

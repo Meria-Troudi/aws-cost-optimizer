@@ -57,20 +57,14 @@ class RecommendationExplanationService:
         if recommendation is None:
             return None
 
-        presented = present_recommendation(
-            recommendation
-        )
+        presented = present_recommendation(recommendation)
 
         if presented.get("ai_explanation") and not force:
             return presented
 
         finding = recommendation.primary_finding
 
-        finding_dict = (
-            present_finding(finding)
-            if finding is not None
-            else None
-        )
+        finding_dict = present_finding(finding) if finding is not None else None
 
         payload = build_explanation_payload(
             presented,
@@ -80,9 +74,7 @@ class RecommendationExplanationService:
         provider = OllamaProvider()
 
         try:
-            explanation = provider.explain(
-                payload
-            )
+            explanation = provider.explain(payload)
 
         except Exception as exc:
 

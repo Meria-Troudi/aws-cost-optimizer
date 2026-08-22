@@ -38,47 +38,37 @@ class ScanService:
     def __init__(self, db):
         self.db = db
 
- 
     def run(self, scan) -> dict[str, Any]:
-      
 
         total_start = time.time()
 
         scan_metrics: dict[str, Any] = {
             "stage_durations": {},
-
             # Cost
             "cost_records": 0,
             "cost_collected": 0.0,
             "cost_validation": "N/A",
-
             # Planning
             "collection_plans": 0,
-
             # Resources
             "resources_collected": 0,
             "resource_attempted": 0,
-
             # Metrics
             "metrics_collected": 0,
             "metrics_queried": 0,
             "metrics_observed": 0,
             "metrics_no_data": 0,
             "metric_errors": 0,
-
             # Topology
             "topology_collected": 0,
-
             # Optimization
             "contexts": 0,
             "findings": 0,
             "recommendations": 0,
-
             # Collection validation
             "collection_not_found": 0,
             "failed_collectors": 0,
             "partial_collectors": 0,
-
             # Overall
             "total_duration": 0.0,
         }
@@ -113,34 +103,22 @@ class ScanService:
 
             scan.cost_validation_json = json_dumps(
                 {
-                    "collected_total": cost_validation.get(
-                        "collected_total"
-                    ),
-                    "monthly_total": cost_validation.get(
-                        "monthly_total"
-                    ),
-                    "difference": cost_validation.get(
-                        "difference"
-                    ),
-                    "matches": cost_validation.get(
-                        "matches"
-                    ),
+                    "collected_total": cost_validation.get("collected_total"),
+                    "monthly_total": cost_validation.get("monthly_total"),
+                    "difference": cost_validation.get("difference"),
+                    "matches": cost_validation.get("matches"),
                 }
             )
 
             self._report_progress(scan, 15)
 
-            scan_metrics["stage_durations"][
-                "cost_collection"
-            ] = time.time() - stage_start
+            scan_metrics["stage_durations"]["cost_collection"] = (
+                time.time() - stage_start
+            )
 
             scan_metrics["cost_records"] = (
-                self.db.query(
-                    func.count(CostRecord.id)
-                )
-                .filter(
-                    CostRecord.scan_run_id == scan.id
-                )
+                self.db.query(func.count(CostRecord.id))
+                .filter(CostRecord.scan_run_id == scan.id)
                 .scalar()
                 or 0
             )
@@ -154,15 +132,11 @@ class ScanService:
             )
 
             scan_metrics["cost_validation"] = (
-                "OK"
-                if cost_validation.get("matches")
-                else "FAILED"
+                "OK" if cost_validation.get("matches") else "FAILED"
             )
 
             if not cost_validation:
-                raise RuntimeError(
-                    "Cost collection returned no validation result."
-                )
+                raise RuntimeError("Cost collection returned no validation result.")
 
             stage_start = time.time()
 
@@ -173,17 +147,13 @@ class ScanService:
                 scan,
             )
 
-            plans = self._normalize_plans(
-                raw_plans
+            plans = self._normalize_plans(raw_plans)
+
+            scan_metrics["stage_durations"]["collection_plan"] = (
+                time.time() - stage_start
             )
 
-            scan_metrics["stage_durations"][
-                "collection_plan"
-            ] = time.time() - stage_start
-
-            scan_metrics["collection_plans"] = len(
-                plans
-            )
+            scan_metrics["collection_plans"] = len(plans)
 
             self._report_progress(scan, 25)
 
@@ -200,18 +170,12 @@ class ScanService:
 
                 scan_metrics["resource_attempted"] += 1
 
-                collector_name = (
-                    plan.get("collector")
-                    or plan.get("collector_name")
-                )
+                collector_name = plan.get("collector") or plan.get("collector_name")
 
-                region = (
-                    plan.get("region")
-                    or getattr(
-                        scan,
-                        "region",
-                        None,
-                    )
+                region = plan.get("region") or getattr(
+                    scan,
+                    "region",
+                    None,
                 )
 
                 service = plan.get(
@@ -247,16 +211,13 @@ class ScanService:
                         "topology_resources": 0,
                         "status": "failed",
                         "error": (
-                            "Collection plan does not contain "
-                            "a collector name."
+                            "Collection plan does not contain " "a collector name."
                         ),
                     }
 
                     results.append(result)
 
-                    scan_metrics[
-                        "failed_collectors"
-                    ] += 1
+                    scan_metrics["failed_collectors"] += 1
 
                     continue
 
@@ -275,16 +236,12 @@ class ScanService:
                         "metric_errors": 0,
                         "topology_resources": 0,
                         "status": "failed",
-                        "error": (
-                            "Collector requires a region."
-                        ),
+                        "error": ("Collector requires a region."),
                     }
 
                     results.append(result)
 
-                    scan_metrics[
-                        "failed_collectors"
-                    ] += 1
+                    scan_metrics["failed_collectors"] += 1
 
                     continue
                 # Billing dimensions only. The attribution verdict
@@ -319,8 +276,7 @@ class ScanService:
                         dict,
                     ):
                         raise TypeError(
-                            "CollectorManager.execute() "
-                            "must return a dictionary."
+                            "CollectorManager.execute() " "must return a dictionary."
                         )
 
                 except Exception as exc:
@@ -373,9 +329,7 @@ class ScanService:
                 ).lower()
 
                 if status == "failed":
-                    scan_metrics[
-                        "failed_collectors"
-                    ] += 1
+                    scan_metrics["failed_collectors"] += 1
 
                 elif (
                     result.get(
@@ -384,9 +338,7 @@ class ScanService:
                     )
                     or 0
                 ):
-                    scan_metrics[
-                        "partial_collectors"
-                    ] += 1
+                    scan_metrics["partial_collectors"] += 1
 
                 # Returned resources
                 resources_count = self._safe_int(
@@ -399,14 +351,10 @@ class ScanService:
                     )
                 )
 
-                scan_metrics[
-                    "resources_collected"
-                ] += resources_count
+                scan_metrics["resources_collected"] += resources_count
 
                 # Metrics queried
-                scan_metrics[
-                    "metrics_queried"
-                ] += self._safe_int(
+                scan_metrics["metrics_queried"] += self._safe_int(
                     result.get(
                         "queried_metrics",
                         0,
@@ -424,14 +372,10 @@ class ScanService:
                     )
                 )
 
-                scan_metrics[
-                    "metrics_observed"
-                ] += observed
+                scan_metrics["metrics_observed"] += observed
 
                 # Explicit no-data metrics
-                scan_metrics[
-                    "metrics_no_data"
-                ] += self._safe_int(
+                scan_metrics["metrics_no_data"] += self._safe_int(
                     result.get(
                         "no_data_metrics",
                         0,
@@ -439,9 +383,7 @@ class ScanService:
                 )
 
                 # Metric errors
-                scan_metrics[
-                    "metric_errors"
-                ] += self._safe_int(
+                scan_metrics["metric_errors"] += self._safe_int(
                     result.get(
                         "metric_errors",
                         0,
@@ -449,9 +391,7 @@ class ScanService:
                 )
 
                 # Topology
-                scan_metrics[
-                    "topology_collected"
-                ] += self._safe_int(
+                scan_metrics["topology_collected"] += self._safe_int(
                     result.get(
                         "topology_resources",
                         0,
@@ -462,21 +402,17 @@ class ScanService:
 
             self._report_progress(scan, 55)
 
-            scan_metrics["metrics_collected"] = (
-                scan_metrics["metrics_observed"]
-            )
+            scan_metrics["metrics_collected"] = scan_metrics["metrics_observed"]
 
-            scan_metrics["stage_durations"][
-                "resource_collection"
-            ] = time.time() - stage_start
+            scan_metrics["stage_durations"]["resource_collection"] = (
+                time.time() - stage_start
+            )
 
             stage_start = time.time()
 
-            collection_validation = (
-                validate_collection_results(
-                    plans,
-                    results,
-                )
+            collection_validation = validate_collection_results(
+                plans,
+                results,
             )
 
             if not isinstance(
@@ -502,11 +438,9 @@ class ScanService:
 
             results = validated_results
 
-            reconciliation_findings = (
-                collection_validation.get(
-                    "reconciliation_findings",
-                    [],
-                )
+            reconciliation_findings = collection_validation.get(
+                "reconciliation_findings",
+                [],
             )
 
             if not isinstance(
@@ -515,38 +449,32 @@ class ScanService:
             ):
                 reconciliation_findings = []
 
-            scan_metrics[
-                "collection_not_found"
-            ] = self._safe_int(
+            scan_metrics["collection_not_found"] = self._safe_int(
                 collection_validation.get(
                     "not_found_count",
                     0,
                 )
             )
 
-            scan_metrics["stage_durations"][
-                "collection_validation"
-            ] = time.time() - stage_start
+            scan_metrics["stage_durations"]["collection_validation"] = (
+                time.time() - stage_start
+            )
 
             self._report_progress(scan, 65)
 
             stage_start = time.time()
 
-            all_resources = resources_for_analysis(
-                results
-            )
+            all_resources = resources_for_analysis(results)
 
             if all_resources is None:
                 all_resources = []
 
-            optimization_result = (
-                OptimizationPipeline().run(
-                    db=self.db,
-                    scan=scan,
-                    resources=all_resources,
-                    collection_plans=plans,
-                    pre_findings=reconciliation_findings,
-                )
+            optimization_result = OptimizationPipeline().run(
+                db=self.db,
+                scan=scan,
+                resources=all_resources,
+                collection_plans=plans,
+                pre_findings=reconciliation_findings,
             )
 
             if not isinstance(
@@ -554,8 +482,7 @@ class ScanService:
                 dict,
             ):
                 raise TypeError(
-                    "OptimizationPipeline.run() "
-                    "must return a dictionary."
+                    "OptimizationPipeline.run() " "must return a dictionary."
                 )
 
             all_findings = optimization_result.get(
@@ -563,11 +490,9 @@ class ScanService:
                 [],
             )
 
-            all_recommendations = (
-                optimization_result.get(
-                    "recommendations",
-                    [],
-                )
+            all_recommendations = optimization_result.get(
+                "recommendations",
+                [],
             )
 
             if not isinstance(
@@ -582,27 +507,17 @@ class ScanService:
             ):
                 all_recommendations = []
 
-            scan_metrics["stage_durations"][
-                "optimization"
-            ] = time.time() - stage_start
+            scan_metrics["stage_durations"]["optimization"] = time.time() - stage_start
 
             self._report_progress(scan, 90)
 
-            scan_metrics["contexts"] = len(
-                all_resources
-            )
+            scan_metrics["contexts"] = len(all_resources)
 
-            scan_metrics["findings"] = len(
-                all_findings
-            )
+            scan_metrics["findings"] = len(all_findings)
 
-            scan_metrics["recommendations"] = len(
-                all_recommendations
-            )
+            scan_metrics["recommendations"] = len(all_recommendations)
 
-            scan_metrics["total_duration"] = (
-                time.time() - total_start
-            )
+            scan_metrics["total_duration"] = time.time() - total_start
 
             self._report_progress(scan, 100)
 
@@ -622,38 +537,24 @@ class ScanService:
             return {
                 "scan_id": scan.id,
                 "status": "completed",
-
                 "cost_validation": cost_validation,
-
                 "plans": plans,
-
                 "collection_results": results,
-
-                "reconciliation_findings":
-                    reconciliation_findings,
-
-                "findings":
-                    all_findings,
-
-                "recommendations":
-                    all_recommendations,
-
-                "metrics":
-                    scan_metrics,
+                "reconciliation_findings": reconciliation_findings,
+                "findings": all_findings,
+                "recommendations": all_recommendations,
+                "metrics": scan_metrics,
             }
 
         except Exception as exc:
 
             error_message = str(exc)
 
-            scan_metrics["total_duration"] = (
-                time.time() - total_start
-            )
+            scan_metrics["total_duration"] = time.time() - total_start
 
             self._safe_rollback()
 
             try:
-
 
                 try:
                     self.db.refresh(scan)
@@ -685,7 +586,6 @@ class ScanService:
         raw_plans: Any,
     ) -> list[dict[str, Any]]:
 
-
         if raw_plans is None:
             return []
 
@@ -697,8 +597,7 @@ class ScanService:
                 raw_plans = list(raw_plans)
             except TypeError:
                 raise TypeError(
-                    "CollectionPlanner.plan() must return "
-                    "a list of plans."
+                    "CollectionPlanner.plan() must return " "a list of plans."
                 )
 
         normalized: list[dict[str, Any]] = []
@@ -712,7 +611,7 @@ class ScanService:
                 item = dict(plan)
 
             else:
-            
+
                 item = {}
 
                 for field in (
@@ -735,10 +634,7 @@ class ScanService:
                             field,
                         )
 
-            collector = (
-                item.get("collector")
-                or item.get("collector_name")
-            )
+            collector = item.get("collector") or item.get("collector_name")
 
             item["collector"] = collector
 
@@ -793,12 +689,10 @@ class ScanService:
             self._safe_rollback()
 
     def _safe_commit(self) -> None:
-        
 
         self.db.commit()
 
     def _safe_rollback(self) -> None:
-       
 
         try:
             self.db.rollback()
@@ -809,7 +703,6 @@ class ScanService:
     def _safe_int(
         value: Any,
     ) -> int:
-       
 
         if value is None:
             return 0
