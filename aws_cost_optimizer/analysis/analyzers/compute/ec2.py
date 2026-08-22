@@ -25,13 +25,13 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from analysis.base import Analyzer
-from analysis.condition import EvidenceStatement
-from analysis.context import AnalysisContext
-from analysis.evidence import Evidence
-from analysis.finding import Finding, ObservationPeriod
-from analysis.metrics import metric_has_observed_data, metric_numeric_value
-from analysis.registry import register
+from ...base import Analyzer
+from ...condition import EvidenceStatement
+from ...context import AnalysisContext
+from ...evidence import Evidence
+from ...finding import Finding, ObservationPeriod
+from ...metrics import metric_has_observed_data, metric_numeric_value
+from ...registry import register
 
 
 @register

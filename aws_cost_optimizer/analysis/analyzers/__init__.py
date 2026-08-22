@@ -1,37 +1,38 @@
 """
 Analysis analyzers.
 
-Importing this package registers all analyzers via their @register
-decorator. Each analyzer lives under <domain>/<subdomain>, mirroring
-collection/collectors/ (e.g. network/vpc/nat_gateway.py).
+Importing this package registers every analyzer via its @register
+decorator. Modules are resolved from the resource catalog by
+loader.load_analyzers() rather than from a hand-maintained import
+list -- see loader.py for why (the previous list silently disabled the
+Aurora analyzer entirely).
+
+Analyzer classes are re-exported at package level, so
+`from analysis.analyzers import RDSAnalyzer` keeps working. Those
+names are bound dynamically from the registry, which means they follow
+the catalog automatically and cannot drift out of sync with it. The
+trade-off is that static analysis will not see them; use
+analysis.registry.get_analyzers() when you want the live set rather
+than a specific class.
 """
 
-from .network.vpc.public_ipv4 import IPv4Analyzer
-from .network.vpc.nat_gateway import NatGatewayAnalyzer
-from .network.vpc.vpc_endpoint import VpcEndpointAnalyzer
-from .network.vpc.transit_gateway import TransitGatewayAnalyzer
-from .load_balancing.load_balancer import ElbAnalyzer
-from .compute.eks.cluster import EKSAnalyzer
-from .compute.ec2 import EC2Analyzer
-from .database.instance import RDSAnalyzer
-from .database.aurora import AuroraAnalyzer
-from .database.dynamodb import DynamoDBAnalyzer
-from .analytics.quicksight import QuickSightAnalyzer
-from .storage.ebs import EBSAnalyzer
-from .security.waf import WAFAnalyzer
+from __future__ import annotations
+
+from ..registry import registered_analyzer_classes
+from .loader import IMPORT_ERRORS, analyzer_modules, load_analyzers
+
+load_analyzers()
+
+# Bind each registered analyzer class as a package-level name.
+_EXPORTED: list[str] = []
+
+for _analyzer_class in registered_analyzer_classes():
+    globals()[_analyzer_class.__name__] = _analyzer_class
+    _EXPORTED.append(_analyzer_class.__name__)
 
 __all__ = [
-    "NatGatewayAnalyzer",
-    "IPv4Analyzer",
-    "VpcEndpointAnalyzer",
-    "TransitGatewayAnalyzer",
-    "ElbAnalyzer",
-    "EKSAnalyzer",
-    "EC2Analyzer",
-    "RDSAnalyzer",
-    "AuroraAnalyzer",
-    "DynamoDBAnalyzer",
-    "QuickSightAnalyzer",
-    "EBSAnalyzer",
-    "WAFAnalyzer",
+    "IMPORT_ERRORS",
+    "analyzer_modules",
+    "load_analyzers",
+    *sorted(_EXPORTED),
 ]
