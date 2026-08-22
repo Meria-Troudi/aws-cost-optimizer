@@ -1,5 +1,9 @@
 # Scan outputs
 scans/
+# Scan summaries contain real AWS account IDs, ARNs, KMS key IDs and
+# VPC/NAT resource IDs -- same reason the SQLite DB is excluded below.
+summary.txt
+summary-*.txt
 # Generated reports
 aws_cost_optimizer/output/
 compute_optimizer_report.json
