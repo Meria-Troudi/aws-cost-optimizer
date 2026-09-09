@@ -6587,6 +6587,15 @@ select:focus-visible,
   color: #a52635;
 }
 
+.page-error-hint {
+  margin-top: 6px;
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #a52635;
+  opacity: .85;
+}
+
 .empty-ico {
   font-size: 20px;
   width: 44px;

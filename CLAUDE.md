@@ -10,7 +10,7 @@ An AWS FinOps cost-optimization platform with three parts:
 - **`backend/`** — FastAPI app that wraps the engine, persists results to SQLite, and serves the REST API.
 - **`frontend/`** — React + Vite SPA that drives scans and renders dashboards/results.
 
-Dependencies are declared in `requirements.txt` (runtime) and `requirements-dev.txt` (pytest, black). There is no `pyproject.toml`; install with `pip install -r requirements.txt -r requirements-dev.txt`, or `make install`.
+Dependencies (runtime and dev/test — pytest, black) are declared together in `requirements.txt`. There is no `pyproject.toml`; install with `pip install -r requirements.txt`.
 
 `tests/` contains a pytest suite of resource-independent contract tests (attribution/reconciliation invariants, metric-semantics round-tripping, collector/analyzer registry validation, recommendation-engine behaviour, the evidence gate, LLM output guards, dashboard cache behaviour) — see Commands below. It is not an integration suite: nothing in it makes real AWS calls or requires a running Ollama instance, which is what lets CI run it.
 
@@ -49,7 +49,7 @@ Runs the same pipeline the backend uses, outside the API (writes to the same SQL
 
 ```
 python -m pytest tests/ -q      # 277 tests; 3 currently fail on this branch, see below
-make check                       # formatting + tests, as CI runs them
+python -m black -l 88 --check aws_cost_optimizer backend tests   # formatting, as CI runs it
 ```
 
 As of `fix/review-findings`, 3 tests are known-failing, open work rather than doc drift:
@@ -62,7 +62,7 @@ exercises). Don't "fix" these by deleting the tests — they're pinning gaps sti
 
 `tests/conftest.py` puts both the repo root and `aws_cost_optimizer/` on `sys.path` (mirroring `ensure_project_paths()`) so the suite can be run standalone.
 
-Formatting is enforced: the Python code is `black -l 88`, checked in CI via `black --check`. Run `make fmt` before committing.
+Formatting is enforced: the Python code is `black -l 88`, checked in CI via `black --check`. Run `python -m black -l 88 aws_cost_optimizer backend tests` before committing.
 
 ### Local AI (Ollama, for recommendation explanations)
 

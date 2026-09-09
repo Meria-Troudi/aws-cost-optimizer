@@ -12,11 +12,20 @@ unknown when they genuinely are.
 ## Components
 
 - **`aws_cost_optimizer/`** — the scan engine: collectors, analyzers, and the
-  recommendation pipeline. Runs standalone or behind the API.
+  recommendation pipeline. Config-driven and plugin-based — adding a resource
+  type means adding a catalog entry plus a collector/analyzer pair, nothing
+  else. Currently covers 14 resource types across compute, database, storage,
+  networking, load balancing, security, and analytics. Runs standalone or
+  behind the API.
 - **`backend/`** — FastAPI app wrapping the engine, persisting results to SQLite
   and serving the REST API.
-- **`frontend/`** — React + Vite SPA that starts scans and renders the dashboard
-  and results.
+- **`frontend/`** — React + Vite SPA that starts scans and renders the
+  dashboard and results. The dashboard also surfaces AWS's own Cost Explorer
+  recommendations (Savings Plans, Reserved Instances, EC2 rightsizing)
+  alongside this engine's evidence-backed findings, as a second,
+  complementary source.
+- **`docs/`** — architecture and design-rationale reference material; see
+  [Further reading](#further-reading).
 
 ## Prerequisites
 
@@ -35,7 +44,7 @@ unknown when they genuinely are.
 Install Python dependencies:
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 Start the backend (from the repository root, so the SQLite file resolves):
@@ -76,7 +85,7 @@ cached. If Ollama is not running, the API returns the recommendation with
 
 ```bash
 python -m pytest tests/ -q      # 277 tests (274 passing; 3 known-failing, see CLAUDE.md)
-make check                       # formatting + tests, as CI runs them
+python -m black -l 88 --check aws_cost_optimizer backend tests   # formatting, as CI runs it
 ```
 
 The suite is resource-independent: no AWS credentials, no live Cost Explorer
@@ -97,11 +106,14 @@ pins an invariant that has actually been violated in this codebase at some point
   `estimated_monthly_savings` is `null` with a `savings_basis` explaining why —
   `cost_not_resource_attributed`, `target_cost_required`, and so on.
 
-- **Findings are raw and per-resource; aggregation is presentation only.** Three
-  idle NAT gateways persist as three findings and produce three recommendations.
-  The dashboard may summarise them as one row, but the recommendation layer never
-  consumes that summary — so a recommendation always points at exactly one
-  resource.
+- **Findings are raw and per-resource; recommendations merge deliberately, not
+  by accident.** Every `Finding` row is resource-scoped — three idle NAT
+  gateways always persist as three rows, never pre-merged. The recommendation
+  engine consumes those raw rows directly (never a report-level aggregated
+  view) and merges only findings that share the same recommendation key,
+  service, resource type, region, and finding type into one recommendation
+  listing every affected resource — so a merge is explicit, traceable logic,
+  not a side effect of how the dashboard happens to display things.
 
 - **Recommendation eligibility is gated on declared evidence.** Every catalog
   route declares the evidence a recommendation of that kind must stand on, and
@@ -111,6 +123,14 @@ pins an invariant that has actually been violated in this codebase at some point
 
 ## Further reading
 
-[`CLAUDE.md`](CLAUDE.md) is the deep architectural reference — pipeline stages,
-the `sys.path` bootstrap gotcha, how to add a resource type, and the reasoning
-behind the invariants above.
+- [`CLAUDE.md`](CLAUDE.md) — the deep architectural reference: pipeline
+  stages, the `sys.path` bootstrap gotcha, how to add a resource type, and
+  the reasoning behind the invariants above.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the narrative *why*
+  behind the design: problem definition, cost-optimization principles,
+  cost-driven collection, and the evidence model.
+- [`docs/THESIS_FIGURES.md`](docs/THESIS_FIGURES.md) — PlantUML source for
+  the project's reference diagrams, checked against the current codebase.
+- `docs/PROJECT_AUDIT.md` is a superseded historical snapshot from an
+  earlier project stage (kept for reference only — see the note at the top
+  of the file for what has since changed).

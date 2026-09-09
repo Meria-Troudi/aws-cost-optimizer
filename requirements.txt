@@ -1,12 +1,12 @@
-# Direct runtime dependencies for the AWS Cost Optimizer.
+# Runtime and development dependencies for the AWS Cost Optimizer.
 #
 # Ranges are pinned to the currently-installed major version so a fresh
 # clone reproduces a working environment without freezing transitive
 # packages. Install with:
 #
 #     pip install -r requirements.txt
-#
-# Development/test extras live in requirements-dev.txt.
+
+# --- Runtime ---------------------------------------------------------
 
 # API layer
 fastapi>=0.136,<1.0
@@ -31,3 +31,13 @@ PyYAML>=6.0,<7.0
 # is not running -- the explanation layer degrades gracefully at call
 # time, not at import time.
 httpx>=0.28,<1.0
+
+# --- Development / test ----------------------------------------------
+
+# Test runner. The suite in tests/ is resource-independent -- it makes
+# no live AWS calls and needs no running Ollama instance.
+pytest>=8.4,<9.0
+
+# Formatter. The codebase is formatted with `black -l 88`; CI enforces
+# it with `black --check`.
+black>=26.0,<27.0

@@ -384,6 +384,12 @@ export default function DashboardTab({
     return (
       <div className="page-error section-gap">
         {error}
+        <div className="page-error-hint">
+          This app does not sign in to AWS itself — verify that valid AWS
+          credentials are already configured for the backend process (run
+          <code> aws configure</code>, or check your environment variables /
+          IAM role) before retrying.
+        </div>
       </div>
     )
   }
