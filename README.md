@@ -85,7 +85,7 @@ cached. If Ollama is not running, the API returns the recommendation with
 
 ```bash
 python -m pytest tests/ -q      # 277 tests (274 passing; 3 known-failing, see CLAUDE.md)
-python -m black -l 88 --check aws_cost_optimizer backend tests   # formatting, as CI runs it
+python -m black -l 88 --check aws_cost_optimizer backend tests   # formatting check
 ```
 
 The suite is resource-independent: no AWS credentials, no live Cost Explorer

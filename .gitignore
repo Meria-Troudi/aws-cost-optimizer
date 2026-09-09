@@ -44,7 +44,7 @@ Thumbs.db
 
 # Test artifacts
 .pytest_cache/
-
+docs/
 tests/
 CLAUDE.md
 
