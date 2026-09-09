@@ -27,18 +27,31 @@ class CollectionProfile:
 
     def __init__(self) -> None:
 
-        path = Path(__file__).parent / "collection_profiles.yaml"
+        dir_path = Path(__file__).parent / "collection_profiles"
 
-        if not path.exists():
-            raise FileNotFoundError(f"Collection profile not found: {path}")
+        if not dir_path.is_dir():
+            raise FileNotFoundError(f"Collection profiles directory not found: {dir_path}")
 
-        with open(path, "r", encoding="utf-8") as file:
-            data = yaml.safe_load(file)
+        profiles: dict[str, dict[str, Any]] = {}
 
-        if not isinstance(data, dict):
-            raise ValueError("collection_profiles.yaml must contain a mapping")
+        for yaml_path in sorted(dir_path.glob("*.yaml")):
+            with open(yaml_path, "r", encoding="utf-8") as file:
+                data = yaml.safe_load(file)
 
-        self.profiles: dict[str, dict[str, Any]] = data
+            if not isinstance(data, dict):
+                raise ValueError(f"{yaml_path.name} must contain a mapping")
+
+            for resource_type in data:
+                if resource_type in profiles:
+                    raise ValueError(
+                        f"Duplicate resource type '{resource_type}' in "
+                        f"{yaml_path.name} (already defined in another "
+                        f"collection profile file)"
+                    )
+
+            profiles.update(data)
+
+        self.profiles: dict[str, dict[str, Any]] = profiles
 
         self._validate()
 
@@ -50,7 +63,7 @@ class CollectionProfile:
             for section in self.REQUIRED_SECTIONS:
 
                 if section not in profile:
-                    continue
+                    raise ValueError(f"{resource_type}.{section} is required")
 
                 value = profile[section]
 
@@ -76,19 +89,3 @@ class CollectionProfile:
             resource_type,
             {},
         )
-
-    def describe(self, resource_type: str) -> dict[str, Any]:
-
-        profile = self.get(resource_type)
-
-        if not profile:
-            return {}
-
-        return {
-            section: bool(isinstance(config, dict) and config.get("enabled", False))
-            for section, config in profile.items()
-            if isinstance(config, dict)
-        }
-
-    def all(self) -> dict[str, dict[str, Any]]:
-        return self.profiles

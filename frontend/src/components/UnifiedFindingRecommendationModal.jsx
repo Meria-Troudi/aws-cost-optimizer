@@ -35,6 +35,22 @@ function valueOrDash(value) {
   return String(value)
 }
 
+// The Evidence table's "Observed" column shows formatConditionValue()'s
+// summary of a condition's value -- for a diagnostic dict with many
+// keys (e.g. Transit Gateway's telemetry diagnostics) that summary can
+// still run to a dozen+ "key: value" pairs. This is supporting
+// evidence, not the primary content of the modal, so cap it rather
+// than let one row's cell dominate the table.
+function truncateObserved(value, max = 140) {
+  const text = valueOrDash(value)
+
+  if (text.length <= max) {
+    return text
+  }
+
+  return `${text.slice(0, max).trimEnd()}…`
+}
+
 function formatMetricValue(metric) {
   if (!metric) {
     return '—'
@@ -60,26 +76,30 @@ function formatMetricValue(metric) {
 }
 
 function resolveFindingCost(finding) {
-  const billing =
-    finding?.billingDetails ||
-    finding?.billing_details ||
-    {}
-
+  // finding.cost is already the presenter's fully-resolved,
+  // resource-attributed cost (or null when unattributable) -- see
+  // backend/api/presenters/finding_presenter.py::_extract_cost. Falling
+  // back to billing.amount here would silently resurrect a shared
+  // collection-plan/service bucket total as if it were this resource's
+  // own cost, exactly the bug that made a NAT Gateway with a $125.33
+  // shared bill render as "$0.00" instead of "not available". Only
+  // `impact` is a legitimate secondary source: it mirrors the same
+  // resource-attributed value the presenter derived cost from.
   const impact =
     finding?.impact ||
     {}
 
   const values = [
     finding?.cost,
-    billing.amount,
-    billing.cost,
-    billing.period_cost,
-    billing.analysis_period_cost,
     impact.period_cost,
     impact.cost,
   ]
 
   for (const value of values) {
+    if (value === null || value === undefined) {
+      continue
+    }
+
     const amount = Number(value)
 
     if (
@@ -121,6 +141,7 @@ function normalizeResources(
       (id) => ({
         id,
         type:
+          finding.resourceTypeLabel ||
           finding.resource_type,
         region:
           finding.region,
@@ -137,6 +158,7 @@ function normalizeResources(
       (id) => ({
         id,
         type:
+          finding.resourceTypeLabel ||
           finding.resource_type,
         region:
           finding.region,
@@ -160,6 +182,7 @@ function normalizeResources(
         id:
           finding.resource_id,
         type:
+          finding.resourceTypeLabel ||
           finding.resource_type,
         region:
           finding.region,
@@ -175,6 +198,7 @@ function normalizeResources(
         id:
           finding.resource,
         type:
+          finding.resourceTypeLabel ||
           finding.resource_type,
         region:
           finding.region,
@@ -343,6 +367,97 @@ function normalizeMetrics(
   )
 }
 
+// financial.py's calculate_savings() explains *why* it couldn't quantify
+// savings via savings_basis rather than just returning null -- surface
+// that reason instead of the generic "Cost unavailable" for every case,
+// since "cost_not_resource_attributed" (a shared cost line, not missing
+// data) is a materially different situation from "cost_unknown".
+const SAVINGS_UNAVAILABLE_REASONS = {
+  cost_not_resource_attributed:
+    'Shared cost, not isolated',
+  target_cost_required:
+    'No savings target set',
+  resource_attributed_cost:
+    'No savings target set',
+}
+
+function savingsUnavailableReason(basis) {
+  return (
+    SAVINGS_UNAVAILABLE_REASONS[basis] ||
+    'Cost unavailable'
+  )
+}
+
+const SCOPE_TYPE_LABELS = {
+  resource: 'Resource',
+  region: 'Region',
+  account: 'Account',
+  service: 'Service',
+}
+
+// recommendation.scope is a raw "<type>:<value>" persistence key (see
+// resolve_persistence_scope() in the backend) -- its value format is
+// whatever that resource type's own resource_id happens to be, which
+// is a full ARN for some services (ELB, WAF) and a bare identifier for
+// others (Aurora, RDS). Rendered as-is, that reads as an inconsistent
+// mix of very long and very short "Scope:" lines. This extracts one
+// consistent short label + value for display, keeping the raw value
+// available via the title attribute for anyone who needs the full ARN.
+function describeScope(scope, { region } = {}) {
+  if (!scope) {
+    return null
+  }
+
+  const separatorIndex = scope.indexOf(':')
+
+  const type =
+    separatorIndex === -1
+      ? scope
+      : scope.slice(0, separatorIndex)
+
+  const value =
+    separatorIndex === -1
+      ? ''
+      : scope.slice(separatorIndex + 1)
+
+  // Already shown as its own "Region <eu-west-1>" chip right next to
+  // this one -- a region-scoped recommendation's Scope line would just
+  // repeat it.
+  if (type === 'region' && value && value === region) {
+    return null
+  }
+
+  let displayValue = value
+
+  if (value.startsWith('arn:')) {
+    const segments = value.split(/[/:]/).filter(Boolean)
+
+    let candidate = segments[segments.length - 1] || value
+
+    // Many ARNs end in an opaque hex/UUID suffix after the actual
+    // resource name (e.g. .../app/CITO-COLLINE-TEST-ALB/1c07ab6e6f8049c8,
+    // .../webacl/CITO-TEST-WebACL/56e39661-9817-...) -- prefer the name
+    // segment before it over the meaningless id.
+    const strippedCandidate = candidate.replace(/-/g, '')
+
+    const candidateIsOpaqueId =
+      strippedCandidate.length >= 8 &&
+      /^[0-9a-f]+$/i.test(strippedCandidate)
+
+    if (candidateIsOpaqueId && segments.length > 1) {
+      candidate = segments[segments.length - 2]
+    }
+
+    displayValue = candidate
+  }
+
+  return {
+    label: SCOPE_TYPE_LABELS[type] || 'Scope',
+    value: displayValue || scope,
+    full: scope,
+  }
+}
+
 function normalizeRecommendationImpact(
   recommendation,
 ) {
@@ -363,9 +478,6 @@ function normalizeRecommendationImpact(
   const estimatedSavings =
     financial.estimated_monthly_savings
 
-  const savingsConfidence =
-    financial.savings_confidence
-
   const savingsBasis =
     financial.savings_basis
 
@@ -381,9 +493,6 @@ function normalizeRecommendationImpact(
             .length
         : null
     )
-
-  const confidence =
-    recommendation.confidence
 
   const priority =
     recommendation.priority ||
@@ -412,6 +521,36 @@ function normalizeRecommendationImpact(
       true,
   })
 
+  // Costs whose basis marks them as a shared/unattributed bucket (see
+  // savingsUnavailableReason below) are shown under "Observed cost" for
+  // context, but must never feed the "up to $X" upper-bound fallback --
+  // that bucket total can be dominated by OTHER resources entirely (e.g.
+  // a NAT gateway bucket split across several gateways, or an idle IP's
+  // cost mixed with in-use IPs), so it is not a valid ceiling for THIS
+  // resource's own potential savings.
+  const costIsResourceAttributed =
+    savingsBasis !== 'cost_not_resource_attributed' &&
+    savingsBasis !== 'billing_usage_type_mismatch'
+
+  /*
+   * Potential savings uses the simplest defensible logic: a resource
+   * that costs $X can save at most the cost currently being spent on
+   * it. When the deterministic engine confirms a numeric savings it is
+   * used directly; otherwise the resource's own observed cost is the
+   * upper bound, but only when that cost is actually this resource's
+   * own (not a shared bucket). Never "Not quantified" / "Requires
+   * manual review."
+   */
+  const savingsAmount =
+    estimatedSavings != null &&
+    Number(estimatedSavings) > 0
+      ? Number(estimatedSavings)
+      : costIsResourceAttributed &&
+          cost != null &&
+          Number(cost) > 0
+        ? Number(cost)
+        : null
+
   rows.push({
     id:
       'potential-savings',
@@ -420,64 +559,17 @@ function normalizeRecommendationImpact(
       'Potential savings',
 
     value:
-      estimatedSavings ==
-        null
-        ? savingsBasis ===
-          'cost_not_resource_attributed'
-          ? 'Not resource-attributed'
-          : savingsBasis ===
-              'cost_unknown' ||
-            savingsBasis ===
-              'cost_invalid'
-            ? 'Cost unknown'
-            : 'Not quantified'
-        : Number(
-              estimatedSavings,
-            ) > 0
-          ? `Up to ${formatMoneyOrDash(
-              estimatedSavings,
-            )}`
-          : 'None identified yet',
+      savingsAmount != null
+        ? `Up to ${formatMoneyOrDash(
+            savingsAmount,
+          )}`
+        : savingsUnavailableReason(
+            savingsBasis,
+          ),
 
     big:
       true,
   })
-
-  if (
-    savingsBasis ===
-    'cost_not_resource_attributed'
-  ) {
-    rows.push({
-      id:
-        'savings-basis-note',
-
-      label:
-        'Why not quantified',
-
-      value:
-        'This cost covers a usage type/region, not confirmed as this one resource’s share.',
-    })
-  }
-
-  if (savingsConfidence) {
-    rows.push({
-      id:
-        'savings-confidence',
-
-      label:
-        'Savings confidence',
-
-      value:
-        String(
-          savingsConfidence,
-        )
-          .charAt(0)
-          .toUpperCase() +
-        String(
-          savingsConfidence,
-        ).slice(1),
-    })
-  }
 
   if (
     resourceCount !==
@@ -496,26 +588,6 @@ function normalizeRecommendationImpact(
 
       value:
         resourceCount,
-    })
-  }
-
-  if (
-    confidence !==
-      null &&
-    confidence !==
-      undefined &&
-    confidence !==
-      ''
-  ) {
-    rows.push({
-      id:
-        'confidence',
-
-      label:
-        'Confidence',
-
-      value:
-        confidence,
     })
   }
 
@@ -704,10 +776,82 @@ function MetricChart({
   )
 }
 
+/*
+ * The LLM's "action" field explains why the deterministic plan's
+ * validation steps apply here -- it must never contain AWS operations
+ * or commands (see aws_cost_optimizer/recommendations/llm/prompt.py
+ * section 3 and llm/guard.py's unconditional command detector, which
+ * rejects the explanation outright if one slips through). This is
+ * plain multi-step prose only; inline `backtick` spans still render as
+ * inline code for things like resource IDs.
+ */
+function renderInlineCode(text, keyPrefix) {
+  const parts = text.split(/(`[^`]+`)/g)
+
+  return parts.map((part, index) => {
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 1) {
+      return (
+        <code key={`${keyPrefix}-${index}`}>
+          {part.slice(1, -1)}
+        </code>
+      )
+    }
+
+    return part
+  })
+}
+
+function ExplanationText({ text }) {
+  if (!text) {
+    return null
+  }
+
+  const lines = String(text).split(/\r?\n/)
+
+  const blocks = []
+  let buffer = []
+
+  function flushParagraph() {
+    if (buffer.length) {
+      const joined = buffer.join(' ')
+      blocks.push(
+        <p key={`p-${blocks.length}`}>
+          {renderInlineCode(joined, `p-${blocks.length}`)}
+        </p>,
+      )
+      buffer = []
+    }
+  }
+
+  // The model doesn't reliably separate steps with a blank line -- it
+  // often uses a single newline between "1. ...", "2. ..." items.
+  // Treat a recognized step marker as its own paragraph boundary too,
+  // so numbered/bulleted steps still render as separate lines.
+  const STEP_MARKER = /^(?:\d+[.)]|\[\d+\]|-|•)\s+\S/
+
+  lines.forEach((rawLine, index) => {
+    const line = rawLine.trim()
+
+    if (!line) {
+      flushParagraph()
+      return
+    }
+
+    if (STEP_MARKER.test(line) && buffer.length) {
+      flushParagraph()
+    }
+
+    buffer.push(line)
+  })
+
+  flushParagraph()
+
+  return blocks
+}
+
 function SectionHeader({
   eyebrow,
   title,
-  description,
 }) {
   return (
     <div className="detail-section-head">
@@ -720,12 +864,6 @@ function SectionHeader({
         <h4 className="detail-section-title">
           {title}
         </h4>
-      )}
-
-      {description && (
-        <p className="detail-section-description">
-          {description}
-        </p>
       )}
 
     </div>
@@ -754,8 +892,6 @@ function FindingView({
 
         <SectionHeader
           eyebrow="/ Finding summary"
-          title="Assessment summary"
-          description="Summary of the detected condition, severity, confidence, and financial context."
         />
 
         <div className="detail-summary-grid">
@@ -778,23 +914,17 @@ function FindingView({
 
           <div className="detail-summary-card">
             <span>
-              Confidence
-            </span>
-
-            <strong>
-              {valueOrDash(
-                finding.confidence,
-              )}
-            </strong>
-          </div>
-
-          <div className="detail-summary-card">
-            <span>
               Analysis-period cost
             </span>
 
             <strong>
-              {formatMoneyOrDash(cost)}
+              {cost != null
+                ? formatMoneyOrDash(cost)
+                : finding?.billingDetails?.amount != null
+                  ? `${formatMoneyOrDash(
+                      Number(finding.billingDetails.amount),
+                    )} `
+                  : formatMoneyOrDash(cost)}
             </strong>
 
             {(() => {
@@ -835,21 +965,19 @@ function FindingView({
 
       {/* Diagnosis */}
 
-      <section className="detail-section">
+      {(finding.reason || finding.description) && (
+        <section className="detail-section">
 
-        <SectionHeader
-          eyebrow="/ Diagnosis"
-          title="Assessment rationale"
-          description="Explanation of the condition identified by the analyzer."
-        />
+          <SectionHeader
+            eyebrow="/ Diagnosis"
+          />
 
-        <div className="diag-reason">
-          {finding.reason ||
-            finding.description ||
-            'No assessment rationale was recorded.'}
-        </div>
+          <div className="diag-reason">
+            {finding.reason || finding.description}
+          </div>
 
-      </section>
+        </section>
+      )}
 
       {/* Evidence */}
 
@@ -858,7 +986,6 @@ function FindingView({
         <SectionHeader
           eyebrow="/ Evidence"
           title="Supporting evidence"
-          description="Observed conditions and measurements that support this finding."
         />
 
         {evidence.length > 0 ? (
@@ -895,18 +1022,17 @@ function FindingView({
 
               {
                 key:
-                  'expected',
-
-                label:
-                  'Expected',
-              },
-
-              {
-                key:
                   'actual',
 
                 label:
                   'Observed',
+
+                render:
+                  (row) => (
+                    <span title={valueOrDash(row.actual)}>
+                      {truncateObserved(row.actual)}
+                    </span>
+                  ),
               },
 
               {
@@ -958,7 +1084,6 @@ function FindingView({
         <SectionHeader
           eyebrow="/ Resources"
           title={`Affected resources · ${resources.length}`}
-          description="AWS resources associated with this finding."
         />
 
         <DetailTable
@@ -997,6 +1122,7 @@ function FindingView({
                   valueOrDash(
                     row.type ||
                       row.resource_type ||
+                      finding.resourceTypeLabel ||
                       finding.resource_type,
                   ),
             },
@@ -1015,14 +1141,6 @@ function FindingView({
                       finding.region,
                   ),
             },
-
-            {
-              key:
-                'status',
-
-              label:
-                'Status',
-            },
           ]}
           emptyText="No resource identifiers are associated with this finding."
         />
@@ -1037,7 +1155,6 @@ function FindingView({
           <SectionHeader
             eyebrow="/ Metrics"
             title="Observed performance"
-            description="Utilization and performance measurements collected during the analysis."
           />
 
           <DetailTable
@@ -1103,40 +1220,6 @@ function FindingView({
         </section>
       )}
 
-      {/* Analysis notes */}
-
-      {finding.limitations?.length >
-        0 && (
-        <section className="detail-section">
-
-          <SectionHeader
-            eyebrow="/ Analysis notes"
-            title="Limitations and constraints"
-            description="Considerations that may affect interpretation of the finding."
-          />
-
-          <ul className="limit-list">
-
-            {finding.limitations.map(
-              (
-                item,
-                index,
-              ) => (
-                <li
-                  key={
-                    index
-                  }
-                >
-                  {item}
-                </li>
-              ),
-            )}
-
-          </ul>
-
-        </section>
-      )}
-
       {/* Optional navigation to recommendation */}
 
       {recommendationAvailable &&
@@ -1146,7 +1229,6 @@ function FindingView({
             <SectionHeader
               eyebrow="/ Next action"
               title="Recommendation available"
-              description="A corresponding optimization recommendation has been generated for this finding."
             />
 
             <button
@@ -1179,15 +1261,168 @@ function FindingView({
   )
 }
 
+/*
+ * Renders in the modal's dark right-hand rail, not in the main
+ * scrolling column -- the AI explanation is commentary alongside the
+ * deterministic recommendation, not another section in the same list.
+ */
+function AIExplanationRail({
+  aiExplanation,
+  aiLoading,
+  aiUnavailable,
+  aiSlow,
+  aiError,
+  onRegenerateExplanation,
+}) {
+  return (
+    <div className="rail-section">
+
+      {aiExplanation ? (
+
+        <div className="ai-explanation">
+
+          <p>
+            {aiExplanation.summary}
+          </p>
+
+          <p>
+            <strong>Why: </strong>
+            {aiExplanation.why}
+          </p>
+
+          <div className="ai-explanation-action">
+            <span className="ai-explanation-action-label">Next step</span>
+            <ExplanationText text={aiExplanation.action} />
+          </div>
+
+          {Array.isArray(aiExplanation.what_to_verify) &&
+            aiExplanation.what_to_verify.length > 0 && (
+              <>
+                <div className="ai-explanation-subhead">
+                  What to verify
+                </div>
+
+                <ul className="limit-list">
+                  {aiExplanation.what_to_verify.map((step, index) => (
+                    <li key={`verify-${index}`}>{step}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+          {Array.isArray(aiExplanation.possible_actions) &&
+            aiExplanation.possible_actions.length > 0 && (
+              <>
+                <div className="ai-explanation-subhead">
+                  Possible actions
+                </div>
+
+                <ul className="limit-list">
+                  {aiExplanation.possible_actions.map((step, index) => (
+                    <li key={`action-${index}`}>{step}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+          <p>
+            <strong>Risk: </strong>
+            {aiExplanation.risk}
+          </p>
+
+          {aiExplanation.confidence_note && (
+            <p className="impact-note">
+              {aiExplanation.confidence_note}
+            </p>
+          )}
+
+          {Array.isArray(aiExplanation.limitations) &&
+            aiExplanation.limitations.length > 0 && (
+              <div className="ai-limitation">
+                <span className="ai-limitation-label">limitation</span>
+                <ul className="limit-list">
+                  {aiExplanation.limitations.map((item, index) => (
+                    <li key={index}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+          <button
+            type="button"
+            className="small-btn"
+            onClick={onRegenerateExplanation}
+            disabled={aiLoading}
+          >
+            {aiLoading
+              ? 'Regenerating…'
+              : 'Regenerate explanation'}
+          </button>
+
+          {aiError && !aiLoading && (
+            <p className="ai-regen-error">
+              {aiError}
+            </p>
+          )}
+
+        </div>
+
+      ) : aiLoading ? (
+
+        <div className="detail-empty">
+          <span className="detail-empty-spinner" />
+          Generating explanation&hellip;
+          <small>
+            {aiSlow ? (
+              <>
+                Still generating — the local model may be busy
+                generating other explanations, so this can take
+                several minutes. The result is saved as soon as it
+                is ready — you can close this and reopen it to pick
+                it up.
+              </>
+            ) : (
+              <>
+                Running on the local model — usually a minute or
+                two, longer on the first request after a period of
+                inactivity.
+              </>
+            )}
+          </small>
+        </div>
+
+      ) : aiUnavailable ? (
+
+        <div className="detail-empty">
+          AI explanation is unavailable right now
+          (the local Ollama runtime may not be
+          running).{' '}
+          <button
+            type="button"
+            className="small-btn"
+            onClick={onRegenerateExplanation}
+          >
+            Retry
+          </button>
+        </div>
+
+      ) : (
+
+        <div className="detail-empty">
+          No AI explanation has been generated yet.
+        </div>
+
+      )}
+
+    </div>
+  )
+}
+
 function RecommendationView({
   recommendation,
   relatedFinding,
   impactRows,
   onViewFinding,
-  aiExplanation,
-  aiLoading,
-  aiUnavailable,
-  onRegenerateExplanation,
 }) {
   return (
     <>
@@ -1199,7 +1434,6 @@ function RecommendationView({
         <SectionHeader
           eyebrow="/ Recommendation"
           title="Recommended implementation"
-          description="Action proposed by the optimization engine based on the analyzed finding."
         />
 
         <div className="diag-reason">
@@ -1212,111 +1446,8 @@ function RecommendationView({
 
       </section>
 
-      {/* AI explanation */}
-
-      <section className="detail-section">
-
-        <SectionHeader
-          eyebrow="/ AI explanation"
-          title="Plain-language explanation"
-          description="Generated locally from the recommendation's own evidence. Does not decide eligibility, priority, or savings — those come from the deterministic engine above."
-        />
-
-        {aiExplanation ? (
-
-          <div className="ai-explanation">
-
-            <p>
-              {aiExplanation.summary}
-            </p>
-
-            <p>
-              <strong>Why: </strong>
-              {aiExplanation.why}
-            </p>
-
-            <p>
-              <strong>Next step: </strong>
-              {aiExplanation.action}
-            </p>
-
-            <p>
-              <strong>Risk: </strong>
-              {aiExplanation.risk}
-            </p>
-
-            {aiExplanation.confidence_note && (
-              <p className="impact-note">
-                {aiExplanation.confidence_note}
-              </p>
-            )}
-
-            <button
-              type="button"
-              className="small-btn"
-              onClick={onRegenerateExplanation}
-              disabled={aiLoading}
-            >
-              {aiLoading
-                ? 'Regenerating…'
-                : 'Regenerate explanation'}
-            </button>
-
-          </div>
-
-        ) : aiLoading ? (
-
-          <div className="detail-empty">
-            Generating explanation locally…
-          </div>
-
-        ) : aiUnavailable ? (
-
-          <div className="detail-empty">
-            AI explanation is unavailable right now
-            (the local Ollama runtime may not be
-            running).{' '}
-            <button
-              type="button"
-              className="small-btn"
-              onClick={onRegenerateExplanation}
-            >
-              Retry
-            </button>
-          </div>
-
-        ) : (
-
-          <div className="detail-empty">
-            No AI explanation has been generated yet.
-          </div>
-
-        )}
-
-      </section>
-
-      {/* Rationale */}
-
-      <section className="detail-section">
-
-        <SectionHeader
-          eyebrow="/ Rationale"
-          title="Recommendation rationale"
-          description="Reasoning supporting the proposed optimization action."
-        />
-
-        <div className="diag-reason">
-
-          {recommendation.reason ||
-            recommendation.rationale ||
-            recommendation.description ||
-            'No recommendation rationale was recorded.'}
-
-        </div>
-
-      </section>
-
-      {/* Financial impact */}
+      {/* Financial impact — right after the recommended action, since
+          cost/savings/scope is the data reviewers look for first. */}
 
       {impactRows.length > 0 && (
         <section className="detail-section">
@@ -1324,17 +1455,16 @@ function RecommendationView({
           <SectionHeader
             eyebrow="/ Financial impact"
             title="Estimated savings and scope"
-            description="Estimated financial impact and operational scope associated with the recommendation."
           />
 
-          <div className="impact-card-grid">
+          <div className="detail-summary-grid">
 
             {impactRows.map(
               (row) => (
                 <div
-                  className={`impact-card ${
+                  className={`detail-summary-card ${
                     row.big
-                      ? 'impact-card-big'
+                      ? 'detail-summary-card-big'
                       : ''
                   }`}
                   key={
@@ -1370,42 +1500,34 @@ function RecommendationView({
         </section>
       )}
 
-      {/* Implementation notes */}
+      {/* The validation/action plan is NOT rendered here as a
+          hardcoded section: "What to verify" and "Possible actions"
+          are generated by the local LLM and rendered inside the
+          .ai-explanation block in the right-hand rail. */}
 
-      {Array.isArray(
-        recommendation.limitations,
-      ) &&
-        recommendation.limitations
-          .length > 0 && (
-          <section className="detail-section">
+      {/* Rationale — only when there's real content beyond what the
+          Recommended action / AI explanation sections already say. */}
 
-            <SectionHeader
-              eyebrow="/ Implementation notes"
-              title="Limitations and constraints"
-              description="Considerations that should be reviewed before applying the recommendation."
-            />
+      {(recommendation.reason ||
+        recommendation.rationale ||
+        recommendation.description) && (
+        <section className="detail-section">
 
-            <ul className="limit-list">
+          <SectionHeader
+            eyebrow="/ Rationale"
+            title="Recommendation rationale"
+          />
 
-              {recommendation.limitations.map(
-                (
-                  item,
-                  index,
-                ) => (
-                  <li
-                    key={
-                      index
-                    }
-                  >
-                    {item}
-                  </li>
-                ),
-              )}
+          <div className="diag-reason">
 
-            </ul>
+            {recommendation.reason ||
+              recommendation.rationale ||
+              recommendation.description}
 
-          </section>
-        )}
+          </div>
+
+        </section>
+      )}
 
       {/* Status */}
 
@@ -1414,7 +1536,6 @@ function RecommendationView({
         <SectionHeader
           eyebrow="/ Recommendation status"
           title="Current status"
-          description="Current lifecycle state of the recommendation."
         />
 
         <div className="status-pending">
@@ -1435,7 +1556,6 @@ function RecommendationView({
         <SectionHeader
           eyebrow="/ Source finding"
           title="Finding associated with this recommendation"
-          description="The finding that provided the primary basis for this recommendation."
         />
 
         {relatedFinding ? (
@@ -1561,6 +1681,12 @@ export default function UnifiedFindingRecommendationModal({
   const [aiUnavailable, setAiUnavailable] =
     useState(false)
 
+  const [aiError, setAiError] =
+    useState(null)
+
+  const [aiSlow, setAiSlow] =
+    useState(false)
+
   useEffect(() => {
 
     // Keyed ONLY on recommendationId. Do not add aiLoading/
@@ -1581,6 +1707,8 @@ export default function UnifiedFindingRecommendationModal({
 
     setAiUnavailable(false)
     setAiLoading(false)
+    setAiError(null)
+    setAiSlow(false)
 
     if (
       !recommendationId ||
@@ -1592,6 +1720,18 @@ export default function UnifiedFindingRecommendationModal({
     let cancelled = false
 
     setAiLoading(true)
+
+    // After ~25s with no answer, switch the loading hint to a
+    // "still generating" notice so the rail no longer reads as
+    // frozen. Explanation generation can take several minutes when
+    // the local model is already busy with the scan's background
+    // prefetch, and the explanation is persisted server-side once
+    // done -- closing and reopening the modal picks it up.
+    const slowTimer = setTimeout(() => {
+      if (!cancelled) {
+        setAiSlow(true)
+      }
+    }, 25000)
 
     explainRecommendation(
       recommendationId,
@@ -1618,6 +1758,8 @@ export default function UnifiedFindingRecommendationModal({
       })
       .finally(() => {
 
+        clearTimeout(slowTimer)
+
         if (!cancelled) {
           setAiLoading(false)
         }
@@ -1625,6 +1767,7 @@ export default function UnifiedFindingRecommendationModal({
 
     return () => {
       cancelled = true
+      clearTimeout(slowTimer)
     }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see above:
@@ -1633,20 +1776,38 @@ export default function UnifiedFindingRecommendationModal({
     // request, which is the bug this keying exists to avoid.
   }, [recommendationId])
 
-  function handleRegenerateExplanation() {
+    function handleRegenerateExplanation() {
 
     if (!recommendationId) {
       return
     }
 
+    // Keep the current explanation on screen while regeneration runs
+    // instead of blanking it out. A slow or failed regeneration no
+    // longer strands the user on the "Generating explanation…" state
+    // with no content and no way back -- the previous explanation
+    // stays visible, the button shows progress, and a failure is
+    // surfaced inline below it.
     setAiLoading(true)
     setAiUnavailable(false)
+    setAiError(null)
+    setAiSlow(false)
+
+    let regenCancelled = false
+
+    const slowTimer = setTimeout(() => {
+      if (!regenCancelled) {
+        setAiSlow(true)
+      }
+    }, 25000)
 
     explainRecommendation(
       recommendationId,
       { force: true },
     )
       .then((result) => {
+
+        setAiError(null)
 
         if (result?.ai_explanation) {
           setAiExplanation(
@@ -1656,10 +1817,23 @@ export default function UnifiedFindingRecommendationModal({
           setAiUnavailable(true)
         }
       })
-      .catch(() => {
-        setAiUnavailable(true)
+      .catch((err) => {
+
+        // If there was already an explanation, keep it and report the
+        // failure underneath. If there was none, fall back to the
+        // "unavailable" empty state which carries its own Retry.
+        if (aiExplanation) {
+          setAiError(
+            err?.message ||
+              'Regeneration failed. The previous explanation is still shown.',
+          )
+        } else {
+          setAiUnavailable(true)
+        }
       })
       .finally(() => {
+        regenCancelled = true
+        clearTimeout(slowTimer)
         setAiLoading(false)
       })
   }
@@ -1800,9 +1974,16 @@ export default function UnifiedFindingRecommendationModal({
     finding?.region ||
     recommendation?.region
 
+  const scopeInfo = describeScope(
+    recommendation?.scope,
+    { region },
+  )
+
   const severity =
     finding?.severity ||
+    relatedFinding?.severity ||
     recommendation?.priority ||
+    recommendation?.severity ||
     'medium'
 
   /*
@@ -1917,10 +2098,12 @@ export default function UnifiedFindingRecommendationModal({
                 )}
 
                 {isRecommendationMode &&
-                  recommendation?.scope && (
-                    <span>
-                      Scope:{' '}
-                      {recommendation.scope}
+                  scopeInfo && (
+                    <span title={scopeInfo.full}>
+                      {scopeInfo.label}:{' '}
+                      <span className="mono">
+                        {scopeInfo.value}
+                      </span>
                     </span>
                   )}
 
@@ -1933,9 +2116,8 @@ export default function UnifiedFindingRecommendationModal({
 
         {/* Body */}
 
-        <div className="modal-body">
-
-          {isFindingMode && (
+        {isFindingMode && (
+          <div className="modal-body">
             <FindingView
               finding={finding}
               resources={
@@ -1958,38 +2140,68 @@ export default function UnifiedFindingRecommendationModal({
                   : null
               }
             />
-          )}
+          </div>
+        )}
 
-          {isRecommendationMode && (
-            <RecommendationView
-              recommendation={
-                recommendation
-              }
-              relatedFinding={
-                relatedFinding
-              }
-              impactRows={
-                impactRows
-              }
-              onViewFinding={
-                onViewFinding
-              }
-              aiExplanation={
-                aiExplanation
-              }
-              aiLoading={
-                aiLoading
-              }
-              aiUnavailable={
-                aiUnavailable
-              }
-              onRegenerateExplanation={
-                handleRegenerateExplanation
-              }
-            />
-          )}
+        {isRecommendationMode && (
+          <div className="modal-body">
 
-        </div>
+            <div className="modal-body-main">
+              <RecommendationView
+                recommendation={
+                  recommendation
+                }
+                relatedFinding={
+                  relatedFinding
+                }
+                impactRows={
+                  impactRows
+                }
+                onViewFinding={
+                  onViewFinding
+                }
+              />
+            </div>
+
+            <div className="modal-body-rail">
+
+              <div className="rail-head">
+                <div className="rail-brand">
+                  <div className="rail-brand-mark">AI</div>
+                  <strong>Explanation</strong>
+                  <span className="rail-local-tag">
+                    Local model
+                  </span>
+                </div>
+              </div>
+
+              <div className="rail-scroll">
+                <AIExplanationRail
+                  aiExplanation={
+                    aiExplanation
+                  }
+                  aiLoading={
+                    aiLoading
+                  }
+                  aiUnavailable={
+                    aiUnavailable
+                  }
+                  aiSlow={
+                    aiSlow
+                  }
+                  aiError={
+                    aiError
+                  }
+                  onRegenerateExplanation={
+                    handleRegenerateExplanation
+                  }
+                />
+              </div>
+
+            </div>
+
+          </div>
+        )}
 
         {/* Footer */}
 

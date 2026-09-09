@@ -12,6 +12,9 @@ from backend.api.routes.dependencies import get_db
 from backend.api.services.dashboard_service import (
     DashboardService,
 )
+from backend.api.services.aws_recommendations_service import (
+    AwsRecommendationsService,
+)
 
 from backend.database.repositories.scan_run_repository import (
     get_latest_scan_run,
@@ -70,4 +73,145 @@ def dashboard_overview(
         raise HTTPException(
             status_code=502,
             detail="Unable to load dashboard.",
+        ) from exc
+
+
+@router.get("/daily-trend")
+def dashboard_daily_trend(
+    days: int = Query(
+        default=7,
+        ge=1,
+        le=30,
+    ),
+    region: str | None = None,
+    force_refresh: bool = Query(
+        default=False,
+    ),
+):
+
+    try:
+
+        dashboard = DashboardService()
+
+        return dashboard.get_daily_trend(
+            days=days,
+            region=_clean_region(region),
+            force_refresh=force_refresh,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load daily cost trend.",
+        ) from exc
+
+
+@router.get("/weekly-service-changes")
+def dashboard_weekly_service_changes(
+    region: str | None = None,
+    limit: int = Query(
+        default=10,
+        ge=1,
+        le=25,
+    ),
+    force_refresh: bool = Query(
+        default=False,
+    ),
+):
+
+    try:
+
+        dashboard = DashboardService()
+
+        return dashboard.get_weekly_service_changes(
+            region=_clean_region(region),
+            limit=limit,
+            force_refresh=force_refresh,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load weekly service changes.",
+        ) from exc
+
+
+@router.get("/monthly-dimension")
+def dashboard_monthly_dimension(
+    dimension: str = Query(
+        default="OPERATION",
+    ),
+    history_months: int = Query(
+        default=6,
+        ge=3,
+        le=12,
+    ),
+    region: str | None = None,
+    force_refresh: bool = Query(
+        default=False,
+    ),
+):
+
+    try:
+
+        dashboard = DashboardService()
+
+        return dashboard.get_monthly_dimension_cost(
+            dimension=dimension,
+            history_months=history_months,
+            region=_clean_region(region),
+            force_refresh=force_refresh,
+        )
+
+    except ValueError as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load monthly dimension cost.",
+        ) from exc
+
+
+@router.get("/aws-recommendations")
+def dashboard_aws_recommendations(
+    force_refresh: bool = Query(
+        default=False,
+    ),
+):
+
+    try:
+
+        service = AwsRecommendationsService()
+
+        return service.get_overview(
+            force_refresh=force_refresh,
+        )
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load AWS Cost Explorer recommendations.",
         ) from exc

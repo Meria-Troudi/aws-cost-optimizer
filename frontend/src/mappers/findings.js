@@ -69,6 +69,63 @@ function collectResourceIds(finding) {
   return ids
 }
 
+// historical_unmatched / billing_resource_mismatch findings never set a
+// top-level finding.cost, and their "metadata" field is consistently
+// null in practice -- confirmed against live scan output, the real
+// amount lives under the first condition's value.cost instead (see
+// aws_cost_optimizer/collection/validation.py). Without this fallback
+// these findings always show "-" for cost, even though a real number
+// exists one level down.
+function resolveReconciliationCost(finding) {
+  if (!RECONCILIATION_TYPES.includes(finding?.finding_type)) {
+    return null
+  }
+
+  const metadataCost = finding?.metadata?.cost
+
+  if (metadataCost != null && Number.isFinite(Number(metadataCost))) {
+    return Number(metadataCost)
+  }
+
+  const conditionCost = finding?.conditions?.[0]?.value?.cost
+
+  if (conditionCost != null && Number.isFinite(Number(conditionCost))) {
+    return Number(conditionCost)
+  }
+
+  return null
+}
+
+// Same shape as resolveReconciliationCost above -- the billing line's
+// own region lives under conditions[0].value.region, not metadata,
+// which matters for an all-regions scan where the scan-level region
+// argument is null and there is nothing else to fall back to.
+function resolveReconciliationRegion(finding) {
+  if (!RECONCILIATION_TYPES.includes(finding?.finding_type)) {
+    return null
+  }
+
+  return (
+    finding?.metadata?.region ||
+    finding?.conditions?.[0]?.value?.region ||
+    null
+  )
+}
+
+// Same shape again: backend/api/presenters/finding_presenter.py's
+// _extract_service() only checks evidence.service / evidence.billing.service,
+// neither of which these two finding types populate, so it falls back to
+// a generic resource_type alias (e.g. "RDS", or an untranslated "Eks
+// Cluster" for types with no alias entry) instead of the real AWS
+// service name that's sitting right there in conditions[0].value.service.
+export function resolveReconciliationService(finding) {
+  if (!RECONCILIATION_TYPES.includes(finding?.finding_type)) {
+    return null
+  }
+
+  return finding?.conditions?.[0]?.value?.service || null
+}
+
 function formatConditionValue(value, unit = null) {
   if (value == null) return 'N/A'
 
@@ -81,26 +138,40 @@ function formatConditionValue(value, unit = null) {
   if (typeof value === 'object') {
     const entries = Object.entries(value)
 
-    const allPrimitive = entries.every(
-      ([, v]) => v == null || typeof v !== 'object',
-    )
-
-    if (allPrimitive && entries.length) {
-      return entries
-        .map(
-          ([k, v]) =>
-            `${k.replace(/_/g, ' ')}: ${
-              v == null ? '—' : String(v)
-            }`,
-        )
-        .join(', ')
+    if (!entries.length) {
+      return 'N/A'
     }
 
-    try {
-      return JSON.stringify(value)
-    } catch {
-      return String(value)
-    }
+    // Summarize rather than expand a nested array/object -- some
+    // analyzers deliberately attach a full diagnostic dict as a
+    // condition's value (e.g. Transit Gateway's telemetry
+    // diagnostics), which used to fall through to a raw
+    // JSON.stringify of the whole structure here. A table cell isn't
+    // the place to inspect that field-by-field; one level of
+    // key: value pairs, with nested structures reduced to a size
+    // hint, is enough supporting evidence.
+    return entries
+      .map(([k, v]) => {
+        const label = k.replace(/_/g, ' ')
+
+        if (v == null) {
+          return `${label}: —`
+        }
+
+        if (Array.isArray(v)) {
+          return `${label}: ${v.length} item${v.length === 1 ? '' : 's'}`
+        }
+
+        if (typeof v === 'object') {
+          const nestedCount = Object.keys(v).length
+          return `${label}: {${nestedCount} field${
+            nestedCount === 1 ? '' : 's'
+          }}`
+        }
+
+        return `${label}: ${String(v)}`
+      })
+      .join(', ')
   }
 
   if (typeof value === 'boolean') {
@@ -398,7 +469,8 @@ export function mapApiFinding(finding, region = null) {
   const scanRegion =
     region ||
     finding?.region ||
-    finding?.metadata?.region
+    finding?.metadata?.region ||
+    resolveReconciliationRegion(finding)
 
   const displayRegion =
     scanRegion &&
@@ -413,9 +485,46 @@ export function mapApiFinding(finding, region = null) {
   const blocksOptimization =
     Boolean(finding?.blocks_optimization)
 
+  const resourceTypeLabel = finding?.resource_type
+    ? String(finding.resource_type)
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase())
+    : null
+
+  const resolvedCost =
+    finding?.cost != null
+      ? Number(finding.cost)
+      : resolveReconciliationCost(finding)
+
+  // finding.cost is only ever non-null when reconciliation confirmed it
+  // as THIS resource's own cost -- everything else (collection_plan/
+  // service/historical attribution) leaves it null on purpose, per
+  // aws_cost_optimizer/analysis/financial.py. That's correct, but it
+  // also means every shared-cost finding rendered as a blank dash with
+  // nothing to look at. billing_details.amount still carries the real
+  // billing-line total in that case; show it, clearly marked as shared
+  // (never as this resource's own figure) rather than showing nothing.
+  const sharedCostAmount =
+    resolvedCost == null && finding?.billing_details?.amount != null
+      ? Number(finding.billing_details.amount)
+      : null
+
+  const costLabel =
+    resolvedCost != null
+      ? formatMoneyOrDash(resolvedCost)
+      : sharedCostAmount != null && Number.isFinite(sharedCostAmount)
+        ? `${formatMoneyOrDash(sharedCostAmount)} `
+        : null
+
   return {
     id: String(finding?.id ?? ''),
     findingType: finding?.finding_type || null,
+
+    // Kept as the raw machine key (e.g. "aurora_cluster") for any
+    // code that needs to match/compare it, alongside the humanized
+    // label below for direct display.
+    resource_type: finding?.resource_type || null,
+    resourceTypeLabel,
 
     severity,
     sevLabel: sevLabel(severity),
@@ -453,10 +562,7 @@ export function mapApiFinding(finding, region = null) {
         ? finding.region
         : displayRegion,
 
-    cost:
-      finding?.cost != null
-        ? Number(finding.cost)
-        : null,
+    cost: resolvedCost,
 
     reason:
       finding?.reason ||
@@ -523,10 +629,7 @@ export function mapApiFinding(finding, region = null) {
     impact:
       finding?.impact || {},
 
-    costLabel:
-      finding?.cost != null
-        ? formatMoneyOrDash(finding.cost)
-        : null,
+    costLabel,
   }
 }
 
@@ -639,39 +742,4 @@ export function mapApiRecommendations(
         'pending_review',
     }
   })
-}
-
-export function countBySeverity(findings) {
-  const counts = {
-    high: 0,
-    medium: 0,
-    low: 0,
-    info: 0,
-  }
-
-  const values =
-    findings && !Array.isArray(findings)
-      ? Object.values(findings)
-      : Array.isArray(findings)
-        ? findings
-        : []
-
-  for (const finding of values) {
-    const severity = String(
-      finding?.severity || 'low',
-    ).toLowerCase()
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        counts,
-        severity,
-      )
-    ) {
-      counts[severity] += 1
-    } else {
-      counts.low += 1
-    }
-  }
-
-  return counts
 }

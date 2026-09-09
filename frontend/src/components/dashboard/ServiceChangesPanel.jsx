@@ -44,11 +44,11 @@ function ChangeRow({
 
       <div className="movement-content">
 
-        <div className="movement-title">
+        <div className="movement-title" title={service}>
           {service}
         </div>
 
-        <div className="movement-meta">
+        <div className="movement-meta" title={`${formatMoneyOrDash(current)} current spend`}>
           {formatMoneyOrDash(current)}
           {' '}current spend
         </div>

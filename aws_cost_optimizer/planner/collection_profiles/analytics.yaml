@@ -1,0 +1,80 @@
+# =============================================================================
+# COLLECTION PROFILES -- ANALYTICS
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+
+
+# =============================================================================
+# ANALYTICS / QUICKSIGHT
+
+quicksight:
+
+  identity:
+    enabled: true
+
+  configuration:
+    enabled: true
+    collect:
+      - dashboards
+      - analyses
+      - datasets
+      - data_sources
+      - refresh_schedules
+      - dataset_refresh_properties
+      - spice_capacity
+      - ingestion_history
+
+  relationships:
+    enabled: true
+    collect:
+      - dataset_data_sources
+      - dashboard_datasets
+      - analysis_datasets
+      - dataset_refresh_schedules
+      - dashboard_dependencies
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/QuickSight/Aggregate Metrics
+
+      account_metrics:
+
+        - name: SPICECapacityLimitInMB
+          statistic: Maximum
+          unit: Megabytes
+          key: spice_capacity_limit_mb
+
+        - name: SPICECapacityConsumedInMB
+          statistic: Maximum
+          unit: Megabytes
+          key: spice_capacity_consumed_mb
+
+      dashboard_metrics:
+
+        - name: DashboardViewCount
+          statistic: Sum
+          unit: Count
+          key: dashboard_view_count
+
+      dataset_metrics:
+
+        - name: IngestionInvocationCount
+          statistic: Sum
+          unit: Count
+          key: ingestion_invocation_count
+
+        - name: IngestionRowCount
+          statistic: Sum
+          unit: Count
+          key: ingestion_row_count
+
+  topology:
+    enabled: false
+

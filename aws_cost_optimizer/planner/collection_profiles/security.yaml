@@ -1,0 +1,220 @@
+# =============================================================================
+# COLLECTION PROFILES -- SECURITY
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+
+# =============================================================================
+# SECURITY / WAF
+waf_web_acl:
+
+  scopes:
+    enabled:
+      - REGIONAL
+      - CLOUDFRONT
+
+  identity:
+    enabled: true
+
+    fields:
+      - source: web_acl_id
+        output: web_acl_id
+
+      - source: name
+        output: name
+
+      - source: arn
+        output: arn
+
+      - source: scope
+        output: scope
+
+      - source: region
+        output: region
+
+      - source: description
+        output: description
+
+      - source: tags
+        output: tags
+
+
+  configuration:
+    enabled: true
+
+    fields:
+      - web_acl_id
+      - name
+      - arn
+      - scope
+      - region
+
+      - rule_count
+      - custom_rule_count
+      - managed_rule_group_count
+      - customer_rule_group_count
+
+      - capacity_wcu
+
+      - rules
+      - managed_rule_groups
+      - rule_groups
+      - custom_rules
+
+      - premium_features
+
+      - captcha_rule_count
+      - challenge_rule_count
+
+      - body_inspection
+
+      - associations
+      - association_count
+      - association_status
+      - association_complete
+      - association_evidence_state
+      - association_known_resource_count
+      - association_completeness_reason
+      - association_errors
+      - association_ignored_not_applicable
+
+      - logging
+      - logging_enabled
+
+      - default_action
+
+      - visibility
+      - cloudwatch_metrics_enabled
+      - sampled_requests_enabled
+
+      - association_config
+
+  # ------------------------------------------------------------
+  # RELATIONSHIPS
+  #
+  # IMPORTANT:
+  # `resource_types` is what the collector actually consumes.
+  #
+  # Regional WAFv2 association discovery is limited to resource
+  # types supported by ListResourcesForWebACL.
+  # ------------------------------------------------------------
+  relationships:
+    enabled: true
+
+    resource_types:
+      - APPLICATION_LOAD_BALANCER
+      - API_GATEWAY
+
+    collect:
+      - protected_resources
+      - protected_resource_count
+      - protected_resource_count_known
+
+      - association_status
+      - association_complete
+      - association_evidence_state
+      - association_completeness_reason
+
+      - association_errors
+      - association_ignored_not_applicable
+
+      - queried_resource_types
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+
+      namespace: AWS/WAFV2
+      dimension_sets:
+
+        regional_web_acl:
+          - Region
+          - WebACL
+
+        regional_rule:
+          - Region
+          - WebACL
+          - Rule
+
+        cloudfront_web_acl:
+          - WebACL
+
+        cloudfront_rule:
+          - WebACL
+          - Rule
+
+      # ----------------------------------------------------------
+      # CORE REQUEST METRICS
+      # ----------------------------------------------------------
+      metrics:
+
+        - name: AllowedRequests
+          statistic: Sum
+          unit: Count
+          key: allowed_requests
+
+        - name: BlockedRequests
+          statistic: Sum
+          unit: Count
+          key: blocked_requests
+
+        - name: CountedRequests
+          statistic: Sum
+          unit: Count
+          key: counted_requests
+
+        - name: CaptchaRequests
+          statistic: Sum
+          unit: Count
+          key: captcha_requests
+
+        - name: RequestsWithValidCaptchaToken
+          statistic: Sum
+          unit: Count
+          key: valid_captcha_tokens
+
+        - name: CaptchasAttempted
+          statistic: Sum
+          unit: Count
+          key: captcha_attempts
+
+        - name: CaptchasSolved
+          statistic: Sum
+          unit: Count
+          key: captcha_solved
+
+        - name: ChallengeRequests
+          statistic: Sum
+          unit: Count
+          key: challenge_requests
+
+        - name: RequestsWithValidChallengeToken
+          statistic: Sum
+          unit: Count
+          key: valid_challenge_tokens
+
+        - name: ChallengesAttempted
+          statistic: Sum
+          unit: Count
+          key: challenge_attempts
+
+        - name: ChallengesSolved
+          statistic: Sum
+          unit: Count
+          key: challenge_solved
+
+        # Current WAF feature.
+        # Only meaningful for CloudFront Web ACLs.
+        - name: MonetizeRequests
+          statistic: Sum
+          unit: Count
+          key: monetize_requests
+
+
+  topology:
+    enabled: false
+

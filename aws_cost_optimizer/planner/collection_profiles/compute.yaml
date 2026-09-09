@@ -1,0 +1,327 @@
+# =============================================================================
+# COLLECTION PROFILES -- COMPUTE
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+
+# =============================================================================
+# COMPUTE / EC2
+# =============================================================================
+ec2_instance:
+
+  identity:
+    enabled: true
+    fields:
+      InstanceId: instance_id
+      InstanceType: instance_type
+      State: state
+      ImageId: image_id
+      Architecture: architecture
+      Platform: platform
+      PlatformDetails: platform_details
+      LaunchTime: launch_time
+      InstanceLifecycle: instance_lifecycle
+      UsageOperation: usage_operation
+      Tenancy: tenancy
+      Tags: tags
+
+  configuration:
+    enabled: true
+    fields:
+      instance_id: instance_id
+      instance_type: instance_type
+      state: state
+      state_code: state_code
+      state_reason: state_reason
+      launch_time: launch_time
+
+      image_id: image_id
+      architecture: architecture
+      platform: platform
+      platform_details: platform_details
+
+      hypervisor: hypervisor
+      virtualization_type: virtualization_type
+      ena_support: ena_support
+      ebs_optimized: ebs_optimized
+      monitoring: monitoring
+
+      availability_zone: availability_zone
+      tenancy: tenancy
+
+      subnet_id: subnet_id
+      vpc_id: vpc_id
+
+      private_ip: private_ip
+      private_dns: private_dns
+      public_ip: public_ip
+      public_dns: public_dns
+      ipv6_addresses: ipv6_addresses
+
+      security_group_ids: security_group_ids
+      security_group_count: security_group_count
+
+      network_interface_count: network_interface_count
+
+      iam_instance_profile: iam_instance_profile
+      key_name: key_name
+
+      root_device_name: root_device_name
+      root_device_type: root_device_type
+
+      block_device_mappings: block_device_mappings
+
+      source_dest_check: source_dest_check
+      hibernation_options: hibernation_options
+
+      cpu_options: cpu_options
+
+      placement_group_name: placement_group_name
+
+      instance_lifecycle: instance_lifecycle
+
+      capacity_reservation_specification:
+        capacity_reservation_specification: true
+
+      capacity_reservation_id:
+        capacity_reservation_id: true
+
+      host_id: host_id
+      host_resource_group_arn: host_resource_group_arn
+
+      tags: tags
+
+  relationships:
+    enabled: true
+    collect:
+      - network_interfaces
+      - ebs_volumes
+      - autoscaling_group
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/EC2
+      period: 3600
+
+      dimensions:
+        InstanceId: instance_id
+
+      metrics:
+
+        CPUUtilization:
+          statistics:
+            - Average
+            - Maximum
+          unit: Percent
+          output:
+            Average: cpu_utilization
+            Maximum: cpu_utilization_max
+
+        NetworkIn:
+          statistics:
+            - Sum
+          unit: Bytes
+          output:
+            Sum: network_in
+
+        NetworkOut:
+          statistics:
+            - Sum
+          unit: Bytes
+          output:
+            Sum: network_out
+
+        EBSReadOps:
+          statistics:
+            - Sum
+          unit: Count
+          output:
+            Sum: ebs_read_ops
+
+        EBSWriteOps:
+          statistics:
+            - Sum
+          unit: Count
+          output:
+            Sum: ebs_write_ops
+
+    cwagent:
+      enabled: true
+      namespace: CWAgent
+      period: 3600
+
+      dimensions:
+        InstanceId: instance_id
+
+      metrics:
+
+        mem_used_percent:
+          statistics:
+            - Average
+            - Maximum
+          unit: Percent
+          output:
+            Average: mem_used_percent
+            Maximum: mem_used_percent_max
+
+    cloudtrail:
+      enabled: false
+
+      events:
+        - RunInstances
+        - StartInstances
+        - StopInstances
+        - TerminateInstances
+        - ModifyInstanceAttribute
+        - ModifyInstanceCreditSpecification
+
+  topology:
+      enabled: false
+
+# =============================================================================
+# CONTAINER / EKS
+# =============================================================================
+
+eks_cluster:
+
+  identity:
+    enabled: true
+    fields:
+      - source: name
+        output: name
+      - source: arn
+        output: arn
+      - source: id
+        output: cluster_id
+      - source: status
+        output: status
+      - source: version
+        output: version
+      - source: platformVersion
+        output: platform_version
+      - source: createdAt
+        output: created_at
+      - source: tags
+        output: tags
+
+  configuration:
+    enabled: true
+    fields:
+      - source: name
+        output: name
+      - source: arn
+        output: arn
+      - source: id
+        output: cluster_id
+      - source: status
+        output: status
+      - source: version
+        output: version
+      - source: platformVersion
+        output: platform_version
+      - source: deletionProtection
+        output: deletion_protection
+      - source: resourcesVpcConfig
+        output: network
+      - source: kubernetesNetworkConfig
+        output: kubernetes_network
+      - source: accessConfig
+        output: access
+      - source: encryptionConfig
+        output: encryption
+
+  relationships:
+    enabled: true
+    collect:
+
+      - managed_nodegroups
+      - autoscaling_groups
+      - ec2_workers
+      - ebs_volumes
+      - fargate_profiles
+
+      - vpc
+      - subnets
+      - security_groups
+      - cluster_security_group
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: ContainerInsights
+
+      cluster_metrics:
+
+        - name: cluster_node_count
+          statistic: Average
+          unit: Count
+          key: cluster_node_count
+
+        - name: node_cpu_utilization
+          statistic: Average
+          unit: Percent
+          key: cluster_cpu_utilization
+
+        - name: node_memory_utilization
+          statistic: Average
+          unit: Percent
+          key: cluster_memory_utilization
+
+        - name: node_cpu_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: cluster_cpu_reserved_capacity
+
+        - name: node_memory_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: cluster_memory_reserved_capacity
+
+        - name: node_number_of_running_pods
+          statistic: Average
+          unit: Count
+          key: cluster_running_pods
+
+      node_metrics:
+
+        - name: node_cpu_utilization
+          statistic: Average
+          unit: Percent
+          key: node_cpu_utilization
+
+        - name: node_cpu_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: node_cpu_reserved_capacity
+
+        - name: node_memory_utilization
+          statistic: Average
+          unit: Percent
+          key: node_memory_utilization
+
+        - name: node_memory_reserved_capacity
+          statistic: Average
+          unit: Percent
+          key: node_memory_reserved_capacity
+
+        - name: node_number_of_running_pods
+          statistic: Average
+          unit: Count
+          key: node_number_of_running_pods
+
+        - name: node_number_of_running_containers
+          statistic: Average
+          unit: Count
+          key: node_number_of_running_containers
+
+  topology:
+    enabled: false
+

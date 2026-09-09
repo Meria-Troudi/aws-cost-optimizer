@@ -14,6 +14,10 @@ from .aggregation import FindingAggregator
 from .engine import AnalysisEngine
 from .finding import Finding
 
+from aws_cost_optimizer.collection.validation import (
+    billing_contexts_for_analysis,
+)
+
 
 class FindingEngine:
 
@@ -36,12 +40,15 @@ class FindingEngine:
         pre_findings=None,
     ):
 
-        _ = enriched_results
+        billing_contexts = billing_contexts_for_analysis(
+            enriched_results,
+        )
 
         raw_findings = self.analysis_engine.analyze(
             resources,
             scan_id=scan_id,
             account_id=account_id,
+            billing_contexts=billing_contexts,
         )
 
         aggregated = self.aggregator.aggregate(raw_findings)
@@ -92,10 +99,13 @@ class FindingEngine:
         pre_findings=None,
     ):
 
-        _ = enriched_results
-
         if scan is None:
             raise ValueError("scan is required.")
+
+        billing_contexts = billing_contexts_for_analysis(
+            enriched_results,
+        )
+
         raw_findings = self.analysis_engine.analyze(
             resources,
             scan_id=scan.id,
@@ -104,6 +114,7 @@ class FindingEngine:
                 "account_id",
                 None,
             ),
+            billing_contexts=billing_contexts,
         )
 
         saved_raw = self._persist_raw_findings(
@@ -145,13 +156,6 @@ class FindingEngine:
             raw_database_id_by_stable_id,
         )
 
-        # Raw findings are one-resource-plus-one-condition facts, each
-        # already carrying its own database_id -- this is what the
-        # recommendation engine consumes so it can emit exactly one
-        # recommendation per eligible finding. Aggregated findings
-        # (built above) stay a separate, reporting-only view: they
-        # collapse many resources into one summary row and must never
-        # be fed back into recommendation generation.
         raw_finding_dicts = [finding.to_dict() for finding in raw_findings]
 
         result: list[Any] = []
@@ -331,25 +335,3 @@ class FindingEngine:
                 database_ids.append(database_id)
 
             finding["source_finding_ids"] = database_ids
-
-    @staticmethod
-    def _persist(
-        db,
-        scan,
-        findings,
-    ):
-
-        raw_findings = [
-            finding
-            for finding in findings
-            if isinstance(
-                finding,
-                Finding,
-            )
-        ]
-
-        return FindingEngine._persist_raw_findings(
-            db=db,
-            scan=scan,
-            findings=raw_findings,
-        )

@@ -19,20 +19,11 @@ def get_period_cost_total(db: Session, scan_run_id: int) -> float:
     return float(total or 0.0)
 
 
-def get_service_count(db: Session, scan_run_id: int) -> int:
-    return (
-        db.query(func.count(func.distinct(CostRecord.service)))
-        .filter(CostRecord.scan_run_id == scan_run_id)
-        .scalar()
-        or 0
-    )
-
-
 def get_service_costs_with_rank(
     db: Session,
     scan_run_id: int,
     *,
-    limit: int = 10,
+    limit: int | None = None,
 ):
     service_by_month = get_service_costs_by_month(db, scan_run_id)
     period_totals = {}

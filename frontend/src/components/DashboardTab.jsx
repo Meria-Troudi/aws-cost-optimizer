@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import {
   formatDateTime,
   formatMoneyOrDash,
@@ -9,14 +10,19 @@ import {
   isDoneStatus,
   isFailedStatus,
 } from '../utils/scanStatus'
+import { prefetchExplanations } from '../api/client'
 
-import CostHeroChart from './dashboard/CostHeroChart'
 import RegionMixDonut from './dashboard/RegionMixDonut'
 import CostDriversPanel from './dashboard/CostDriversPanel'
 import ServiceChangesPanel from './dashboard/ServiceChangesPanel'
+import WeeklyChangePanel from './dashboard/WeeklyChangePanel'
+import SpendIntelligencePanel from './dashboard/SpendIntelligencePanel'
+import MonthlyCostsPanel from './dashboard/MonthlyCostsPanel'
+import AwsRecommendationsPanel from './dashboard/AwsRecommendationsPanel'
+import RecentScansPanel from './dashboard/RecentScansPanel'
 
 
-function Kpi({
+export function Kpi({
   label,
   value,
   note,
@@ -247,6 +253,7 @@ export default function DashboardTab({
   onRunAnalysis,
   onViewOptimization,
   onRefreshCosts,
+  onViewHistory,
 
   onScanCurrentMonth,
   scanning,
@@ -295,6 +302,17 @@ export default function DashboardTab({
     isDoneStatus(
       scanStatus,
     )
+
+  // Fire-and-forget: pre-generate LLM explanations for this scan's
+  // recommendations in the background, so opening a recommendation is
+  // served from cache instead of waiting on the local model.
+  useEffect(() => {
+    if (scanDone && scanId) {
+      prefetchExplanations(scanId).catch(
+        () => {},
+      )
+    }
+  }, [scanDone, scanId])
 
   const scanFailed =
     isFailedStatus(
@@ -412,7 +430,7 @@ export default function DashboardTab({
             / AWS Cost Intelligence
           </div>
 
-          <h1>
+          <h1 className="overview-title">
             AWS Cost Overview
           </h1>
 
@@ -558,42 +576,17 @@ export default function DashboardTab({
 
       <section className="spend-main-grid section-gap">
 
-        <div className="panel spend-analysis-panel">
-
-          <div className="panel-head">
-
-            <div>
-
-              <div className="eyebrow">
-                / Spend Intelligence
-              </div>
-
-              <h2 className="panel-title">
-                AWS spend over time
-              </h2>
-
-              <p className="panel-sub">
-                Current month, recent history and
-                AWS Cost Explorer forecast.
-              </p>
-
-            </div>
-
-          </div>
-
-          <CostHeroChart
-            hero={
-              view.hero
-            }
-            forecast={
-              forecast
-            }
-            forecastInfo={
-              forecastInfo
-            }
-          />
-
-        </div>
+        <SpendIntelligencePanel
+          hero={
+            view.hero
+          }
+          forecast={
+            forecast
+          }
+          forecastInfo={
+            forecastInfo
+          }
+        />
 
         <RegionMixDonut
           regions={
@@ -604,26 +597,44 @@ export default function DashboardTab({
       </section>
 
       {/* -----------------------------------------------------
+          MONTHLY COSTS
+      ----------------------------------------------------- */}
+
+      <MonthlyCostsPanel
+        monthlyServiceCost={
+          dashboardData?.monthly_service_cost
+        }
+      />
+
+      {/* -----------------------------------------------------
           SINGLE COST EXPLORER
       ----------------------------------------------------- */}
 
       <CostDriversPanel />
 
       {/* -----------------------------------------------------
-          MOVEMENTS
+          MOVEMENTS, side by side
       ----------------------------------------------------- */}
 
-      <ServiceChangesPanel
-        serviceChanges={
-          view.changes
-        }
-      />
+      <div className="movements-grid section-gap">
+
+        <ServiceChangesPanel
+          serviceChanges={
+            view.changes
+          }
+        />
+
+        <WeeklyChangePanel />
+
+      </div>
 
       {/* -----------------------------------------------------
-          OPTIMIZATION
+          OPTIMIZATION + AWS RECOMMENDATIONS, side by side
       ----------------------------------------------------- */}
 
-      <section className="panel optimization-panel optimization-panel-compact section-gap">
+      <div className="optimization-aws-grid section-gap">
+
+      <section className="panel optimization-panel optimization-panel-compact">
 
         <div className="panel-head">
 
@@ -898,10 +909,15 @@ export default function DashboardTab({
 
           <span className="panel-sub">
             Configure dates, regions and
-            thresholds for deeper analysis.
+            minimum spend for deeper analysis.
           </span>
 
         </div>
+
+        <RecentScansPanel
+          onViewResults={onViewOptimization}
+          onViewHistory={onViewHistory}
+        />
 
         {scanId && (
           <div className="optimization-footer">
@@ -922,6 +938,11 @@ export default function DashboardTab({
         )}
 
       </section>
+
+      <AwsRecommendationsPanel />
+
+
+      </div>
 
     </div>
   )

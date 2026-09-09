@@ -95,6 +95,26 @@ class ResourceSnapshot(Base):
         nullable=True,
     )
 
+    observations: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    data_quality: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    collection_errors: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    collection_status: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
     collected_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=_utcnow,

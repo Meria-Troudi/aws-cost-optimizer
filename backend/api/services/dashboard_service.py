@@ -175,6 +175,12 @@ class DashboardService:
 
     MIN_VISIBLE_COST = 0.01
 
+    DEFAULT_DAILY_TREND_DAYS = 7
+
+    MAX_DAILY_TREND_DAYS = 30
+
+    WEEKLY_CHANGE_LIMIT = 10
+
     PERIOD_TYPES = {
         "rolling",
         "current",
@@ -187,6 +193,7 @@ class DashboardService:
         "SERVICE",
         "REGION",
         "USAGE_TYPE",
+        "OPERATION",
     }
 
     def __init__(self) -> None:
@@ -1005,7 +1012,7 @@ class DashboardService:
         previous: dict[str, float],
         *,
         dimension: str,
-        limit: int = 15,
+        limit: int | None = 15,
     ) -> list[dict[str, Any]]:
 
         total_current = sum(current.values())
@@ -1078,7 +1085,8 @@ class DashboardService:
             reverse=True,
         )
 
-        rows = rows[:limit]
+        if limit is not None:
+            rows = rows[:limit]
 
         for index, row in enumerate(
             rows,
@@ -1640,14 +1648,16 @@ class DashboardService:
         month: str | None = None,
         start_date: date | None = None,
         end_date: date | None = None,
-        limit: int = 12,
+        limit: int | None = None,
         today: date | None = None,
     ) -> dict[str, Any]:
 
         dimension = dimension.upper()
 
         if dimension not in self.DIMENSIONS:
-            raise ValueError("dimension must be SERVICE, REGION or USAGE_TYPE")
+            raise ValueError(
+                "dimension must be SERVICE, REGION, USAGE_TYPE or OPERATION"
+            )
 
         scope = self.resolve_explorer_scope(
             date_type=date_type,
@@ -1699,7 +1709,7 @@ class DashboardService:
         start_date: date | None = None,
         end_date: date | None = None,
         today: date | None = None,
-        limit: int = 10,
+        limit: int | None = None,
     ) -> dict[str, Any]:
 
         if not service:
@@ -1918,4 +1928,433 @@ class DashboardService:
             "usage_types": usage_types,
             "regions": regions,
             "monthly": monthly,
+        }
+
+    # ================================================================
+    # DAILY TREND (rolling N-day window)
+    # ================================================================
+
+    def get_daily_trend(
+        self,
+        *,
+        days: int = DEFAULT_DAILY_TREND_DAYS,
+        today: date | None = None,
+        region: str | None = None,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+
+        today = today or date.today()
+
+        days = max(
+            1,
+            min(
+                days,
+                self.MAX_DAILY_TREND_DAYS,
+            ),
+        )
+
+        start = today - timedelta(days=days - 1)
+
+        end = today + timedelta(days=1)
+
+        results = self._query(
+            start,
+            end,
+            granularity="DAILY",
+            region=region,
+            force_refresh=force_refresh,
+        )
+
+        by_date: dict[str, tuple[float, bool]] = {}
+
+        for block in results:
+
+            period_start = block.get(
+                "TimePeriod",
+                {},
+            ).get("Start")
+
+            if not period_start:
+                continue
+
+            by_date[period_start] = (
+                self._amount(
+                    block.get(
+                        "Total",
+                        {},
+                    )
+                ),
+                bool(
+                    block.get(
+                        "Estimated",
+                        False,
+                    )
+                ),
+            )
+
+        points = []
+
+        cursor = start
+
+        while cursor <= today:
+
+            key = cursor.isoformat()
+
+            amount, estimated = by_date.get(
+                key,
+                (0.0, False),
+            )
+
+            points.append(
+                {
+                    "date": key,
+                    "cost": round(
+                        amount,
+                        2,
+                    ),
+                    "is_current": cursor == today,
+                    "is_partial": cursor == today,
+                    "estimated": estimated,
+                }
+            )
+
+            cursor += timedelta(days=1)
+
+        total_cost = sum(point["cost"] for point in points)
+
+        return {
+            "source": "aws_cost_explorer",
+            "currency": self.CURRENCY,
+            "days": days,
+            "start_date": start.isoformat(),
+            "end_date": today.isoformat(),
+            "region_filter": region,
+            "total_cost": round(
+                total_cost,
+                2,
+            ),
+            "points": points,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ================================================================
+    # WEEKLY SERVICE CHANGES (current 7D vs previous 7D)
+    # ================================================================
+
+    @staticmethod
+    def _daily_group_totals(
+        results: list[dict[str, Any]],
+        *,
+        split_date: date,
+    ) -> tuple[dict[str, float], dict[str, float]]:
+
+        split_key = split_date.isoformat()
+
+        current: dict[str, float] = {}
+
+        previous: dict[str, float] = {}
+
+        for block in results:
+
+            period_start = block.get(
+                "TimePeriod",
+                {},
+            ).get("Start")
+
+            if not period_start:
+                continue
+
+            bucket = current if period_start >= split_key else previous
+
+            for group in block.get(
+                "Groups",
+                [],
+            ):
+
+                keys = group.get(
+                    "Keys",
+                    [],
+                )
+
+                if not keys:
+                    continue
+
+                name = keys[0]
+
+                amount = DashboardService._amount(group)
+
+                bucket[name] = (
+                    bucket.get(
+                        name,
+                        0.0,
+                    )
+                    + amount
+                )
+
+        return current, previous
+
+    def get_weekly_service_changes(
+        self,
+        *,
+        today: date | None = None,
+        region: str | None = None,
+        limit: int = WEEKLY_CHANGE_LIMIT,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+
+        today = today or date.today()
+
+        current_start = today - timedelta(days=6)
+
+        current_end = today + timedelta(days=1)
+
+        previous_start = current_start - timedelta(days=7)
+
+        previous_end = current_start
+
+        results = self._query(
+            previous_start,
+            current_end,
+            granularity="DAILY",
+            group_by=[
+                {
+                    "Type": "DIMENSION",
+                    "Key": "SERVICE",
+                }
+            ],
+            region=region,
+            force_refresh=force_refresh,
+        )
+
+        current_totals, previous_totals = self._daily_group_totals(
+            results,
+            split_date=current_start,
+        )
+
+        ranked = self._rank_comparison(
+            current_totals,
+            previous_totals,
+            dimension="service",
+            limit=None,
+        )
+
+        # Rank by absolute movement, not by cost -- a service that
+        # doubled from a small base is a more useful "what changed"
+        # signal than one that stayed the largest but flat.
+        ranked.sort(
+            key=lambda row: abs(row["change_amount"]),
+            reverse=True,
+        )
+
+        top = ranked[:limit]
+
+        rest = ranked[limit:]
+
+        others = None
+
+        if rest:
+
+            rest_current = sum(row["current_cost"] for row in rest)
+
+            rest_previous = sum(row["previous_cost"] for row in rest)
+
+            rest_change = rest_current - rest_previous
+
+            others = {
+                "service": "Others",
+                "cost": round(
+                    rest_current,
+                    2,
+                ),
+                "current_cost": round(
+                    rest_current,
+                    2,
+                ),
+                "previous_cost": round(
+                    rest_previous,
+                    2,
+                ),
+                "change_amount": round(
+                    rest_change,
+                    2,
+                ),
+                "change_pct": (
+                    round(
+                        rest_change / rest_previous * 100,
+                        2,
+                    )
+                    if rest_previous >= self.MIN_PRIOR_COST_FOR_PERCENTAGE
+                    else None
+                ),
+                "currency": self.CURRENCY,
+                "count": len(rest),
+            }
+
+        for index, row in enumerate(
+            top,
+            start=1,
+        ):
+            row["rank"] = index
+
+        return {
+            "source": "aws_cost_explorer",
+            "currency": self.CURRENCY,
+            "region_filter": region,
+            "current_period": {
+                "start": current_start.isoformat(),
+                "end": today.isoformat(),
+                "label": "Last 7 days",
+            },
+            "previous_period": {
+                "start": previous_start.isoformat(),
+                "end": (previous_end - timedelta(days=1)).isoformat(),
+                "label": "Previous 7 days",
+            },
+            "items": top,
+            "others": others,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    # ================================================================
+    # MONTHLY COST BY DIMENSION (Service / Operation / Product)
+    # ================================================================
+
+    def get_monthly_dimension_cost(
+        self,
+        *,
+        dimension: str = "OPERATION",
+        history_months: int = DEFAULT_HISTORY_MONTHS,
+        today: date | None = None,
+        region: str | None = None,
+        force_refresh: bool = False,
+    ) -> dict[str, Any]:
+
+        dimension = dimension.upper()
+
+        if dimension not in self.DIMENSIONS:
+            raise ValueError(
+                "dimension must be SERVICE, REGION, USAGE_TYPE or OPERATION"
+            )
+
+        today = today or date.today()
+
+        history_months = max(
+            3,
+            min(
+                history_months,
+                self.MAX_HISTORY_MONTHS,
+            ),
+        )
+
+        current_start = self._month_start(today)
+
+        fetch_start_date = current_start
+
+        for _ in range(history_months - 1):
+            fetch_start_date = self._previous_month(fetch_start_date)
+
+        fetch_end = self._next_month(current_start)
+
+        results = self._query(
+            fetch_start_date,
+            fetch_end,
+            granularity="MONTHLY",
+            group_by=[
+                {
+                    "Type": "DIMENSION",
+                    "Key": dimension,
+                }
+            ],
+            region=region,
+            force_refresh=force_refresh,
+        )
+
+        monthly: list[dict[str, Any]] = []
+
+        for block in results:
+
+            month_key = block.get(
+                "TimePeriod",
+                {},
+            ).get(
+                "Start", ""
+            )[:7]
+
+            if not month_key:
+                continue
+
+            totals: dict[str, float] = {}
+
+            for group in block.get(
+                "Groups",
+                [],
+            ):
+
+                keys = group.get(
+                    "Keys",
+                    [],
+                )
+
+                if not keys:
+                    continue
+
+                amount = self._amount(group)
+
+                if amount < self.MIN_VISIBLE_COST:
+                    continue
+
+                name = keys[0]
+
+                totals[name] = (
+                    totals.get(
+                        name,
+                        0.0,
+                    )
+                    + amount
+                )
+
+            month_total = sum(totals.values())
+
+            items = [
+                {
+                    "key": name,
+                    "amount": round(
+                        amount,
+                        2,
+                    ),
+                    "share_pct": (
+                        round(
+                            amount / month_total * 100,
+                            2,
+                        )
+                        if month_total
+                        else 0.0
+                    ),
+                }
+                for name, amount in sorted(
+                    totals.items(),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+            ]
+
+            monthly.append(
+                {
+                    "month": month_key,
+                    "total": round(
+                        month_total,
+                        2,
+                    ),
+                    "items": items,
+                }
+            )
+
+        return {
+            "source": "aws_cost_explorer",
+            "currency": self.CURRENCY,
+            "dimension": dimension.lower(),
+            "region_filter": region,
+            "months": history_months,
+            "monthly": monthly,
+            "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }

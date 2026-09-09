@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import {
   formatMoneyOrDash,
@@ -8,18 +8,28 @@ import {
 
 import { serviceStyle } from '../utils/serviceStyle'
 
-/**
- * Presentational hierarchical cost-driver table (service -> usage types),
- * styled as a ranked table with an icon avatar per row. Used where the
- * full driver+usage-type data is already loaded up front (scan-scoped
- * Cost Drivers section, Collection Summary popup) — unlike the live
- * dashboard's CostDriversPanel, which lazy-fetches usage types per
- * service on expand and keeps its own card-row visual treatment.
- */
+const PAGE_SIZE = 5
+ 
 export default function CostDriverList({ drivers }) {
   const [expanded, setExpanded] = useState(null)
+  const [page, setPage] = useState(1)
 
   const rows = Array.isArray(drivers) ? drivers : []
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const pagedRows = rows.slice(
+    (safePage - 1) * PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  )
+
+  useEffect(() => {
+    setPage(1)
+  }, [drivers])
+
+  function goPage(next) {
+    setPage(Math.min(Math.max(1, next), totalPages))
+  }
 
   if (!rows.length) {
     return (
@@ -40,7 +50,7 @@ export default function CostDriverList({ drivers }) {
         <span />
       </div>
 
-      {rows.map((row) => {
+      {pagedRows.map((row) => {
         const name = row.service || 'AWS service'
         const isOpen = expanded === name
         const style = serviceStyle(name)
@@ -127,6 +137,32 @@ export default function CostDriverList({ drivers }) {
           </div>
         )
       })}
+
+      <div className="cost-explorer-pager">
+        <button
+          type="button"
+          className="small-btn"
+          onClick={() => goPage(safePage - 1)}
+          disabled={safePage <= 1}
+        >
+          ← 
+        </button>
+
+        <span className="cost-explorer-pager-info mono">
+          Page {safePage} of {totalPages} ·{' '}
+          {rows.length}{' '}
+          {rows.length === 1 ? 'service' : 'services'}
+        </span>
+
+        <button
+          type="button"
+          className="small-btn"
+          onClick={() => goPage(safePage + 1)}
+          disabled={safePage >= totalPages}
+        >
+           →
+        </button>
+      </div>
     </div>
   )
 }

@@ -45,5 +45,15 @@ Thumbs.db
 # Test artifacts
 .pytest_cache/
 
-tests/__pycache__/
+tests/
 CLAUDE.md
+
+# Claude Code local config
+.claude/
+
+# Generated SQLite WAL/shm sidecar files
+*.db-shm
+*.db-wal
+
+# Personal/thesis deliverable, not source
+report.docx

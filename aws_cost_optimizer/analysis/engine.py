@@ -10,6 +10,7 @@ from typing import Any
 
 from . import analyzers as _analyzers  # noqa: F401
 from .base import Analyzer
+from .billing import billing_usage_types_conflict
 from .context import AnalysisContext
 from .financial import (
     calculate_savings,
@@ -34,6 +35,7 @@ class AnalysisEngine:
         *,
         scan_id: int | str | None = None,
         account_id: str | None = None,
+        billing_contexts: dict[tuple[str, str], dict[str, Any]] | None = None,
     ) -> list[Finding]:
 
         findings: list[Finding] = []
@@ -47,10 +49,29 @@ class AnalysisEngine:
             ):
                 continue
 
+            resolved_billing = None
+
+            if billing_contexts:
+
+                entry = billing_contexts.get(
+                    (
+                        str(resource.get("resource_type") or "unknown"),
+                        str(resource.get("resource_id") or "unknown"),
+                    )
+                )
+
+                if isinstance(entry, dict):
+                    resolved_billing = entry.get("billing")
+
             context = self._build_context(
                 resource=resource,
                 scan_id=scan_id,
                 account_id=account_id,
+                cost_context=(
+                    resolved_billing
+                    if resolved_billing is not None
+                    else resource.get("cost_context")
+                ),
             )
 
             for analyzer in self.analyzers:
@@ -117,6 +138,48 @@ class AnalysisEngine:
                     )
 
                     continue
+
+                try:
+
+                    outcome, classify_reason = analyzer.classify(
+                        context,
+                        results,
+                    )
+
+                except Exception as exc:
+
+                    # classify() is a diagnostic hook; a defect in one
+                    # overridden implementation must not abort the scan.
+                    # Fall back to the conservative default.
+                    outcome = (
+                        "finding_generated" if results else "no_optimization_match"
+                    )
+                    classify_reason = None
+
+                outcomes = stat.setdefault(
+                    "outcomes",
+                    {},
+                )
+                outcomes[outcome] = (
+                    outcomes.get(
+                        outcome,
+                        0,
+                    )
+                    + 1
+                )
+
+                if outcome == "insufficient_evidence" and classify_reason:
+
+                    reasons = stat.setdefault(
+                        "insufficient_reasons",
+                        [],
+                    )
+
+                    reason_text = str(classify_reason)
+
+                    if reason_text not in reasons:
+                        reasons.append(reason_text)
+
                 for finding in results:
 
                     if not isinstance(
@@ -147,6 +210,29 @@ class AnalysisEngine:
         return self._deduplicate_findings(findings)
 
     @staticmethod
+    def _aggregate_analyzer_outcome(
+        stat: dict[str, Any],
+    ) -> str | None:
+
+        outcomes = stat.get(
+            "outcomes",
+            {},
+        )
+
+        # Any resource for which required evidence was missing wins:
+        # the analyzer genuinely could not make a safe decision.
+        if outcomes.get("insufficient_evidence"):
+            return "insufficient_evidence"
+
+        if outcomes.get("finding_generated"):
+            return "finding_generated"
+
+        if outcomes.get("no_optimization_match"):
+            return "no_optimization_match"
+
+        return None
+
+    @staticmethod
     def _report_analyzer_health(
         stats: dict[str, dict[str, Any]],
     ) -> None:
@@ -168,13 +254,27 @@ class AnalysisEngine:
                 )
                 continue
 
-            if supported and not found and not errors:
+            outcome = AnalysisEngine._aggregate_analyzer_outcome(stat)
+
+            if outcome == "insufficient_evidence":
+
+                reasons = stat.get("insufficient_reasons") or []
+
+                line = "[WARNING] Analyzer " f"{name}: INSUFFICIENT_EVIDENCE"
+
+                if reasons:
+                    line += f" reason: {reasons[0]}"
+
+                print(line)
+
+            elif outcome == "no_optimization_match" and supported and not found:
+
                 print(
-                    f"[WARNING] Analyzer {name} supported "
-                    f"{supported} resource(s) but produced no "
-                    "findings. This is normal when nothing "
-                    "qualifies, but check the analyzer if it is "
-                    "unexpected."
+                    "[INFO] Analyzer "
+                    f"{name} analyzed {supported} resource(s), "
+                    "0 findings, status: NO_OPTIMIZATION_MATCH, "
+                    "reason: no optimization rule qualified with "
+                    "available evidence."
                 )
 
         if broken:
@@ -246,12 +346,85 @@ class AnalysisEngine:
 
         if not finding.impact:
 
-            impact = calculate_savings(
-                billing.get("amount"),
-                confidence=finding.confidence,
-                attribution_scope=billing.get("attribution_scope"),
-                full_elimination=(finding.cost_optimization_type == "elimination"),
+            configuration = context.configuration()
+
+            resource_usage_type = (
+                configuration.get("billing_usage_type")
+                if isinstance(configuration, dict)
+                else None
             )
+
+            if billing_usage_types_conflict(
+                resource_usage_type,
+                billing.get("usage_type"),
+            ):
+                bucket_amount = billing.get("amount")
+
+                impact = {
+                    "observed_monthly_cost": (
+                        round(float(bucket_amount), 2)
+                        if isinstance(bucket_amount, (int, float))
+                        else None
+                    ),
+                    "estimated_monthly_savings": None,
+                    "savings_confidence": None,
+                    "savings_basis": "billing_usage_type_mismatch",
+                }
+
+                finding.limitations.append(
+                    (
+                        "The collection plan's billing usage type "
+                        f"({billing.get('usage_type')}) does not match "
+                        f"this resource's own billing classification "
+                        f"({resource_usage_type}), so the observed cost "
+                        "is a shared bucket total, not this resource's "
+                        "own isolated cost."
+                    )
+                )
+            else:
+                # Cost Explorer cost != resource cost. Only a
+                # reconciliation-proven claimable_resource_cost may
+                # become this finding's observed_monthly_cost; plan /
+                # service / historical amounts stay contextual
+                # evidence with an explicit basis.
+                attributed = (
+                    billing.get("attribution_scope") == "resource"
+                    and billing.get("resource_cost_attributed") is True
+                    and isinstance(
+                        billing.get("claimable_resource_cost"),
+                        (int, float),
+                    )
+                    and not isinstance(
+                        billing.get("claimable_resource_cost"),
+                        bool,
+                    )
+                )
+
+                if not attributed:
+
+                    bucket_amount = billing.get("amount")
+
+                    impact = {
+                        "observed_monthly_cost": (
+                            round(float(bucket_amount), 2)
+                            if isinstance(bucket_amount, (int, float))
+                            else None
+                        ),
+                        "estimated_monthly_savings": None,
+                        "savings_confidence": None,
+                        "savings_basis": "cost_not_resource_attributed",
+                    }
+
+                else:
+
+                    impact = calculate_savings(
+                        billing.get("claimable_resource_cost"),
+                        confidence=finding.confidence,
+                        attribution_scope="resource",
+                        full_elimination=(
+                            finding.cost_optimization_type == "elimination"
+                        ),
+                    )
 
             currency = billing.get("currency")
 
@@ -305,6 +478,7 @@ class AnalysisEngine:
         resource: dict[str, Any],
         scan_id: int | str | None,
         account_id: str | None,
+        cost_context: dict[str, Any] | None = None,
     ) -> AnalysisContext:
 
         return AnalysisContext(
@@ -312,5 +486,9 @@ class AnalysisEngine:
             scan_id=scan_id,
             account_id=account_id,
             observation_period=(resource.get("observation_period")),
-            cost_context=(resource.get("cost_context")),
+            cost_context=(
+                cost_context
+                if cost_context is not None
+                else resource.get("cost_context")
+            ),
         )

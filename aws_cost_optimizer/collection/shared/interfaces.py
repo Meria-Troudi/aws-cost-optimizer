@@ -1,6 +1,12 @@
 """
 Reusable EC2 Network Interface evidence collector.
 
+Purpose
+-------
+Collect ENI evidence required by network topology/resource analysis.
+
+This collector does not determine whether an interface is unused.
+It only reports authoritative EC2 state.
 """
 
 from __future__ import annotations
@@ -12,16 +18,21 @@ from aws_cost_optimizer.config.client import get_client
 
 class NetworkInterfaceCollector:
 
+    MAX_IDS_PER_REQUEST = 100
+
     def __init__(
         self,
         region: str,
     ) -> None:
 
-        self.region = region
+        if not region or not str(region).strip():
+            raise ValueError("Region is required")
+
+        self.region = str(region).strip()
 
         self.ec2 = get_client(
             "ec2",
-            region,
+            self.region,
         )
 
     def collect(
@@ -34,18 +45,22 @@ class NetworkInterfaceCollector:
         if not interface_ids:
             return {
                 "status": "empty",
+                "region": self.region,
                 "interfaces": [],
                 "count": 0,
+                "requested_count": 0,
+                "found_count": 0,
+                "missing_ids": [],
+                "errors": [],
             }
 
         interfaces: List[Dict[str, Any]] = []
 
         errors: List[Dict[str, Any]] = []
 
-        # EC2 allows a bounded number of IDs per request.
         for chunk in self._chunks(
             interface_ids,
-            100,
+            self.MAX_IDS_PER_REQUEST,
         ):
 
             try:
@@ -58,24 +73,78 @@ class NetworkInterfaceCollector:
 
                 errors.append(
                     {
-                        "interface_ids": chunk,
+                        "operation": ("describe_network_interfaces"),
+                        "interface_ids": list(chunk),
+                        "error_type": type(exc).__name__,
                         "error": str(exc),
                     }
                 )
 
                 continue
 
-            for interface in response.get(
+            raw_interfaces = response.get(
                 "NetworkInterfaces",
                 [],
+            )
+
+            if not isinstance(
+                raw_interfaces,
+                list,
             ):
+                errors.append(
+                    {
+                        "operation": ("describe_network_interfaces"),
+                        "interface_ids": list(chunk),
+                        "error_type": "InvalidResponse",
+                        "error": (
+                            "AWS response field " "'NetworkInterfaces' is not a list"
+                        ),
+                    }
+                )
+                continue
+
+            for interface in raw_interfaces:
+
+                if not isinstance(
+                    interface,
+                    dict,
+                ):
+                    errors.append(
+                        {
+                            "operation": ("describe_network_interfaces"),
+                            "interface_ids": list(chunk),
+                            "error_type": "InvalidResponse",
+                            "error": ("Network interface entry " "is not a mapping"),
+                        }
+                    )
+                    continue
 
                 normalized = self._normalize_interface(interface)
 
                 if normalized:
                     interfaces.append(normalized)
 
-        found_ids = {interface.get("network_interface_id") for interface in interfaces}
+        # Deduplicate defensively in case an API/client response
+        deduplicated: Dict[
+            str,
+            Dict[str, Any],
+        ] = {}
+
+        for interface in interfaces:
+            interface_id = interface.get("network_interface_id")
+
+            if not interface_id:
+                continue
+
+            deduplicated[str(interface_id)] = interface
+
+        interfaces = list(deduplicated.values())
+
+        found_ids = {
+            str(interface.get("network_interface_id"))
+            for interface in interfaces
+            if interface.get("network_interface_id")
+        }
 
         missing_ids = [
             interface_id
@@ -83,22 +152,22 @@ class NetworkInterfaceCollector:
             if interface_id not in found_ids
         ]
 
-        status = "ok"
-
         if errors and interfaces:
             status = "partial"
-
         elif errors and not interfaces:
             status = "error"
-
         elif missing_ids:
             status = "partial"
+        else:
+            status = "ok"
 
         return {
             "status": status,
+            "region": self.region,
             "interfaces": interfaces,
             "count": len(interfaces),
             "requested_count": len(interface_ids),
+            "found_count": len(found_ids),
             "missing_ids": missing_ids,
             "errors": errors,
         }
@@ -113,7 +182,12 @@ class NetworkInterfaceCollector:
         if not interface_id:
             return None
 
-        private_ip_addresses = []
+        interface_id = str(interface_id).strip()
+
+        if not interface_id:
+            return None
+
+        private_ip_addresses: List[Dict[str, Any]] = []
 
         for address in (
             interface.get(
@@ -133,11 +207,34 @@ class NetworkInterfaceCollector:
                 {
                     "private_ip": address.get("PrivateIpAddress"),
                     "primary": address.get("Primary"),
-                    "association": address.get("Association"),
+                    "association": (address.get("Association")),
                 }
             )
 
-        groups = []
+        ipv6_addresses: List[Dict[str, Any]] = []
+
+        for address in (
+            interface.get(
+                "Ipv6Addresses",
+                [],
+            )
+            or []
+        ):
+
+            if not isinstance(
+                address,
+                dict,
+            ):
+                continue
+
+            ipv6_addresses.append(
+                {
+                    "ipv6_address": address.get("Ipv6Address"),
+                    "primary": address.get("PrimaryIpv6"),
+                }
+            )
+
+        groups: List[Dict[str, Any]] = []
 
         for group in (
             interface.get(
@@ -162,6 +259,45 @@ class NetworkInterfaceCollector:
 
         attachment = interface.get("Attachment") or {}
 
+        if not isinstance(
+            attachment,
+            dict,
+        ):
+            attachment = {}
+
+        operator = interface.get("Operator")
+
+        if not isinstance(
+            operator,
+            dict,
+        ):
+            operator = {}
+
+        association = interface.get("Association")
+
+        if not isinstance(
+            association,
+            dict,
+        ):
+            association = {}
+
+        attach_time = attachment.get("AttachTime")
+
+        attach_time_iso: Optional[str] = None
+
+        if attach_time:
+            try:
+                attach_time_iso = (
+                    attach_time.isoformat()
+                    if hasattr(
+                        attach_time,
+                        "isoformat",
+                    )
+                    else str(attach_time)
+                )
+            except Exception:
+                attach_time_iso = str(attach_time)
+
         return {
             "network_interface_id": interface_id,
             "subnet_id": interface.get("SubnetId"),
@@ -173,24 +309,33 @@ class NetworkInterfaceCollector:
             "status": interface.get("Status"),
             "private_dns_name": interface.get("PrivateDnsName"),
             "private_ip_address": interface.get("PrivateIpAddress"),
-            "private_ip_addresses": private_ip_addresses,
+            "private_ip_addresses": (private_ip_addresses),
+            "ipv6_addresses": ipv6_addresses,
+            "association": {
+                "public_ip": association.get("PublicIp"),
+                "association_id": association.get("AssociationId"),
+                "public_dns_name": association.get("PublicDnsName"),
+                "ip_owner_id": association.get("IpOwnerId"),
+                "customer_owned_ip": association.get("CustomerOwnedIp"),
+                "customer_owned_ipv4_pool": association.get("CustomerOwnedIpv4Pool"),
+            },
             "groups": groups,
             "source_dest_check": interface.get("SourceDestCheck"),
             "requester_managed": interface.get("RequesterManaged"),
             "requester_id": interface.get("RequesterId"),
-            "operator": interface.get("Operator"),
+            "operator": {
+                "managed": operator.get("Managed"),
+                "principal": operator.get("Principal"),
+            },
             "owner_id": interface.get("OwnerId"),
             "attachment": {
                 "attachment_id": attachment.get("AttachmentId"),
                 "instance_id": attachment.get("InstanceId"),
                 "instance_owner_id": attachment.get("InstanceOwnerId"),
                 "device_index": attachment.get("DeviceIndex"),
+                "network_card_index": attachment.get("NetworkCardIndex"),
                 "status": attachment.get("Status"),
-                "attach_time": (
-                    attachment.get("AttachTime").isoformat()
-                    if attachment.get("AttachTime")
-                    else None
-                ),
+                "attach_time": attach_time_iso,
                 "delete_on_termination": attachment.get("DeleteOnTermination"),
             },
             "tags": NetworkInterfaceCollector._tags(
@@ -212,7 +357,7 @@ class NetworkInterfaceCollector:
 
         for value in interface_ids or []:
 
-            if not value:
+            if value is None:
                 continue
 
             value = str(value).strip()
@@ -224,7 +369,6 @@ class NetworkInterfaceCollector:
                 continue
 
             seen.add(value)
-
             result.append(value)
 
         return result
@@ -234,7 +378,6 @@ class NetworkInterfaceCollector:
         values: List[str],
         size: int,
     ):
-
         for index in range(
             0,
             len(values),
@@ -244,7 +387,7 @@ class NetworkInterfaceCollector:
 
     @staticmethod
     def _tags(
-        tags: List[Dict[str, Any]],
+        tags: Any,
     ) -> Dict[str, Any]:
 
         if not isinstance(
@@ -253,12 +396,26 @@ class NetworkInterfaceCollector:
         ):
             return {}
 
-        return {
-            tag["Key"]: tag.get("Value")
-            for tag in tags
-            if isinstance(
+        result: Dict[str, Any] = {}
+
+        for tag in tags:
+
+            if not isinstance(
                 tag,
                 dict,
-            )
-            and tag.get("Key")
-        }
+            ):
+                continue
+
+            key = tag.get("Key")
+
+            if key is None:
+                continue
+
+            key = str(key).strip()
+
+            if not key:
+                continue
+
+            result[key] = tag.get("Value")
+
+        return result

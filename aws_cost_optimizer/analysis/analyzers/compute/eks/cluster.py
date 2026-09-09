@@ -52,7 +52,6 @@ DEFAULT_LOW_CPU_MAXIMUM_PERCENT = 50.0
 DEFAULT_LOW_MEMORY_AVERAGE_PERCENT = 30.0
 DEFAULT_LOW_MEMORY_MAXIMUM_PERCENT = 60.0
 
-DEFAULT_MIN_COVERAGE_PERCENT = 80.0
 DEFAULT_MIN_OBSERVATION_DAYS = 14.0
 
 DEFAULT_HIGH_NODE_CPU_RESERVED_PERCENT = 70.0
@@ -167,23 +166,6 @@ def _number_or_zero(
     value = _number(value)
 
     return value if value is not None else 0.0
-
-
-def _coverage_percent(
-    metric: dict[str, Any],
-) -> float | None:
-
-    value = _number(metric.get("coverage_percent"))
-
-    if value is not None:
-        return value
-
-    ratio = _number(metric.get("coverage_ratio"))
-
-    if ratio is None:
-        return None
-
-    return ratio * 100.0
 
 
 def _statement(
@@ -392,11 +374,6 @@ def _metric_ready(
     if require_maximum and (metric.get("maximum") is None):
         return False
 
-    coverage = _coverage_percent(metric)
-
-    if coverage is None:
-        return False
-
     return True
 
 
@@ -558,23 +535,67 @@ def _series_maximum(
     )
 
 
-def _series_coverage(
-    series: dict[str, Any],
-) -> float | None:
-
-    value = _number(series.get("coverage_percent"))
-
-    if value is not None:
-        return value
-
-    return _coverage_percent(series)
-
-
 def _series_has_data(
     series: dict[str, Any],
 ) -> bool:
 
     return series.get("status") == "ok" and series.get("has_data") is True
+
+
+def _utilization_hotspots(
+    context: AnalysisContext,
+    *,
+    cpu_maximum: float,
+    memory_maximum: float,
+) -> list[dict[str, Any]]:
+    """
+    Nodes whose own observed peak exceeds the low-utilization ceilings.
+
+    Cluster-level averages are blind to distribution: a fleet of idle
+    nodes plus one busy node still averages low. Any node listed here
+    disproves "the whole worker fleet is underutilized".
+
+    Nodes with no usable series are skipped -- absent telemetry is not
+    evidence of a hotspot, and it is not evidence of idleness either.
+    """
+
+    hotspots: list[dict[str, Any]] = []
+
+    index = _node_series_index(context)
+
+    for instance_id, metrics in index.items():
+
+        cpu_peak = None
+        memory_peak = None
+
+        for series in metrics.get(CPU_UTILIZATION, []):
+            if not _series_has_data(series):
+                continue
+            value = _series_maximum(series)
+            if value is not None and (cpu_peak is None or value > cpu_peak):
+                cpu_peak = value
+
+        for series in metrics.get(MEMORY_UTILIZATION, []):
+            if not _series_has_data(series):
+                continue
+            value = _series_maximum(series)
+            if value is not None and (memory_peak is None or value > memory_peak):
+                memory_peak = value
+
+        breached = (cpu_peak is not None and cpu_peak > cpu_maximum) or (
+            memory_peak is not None and memory_peak > memory_maximum
+        )
+
+        if breached:
+            hotspots.append(
+                {
+                    "instance_id": instance_id,
+                    "cpu_maximum": cpu_peak,
+                    "memory_maximum": memory_peak,
+                }
+            )
+
+    return sorted(hotspots, key=lambda item: str(item["instance_id"]))
 
 
 # ======================================================================
@@ -821,7 +842,6 @@ class EKSAnalyzer(Analyzer):
             self._check_no_observed_worker_capacity,
             self._check_low_cluster_utilization,
             self._check_nodegroup_underutilization,
-            self._check_minimum_capacity_review,
             self._check_pod_cpu_overprovisioning,
             self._check_pod_memory_overprovisioning,
             self._check_gpu_underutilization,
@@ -868,8 +888,8 @@ class EKSAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type="eks_extended_support_review",
-            title=("Review EKS Kubernetes version support"),
+            finding_type="eks_extended_support_version",
+            title=("EKS cluster is running a Kubernetes version in extended support"),
             severity="medium",
             confidence="medium",
             reason=(
@@ -894,17 +914,6 @@ class EKSAnalyzer(Analyzer):
                 "configured_extended_support_versions": versions,
                 "region": context.region,
             },
-            limitations=[
-                ("The analyzer does not invent an upgrade target."),
-                (
-                    "The finding depends on the configured "
-                    "version-support catalog being current."
-                ),
-                (
-                    "Upgrade compatibility and operational risk "
-                    "must be reviewed before changing the version."
-                ),
-            ],
             recommendation_eligible=False,
         )
 
@@ -956,7 +965,7 @@ class EKSAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=("eks_no_observed_worker_capacity"),
+            finding_type=("eks_no_observed_worker_nodes"),
             title=("EKS cluster has no observed worker capacity"),
             severity="medium",
             confidence="medium",
@@ -987,20 +996,6 @@ class EKSAnalyzer(Analyzer):
                 "managed_nodegroup_count": len(nodegroups),
                 "fargate_profile_count": len(fargate_profiles),
             },
-            limitations=[
-                (
-                    "No observed worker capacity does not prove "
-                    "that the cluster is unused."
-                ),
-                (
-                    "The environment may use a compute path not "
-                    "represented by managed nodegroups."
-                ),
-                (
-                    "Scheduled or intermittent workloads may not "
-                    "appear in the selected observation period."
-                ),
-            ],
             recommendation_eligible=False,
         )
 
@@ -1077,12 +1072,6 @@ class EKSAnalyzer(Analyzer):
             DEFAULT_LOW_MEMORY_MAXIMUM_PERCENT,
         )
 
-        minimum_coverage = _threshold(
-            context,
-            "min_coverage_percent",
-            DEFAULT_MIN_COVERAGE_PERCENT,
-        )
-
         minimum_days = _threshold(
             context,
             "min_observation_days",
@@ -1109,21 +1098,25 @@ class EKSAnalyzer(Analyzer):
         if _number(memory.get("maximum")) > low_memory_maximum:
             return None
 
-        for metric in (
-            cpu,
-            memory,
-            node_count,
-        ):
+        # A cluster-wide average can hide a hot node: three idle nodes
+        # and one at 80% can still average low. Claiming the whole worker
+        # fleet is underutilized in that state would be wrong, so any
+        # single node above the per-node ceilings suppresses this
+        # cluster-level finding. The per-nodegroup detector still reports
+        # the genuinely idle groups.
+        hotspots = _utilization_hotspots(
+            context,
+            cpu_maximum=low_cpu_maximum,
+            memory_maximum=low_memory_maximum,
+        )
 
-            coverage = _coverage_percent(metric)
-
-            if coverage is None or coverage < minimum_coverage:
-                return None
+        if hotspots:
+            return None
 
         return self._finding(
             context=context,
-            finding_type=("eks_low_worker_utilization"),
-            title=("EKS worker capacity is strongly underutilized"),
+            finding_type=("eks_worker_underutilization"),
+            title=("EKS EC2 worker capacity is strongly underutilized"),
             severity="medium",
             confidence="high",
             reason=(
@@ -1155,16 +1148,12 @@ class EKSAnalyzer(Analyzer):
                 "cpu": cpu,
                 "memory": memory,
                 "node_count": node_count,
+                # Explicitly records that distribution was checked, so the
+                # claim is "no node contradicted this", not "we only
+                # looked at the average".
+                "node_utilization_hotspots": [],
+                "node_hotspot_check_performed": True,
             },
-            limitations=[
-                (
-                    "Cluster-level utilization identifies an "
-                    "environment-wide signal but not the exact "
-                    "nodegroup or instance to change."
-                ),
-                ("The finding does not select a replacement " "instance type."),
-                ("The finding does not estimate savings."),
-            ],
             recommendation_eligible=True,
         )
 
@@ -1176,6 +1165,13 @@ class EKSAnalyzer(Analyzer):
         self,
         context: AnalysisContext,
     ) -> Finding | None:
+
+        # "Sustained" underutilization requires the same minimum
+        # observation window the cluster-level detector demands -- without
+        # it this rule could claim sustained low usage from a few hours of
+        # data while its cluster-level sibling stayed silent.
+        if not _minimum_observation_period_met(context):
+            return None
 
         nodegroups = _nodegroups(context)
 
@@ -1354,118 +1350,16 @@ class EKSAnalyzer(Analyzer):
                 "rule": "nodegroup_underutilization",
                 "nodegroups": candidates,
             },
-            limitations=[
-                ("Metrics may not cover every node in the " "node group."),
-                (
-                    "Cluster/nodegroup peaks outside the "
-                    "observation window are not represented."
-                ),
-                ("The finding does not specify an exact " "node count to remove."),
-            ],
-            recommendation_eligible=False,
+            # The evidence here (nodegroup, instance ids, CPU/memory
+            # average+maximum, observation period) is enough to say a
+            # rightsizing OPPORTUNITY exists. It is deliberately not a
+            # claim about how much capacity can be removed -- the
+            # recommendation layer decides the safe action.
+            recommendation_eligible=True,
         )
 
     # ==================================================================
-    # RULE 5: MINIMUM CAPACITY REVIEW
-    # ==================================================================
-
-    def _check_minimum_capacity_review(
-        self,
-        context: AnalysisContext,
-    ) -> Finding | None:
-
-        candidates = []
-
-        for nodegroup in _nodegroups(context):
-
-            scaling = _dict(nodegroup.get("scaling"))
-
-            minimum = _number(scaling.get("min_size"))
-
-            desired = _number(scaling.get("desired_size"))
-
-            maximum = _number(scaling.get("max_size"))
-
-            if minimum is None or desired is None:
-                continue
-
-            if minimum <= 0:
-                continue
-
-            if desired != minimum:
-                continue
-
-            candidates.append(
-                {
-                    "nodegroup": nodegroup.get("name"),
-                    "minimum_size": minimum,
-                    "desired_size": desired,
-                    "maximum_size": maximum,
-                    "capacity_type": nodegroup.get("capacity_type"),
-                }
-            )
-
-        if not candidates:
-            return None
-
-        # Only issue this as a review signal. A min size equal to
-        # desired is not itself waste.
-        low_utilization = self._cluster_low_utilization_available(context)
-
-        if not low_utilization:
-            return None
-
-        return self._finding(
-            context=context,
-            finding_type=("eks_minimum_capacity_review"),
-            title=("Review EKS node-group minimum capacity"),
-            severity="low",
-            confidence="medium",
-            reason=(
-                "One or more node groups are operating at their "
-                "configured minimum capacity while the cluster "
-                "also shows sustained low resource utilization."
-            ),
-            statements=[
-                _statement(
-                    name="nodegroups_at_minimum_capacity",
-                    value=candidates,
-                    description=(
-                        "Managed node groups whose desired "
-                        "capacity equals minimum capacity."
-                    ),
-                    source=["EKS.DescribeNodegroup"],
-                    evidence_keys=["configuration.compute.nodegroups"],
-                    observed=True,
-                ),
-                self._metric_statement(
-                    context,
-                    CPU_UTILIZATION,
-                    "cluster",
-                ),
-                self._metric_statement(
-                    context,
-                    MEMORY_UTILIZATION,
-                    "cluster",
-                ),
-            ],
-            metadata={
-                "rule": "minimum_capacity_review",
-                "nodegroups": candidates,
-            },
-            limitations=[
-                (
-                    "A configured minimum may be required for "
-                    "availability, latency, resilience, or "
-                    "scheduled workloads."
-                ),
-                ("The analyzer does not prescribe a new " "minimum size."),
-            ],
-            recommendation_eligible=False,
-        )
-
-    # ==================================================================
-    # RULE 6: POD CPU
+    # RULE 5: POD CPU
     # ==================================================================
 
     def _check_pod_cpu_overprovisioning(
@@ -1545,14 +1439,6 @@ class EKSAnalyzer(Analyzer):
                 "utilization": utilization,
                 "threshold_percent": threshold,
             },
-            limitations=[
-                (
-                    "Pod reservation can be intentionally high "
-                    "to guarantee scheduling capacity."
-                ),
-                ("The finding does not prescribe a CPU request."),
-                ("Peak workload behavior must be reviewed."),
-            ],
             recommendation_eligible=True,
         )
 
@@ -1637,14 +1523,6 @@ class EKSAnalyzer(Analyzer):
                 "utilization": utilization,
                 "threshold_percent": threshold,
             },
-            limitations=[
-                (
-                    "Memory requests may intentionally include "
-                    "headroom for application stability."
-                ),
-                ("The finding does not prescribe a memory request."),
-                ("Memory peaks and application behavior " "must be validated."),
-            ],
             recommendation_eligible=True,
         )
 
@@ -1676,12 +1554,6 @@ class EKSAnalyzer(Analyzer):
             context,
             GPU_USAGE,
             "nodes",
-        )
-
-        minimum_coverage = _threshold(
-            context,
-            "min_coverage_percent",
-            DEFAULT_MIN_COVERAGE_PERCENT,
         )
 
         utilization = None
@@ -1718,13 +1590,6 @@ class EKSAnalyzer(Analyzer):
                 gpu_usage,
             )
 
-        for metric in metrics_used:
-
-            coverage = _coverage_percent(metric)
-
-            if coverage is None or coverage < minimum_coverage:
-                return None
-
         threshold = _threshold(
             context,
             "low_gpu_utilization_percent",
@@ -1738,7 +1603,10 @@ class EKSAnalyzer(Analyzer):
             context=context,
             finding_type=("eks_gpu_underutilization"),
             title=("EKS GPU worker capacity appears underutilized"),
-            severity="high",
+            # Low GPU utilization on its own carries no billing evidence
+            # and does not establish monetary impact, so it does not earn
+            # the same tier as a finding backed by attributed cost.
+            severity="medium",
             confidence="medium",
             reason=(
                 f"Observed GPU utilization is approximately "
@@ -1768,17 +1636,6 @@ class EKSAnalyzer(Analyzer):
                 "threshold_percent": threshold,
                 "calculation_method": method,
             },
-            limitations=[
-                (
-                    "GPU utilization does not determine whether "
-                    "a smaller or different GPU instance is compatible."
-                ),
-                (
-                    "Scheduling constraints and workload requirements "
-                    "must be reviewed."
-                ),
-                ("No replacement GPU instance is selected."),
-            ],
             recommendation_eligible=True,
         )
 
@@ -1801,11 +1658,6 @@ class EKSAnalyzer(Analyzer):
                 return False
 
             if _number(metric.get("average")) is None:
-                return False
-
-            coverage = _coverage_percent(metric)
-
-            if coverage is None:
                 return False
 
         return True
@@ -1919,7 +1771,6 @@ class EKSAnalyzer(Analyzer):
         reason: str,
         statements: list[EvidenceStatement],
         metadata: dict[str, Any],
-        limitations: list[str],
         recommendation_eligible: bool = False,
     ) -> Finding:
 
@@ -1939,7 +1790,6 @@ class EKSAnalyzer(Analyzer):
                 metadata,
             ),
             observation_period=(_observation_period(context)),
-            limitations=list(limitations),
             metadata=dict(metadata),
             recommendation_eligible=recommendation_eligible,
         )

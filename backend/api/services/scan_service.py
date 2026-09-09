@@ -198,6 +198,7 @@ class ScanService:
                 if not collector_name:
                     result = {
                         "collector": None,
+                        "collection_plan_id": plan.get("collection_plan_id"),
                         "service": service,
                         "usage_type": usage_type,
                         "region": region,
@@ -224,6 +225,7 @@ class ScanService:
                 if not region:
                     result = {
                         "collector": collector_name,
+                        "collection_plan_id": plan.get("collection_plan_id"),
                         "service": service,
                         "usage_type": usage_type,
                         "region": region,
@@ -244,22 +246,6 @@ class ScanService:
                     scan_metrics["failed_collectors"] += 1
 
                     continue
-                # Billing dimensions only. The attribution verdict
-                # (whether this cost is genuinely this resource's
-                # own, or shared/historical/unknown) is decided
-                # once, per resource, by reconciliation -- not
-                # guessed here before any resource has even been
-                # matched against the bill.
-                cost_context = {
-                    "service": service,
-                    "usage_type": usage_type,
-                    "region": region,
-                    "cost": {
-                        "value": cost_value,
-                        "currency": "USD",
-                        "scope": "usage_type_region",
-                    },
-                }
 
                 try:
 
@@ -268,7 +254,7 @@ class ScanService:
                         scan=scan,
                         collector_name=collector_name,
                         region=region,
-                        cost_context=cost_context,
+                        collection_plan_id=plan.get("collection_plan_id"),
                     )
 
                     if not isinstance(
@@ -283,6 +269,7 @@ class ScanService:
 
                     result = {
                         "collector": collector_name,
+                        "collection_plan_id": plan.get("collection_plan_id"),
                         "service": service,
                         "usage_type": usage_type,
                         "region": region,
@@ -398,6 +385,16 @@ class ScanService:
                     )
                 )
 
+                # Resource collection is the longest stage (often the
+                # majority of total scan time) and previously reported
+                # no progress between 25% and 55%, so a slow or
+                # many-collector scan looked stuck at 25% for minutes.
+                # Interpolate per collector instead.
+                self._report_progress(
+                    scan,
+                    25 + (30 * plan_index / total_plans),
+                )
+
             self._safe_commit()
 
             self._report_progress(scan, 55)
@@ -474,6 +471,7 @@ class ScanService:
                 scan=scan,
                 resources=all_resources,
                 collection_plans=plans,
+                enriched_results=results,
                 pre_findings=reconciliation_findings,
             )
 

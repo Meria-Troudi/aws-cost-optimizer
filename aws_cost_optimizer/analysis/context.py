@@ -161,6 +161,11 @@ class AnalysisContext:
     def billing_amount(
         self,
     ) -> float | None:
+        """
+        CONTEXTUAL billing amount only (collection-plan / service /
+        historical bucket total). This must NEVER be treated as the
+        resource's own cost -- use claimable_resource_cost() for that.
+        """
 
         billing = self.billing()
 
@@ -173,6 +178,52 @@ class AnalysisContext:
             return float(value)
 
         return None
+
+    def claimable_resource_cost(
+        self,
+    ) -> float | None:
+        """
+        The ONLY amount allowed to represent this resource's own cost.
+
+        Returns a number exclusively when reconciliation has proven
+        resource-level attribution AND recorded a claimable amount;
+        otherwise None. Analyzers building financial impact must read
+        this -- never billing_amount().
+        """
+
+        billing = self.billing()
+
+        if not self.billing_is_resource_attributed():
+            return None
+
+        value = billing.get("claimable_resource_cost")
+
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return float(value)
+
+        return None
+
+    def billing_scope(
+        self,
+    ) -> str:
+
+        return str(
+            self.billing().get(
+                "attribution_scope",
+                "unknown",
+            )
+        )
+
+    def billing_is_resource_attributed(
+        self,
+    ) -> bool:
+
+        billing = self.billing()
+
+        return (
+            billing.get("attribution_scope") == "resource"
+            and billing.get("resource_cost_attributed") is True
+        )
 
     def period(
         self,
@@ -253,20 +304,6 @@ class AnalysisContext:
     def collector_data_quality(
         self,
     ) -> dict[str, Any]:
-        """
-        Collector-reported data quality for this resource.
-
-        BaseCollector writes data_quality at the TOP level of the
-        resource document (see collection/base.py), so that is the
-        canonical location and is checked first. Some collectors --
-        NAT Gateway in particular -- additionally publish a richer
-        block inside observations, so the two are merged with the
-        nested block taking precedence for keys it defines.
-
-        Reading only the nested block (the previous behaviour) meant
-        every collector except NAT returned {}, so findings shipped an
-        empty data-quality section while appearing to carry evidence.
-        """
 
         merged: dict[str, Any] = {}
 

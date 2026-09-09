@@ -70,6 +70,12 @@ def save_findings(
             resource_id=str(resource_id),
             finding_key=finding_key,
             finding_type=finding_type,
+            # Analyzer-authored title (e.g. "NAT Gateway is idle"), when
+            # supplied -- see Finding.title's docstring. Empty string
+            # normalizes to None rather than persisting a blank title.
+            title=(
+                str(data.get("title")).strip() or None if data.get("title") else None
+            ),
             category=category,
             # The analyzer's real aggregation scope (None means
             # "use FindingAggregator's default", currently
@@ -210,7 +216,9 @@ def hydrate_findings(
 
         evidence_summary_data = json_loads(row.evidence_summary) or []
 
-        title = str(row.finding_type or "finding").replace("_", " ").title()
+        title = (
+            row.title or str(row.finding_type or "finding").replace("_", " ").title()
+        )
 
         hydrated.append(
             AnalysisFinding(

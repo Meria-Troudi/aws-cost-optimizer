@@ -193,6 +193,17 @@ class Recommendation(Base):
         index=True,
     )
 
+    # Deterministic validation/action plan (objective/validation_steps/
+    # possible_actions/destructive/requires_human_confirmation), JSON-
+    # encoded -- built once by the engine from the catalog's `procedure`
+    # block and snapshotted here so it survives independently of the LLM
+    # explanation. Never contains AWS operation names or commands; see
+    # aws_cost_optimizer/recommendations/plan.py.
+    plan: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     # AI explanation layer (Phase D): a cached, JSON-encoded
     # RecommendationExplanation (summary/why/action/confidence_note/
     # risk). Generated on demand, never during a scan -- absence is

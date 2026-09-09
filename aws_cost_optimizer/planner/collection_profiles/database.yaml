@@ -1,0 +1,471 @@
+# =============================================================================
+# COLLECTION PROFILES -- DATABASE
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+
+# =============================================================================
+# DATABASE / RDS INSTANCE
+# =============================================================================
+
+rds_instance:
+
+  identity:
+    enabled: true
+    fields:
+      - db_instance_identifier
+      - db_instance_arn
+      - engine
+      - engine_version
+      - db_instance_class
+      - db_cluster_identifier
+      - availability_zone
+      - multi_az
+      - storage_type
+      - allocated_storage
+      - max_allocated_storage
+      - iops
+      - storage_throughput
+      - backup_retention_period
+      - performance_insights_enabled
+      - monitoring_interval
+      - tags
+
+  configuration:
+    enabled: true
+    fields:
+      - db_instance_identifier
+      - db_instance_arn
+      - status
+      - engine
+      - engine_version
+      - db_instance_class
+      - availability_zone
+      - multi_az
+      - storage_type
+      - allocated_storage
+      - max_allocated_storage
+      - iops
+      - storage_throughput
+      - backup_retention_period
+      - performance_insights_enabled
+      - monitoring_interval
+      - db_cluster_identifier
+      - read_replica_source
+      - read_replica_identifiers
+      - tags
+
+  relationships:
+    enabled: true
+    collect:
+      - db_cluster
+      - read_replicas
+      - source_instance
+  cloudtrail:
+    enabled: true
+
+
+ 
+  pricing:
+    enabled: true
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/RDS
+
+      dimensions:
+        - DBInstanceIdentifier
+
+      metrics:
+
+        - name: CPUUtilization
+          statistic: Average
+          unit: Percent
+          key: cpu_utilization
+
+        - name: CPUUtilization
+          statistic: Maximum
+          unit: Percent
+          key: cpu_utilization_max
+
+        - name: DatabaseConnections
+          statistic: Average
+          unit: Count
+          key: database_connections
+
+        - name: DatabaseConnections
+          statistic: Maximum
+          unit: Count
+          key: database_connections_max
+
+        - name: FreeableMemory
+          statistic: Average
+          unit: Bytes
+          key: freeable_memory
+
+        - name: FreeableMemory
+          statistic: Maximum
+          unit: Bytes
+          key: freeable_memory_max
+
+        - name: FreeableMemory
+          statistic: Minimum
+          unit: Bytes
+          key: freeable_memory_min
+
+        - name: FreeStorageSpace
+          statistic: Average
+          unit: Bytes
+          key: free_storage_space
+
+        - name: ReadIOPS
+          statistic: Average
+          unit: Count/Second
+          key: read_iops
+
+        - name: ReadIOPS
+          statistic: Maximum
+          unit: Count/Second
+          key: read_iops_max
+
+        - name: WriteIOPS
+          statistic: Average
+          unit: Count/Second
+          key: write_iops
+
+        - name: WriteIOPS
+          statistic: Maximum
+          unit: Count/Second
+          key: write_iops_max
+
+        - name: ReadThroughput
+          statistic: Average
+          unit: Bytes/Second
+          key: read_throughput
+
+        - name: ReadThroughput
+          statistic: Maximum
+          unit: Bytes/Second
+          key: read_throughput_max
+
+        - name: WriteThroughput
+          statistic: Average
+          unit: Bytes/Second
+          key: write_throughput
+
+        - name: WriteThroughput
+          statistic: Maximum
+          unit: Bytes/Second
+          key: write_throughput_max
+
+        - name: NetworkReceiveThroughput
+          statistic: Average
+          unit: Bytes/Second
+          key: network_receive_throughput
+
+        - name: NetworkReceiveThroughput
+          statistic: Maximum
+          unit: Bytes/Second
+          key: network_receive_throughput_max
+
+        - name: NetworkTransmitThroughput
+          statistic: Average
+          unit: Bytes/Second
+          key: network_transmit_throughput
+
+        - name: NetworkTransmitThroughput
+          statistic: Maximum
+          unit: Bytes/Second
+          key: network_transmit_throughput_max
+
+  topology:
+    enabled: false
+
+# =============================================================================
+# DATABASE / AURORA CLUSTER
+
+aurora_cluster:
+
+  identity:
+    enabled: true
+    fields:
+      - source: DBClusterIdentifier
+        output: cluster_id
+      - source: DBClusterArn
+        output: cluster_arn
+      - source: Engine
+        output: engine
+      - source: Status
+        output: status
+
+  configuration:
+    enabled: true
+    fields:
+      - source: DBClusterIdentifier
+        output: cluster_id
+      - source: DBClusterArn
+        output: cluster_arn
+      - source: Engine
+        output: engine
+      - source: EngineVersion
+        output: engine_version
+      - source: Status
+        output: status
+      - source: EngineMode
+        output: engine_mode
+      - source: StorageType
+        output: storage_type
+      - source: BackupRetentionPeriod
+        output: backup_retention_days
+      - source: DeletionProtection
+        output: deletion_protection
+      - source: StorageEncrypted
+        output: storage_encrypted
+      - source: KmsKeyId
+        output: kms_key_id
+      - source: GlobalClusterIdentifier
+        output: global_cluster_identifier
+      - source: ServerlessV2ScalingConfiguration
+        output: serverless_v2
+      - source: DBClusterMembers
+        output: members
+
+  relationships:
+    enabled: true
+    collect:
+      - cluster_members
+      - db_instance_configuration
+      - global_database
+  cloudtrail:
+    enabled: true
+    event_names:
+      - StartDBCluster
+      - StopDBCluster
+      - ModifyDBCluster
+      - CreateDBCluster
+      - DeleteDBCluster
+    max_results: 50
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/RDS
+
+      cluster_metrics:
+
+        - name: CPUUtilization
+          statistic: Average
+          unit: Percent
+          key: cpu_utilization
+
+        - name: CPUUtilization
+          statistic: Maximum
+          unit: Percent
+          key: cpu_utilization_max
+
+        - name: DatabaseConnections
+          statistic: Average
+          unit: Count
+          key: database_connections
+
+        - name: VolumeBytesUsed
+          statistic: Average
+          unit: Bytes
+          key: volume_bytes_used
+
+        - name: VolumeReadIOPs
+          statistic: Average
+          unit: Count/Second
+          key: volume_read_iops
+
+        - name: VolumeWriteIOPs
+          statistic: Average
+          unit: Count/Second
+          key: volume_write_iops
+
+        - name: TotalBackupStorageBilled
+          statistic: Average
+          unit: Bytes
+          key: total_backup_storage_billed
+
+        - name: SnapshotStorageUsed
+          statistic: Average
+          unit: Bytes
+          key: snapshot_storage_used
+
+        - name: BackupRetentionPeriodStorageUsed
+          statistic: Average
+          unit: Bytes
+          key: backup_retention_storage_used
+
+        - name: ServerlessDatabaseCapacity
+          statistic: Average
+          unit: Count
+          key: serverless_database_capacity
+
+        - name: ACUUtilization
+          statistic: Average
+          unit: Percent
+          key: acu_utilization
+
+      reader_metrics:
+
+        - name: CPUUtilization
+          statistic: Average
+          unit: Percent
+          key: reader_cpu_utilization
+
+        - name: CPUUtilization
+          statistic: Maximum
+          unit: Percent
+          key: reader_cpu_utilization_max
+
+        - name: DatabaseConnections
+          statistic: Average
+          unit: Count
+          key: reader_database_connections
+
+        - name: DatabaseConnections
+          statistic: Maximum
+          unit: Count
+          key: reader_database_connections_max
+
+        - name: NetworkReceiveThroughput
+          statistic: Average
+          unit: Bytes/Second
+          key: reader_network_receive_throughput
+
+        - name: NetworkTransmitThroughput
+          statistic: Average
+          unit: Bytes/Second
+          key: reader_network_transmit_throughput
+
+  topology:
+    enabled: false
+
+
+# =============================================================================
+# DATABASE / DYNAMODB
+
+dynamodb_table:
+
+  identity:
+    enabled: true
+    fields:
+      - source: TableName
+        output: table_name
+      - source: TableArn
+        output: table_arn
+      - source: TableId
+        output: table_id
+      - source: TableStatus
+        output: status
+      - source: BillingModeSummary
+        output: billing_mode
+
+  configuration:
+    enabled: true
+    fields:
+      - BillingModeSummary
+      - ProvisionedThroughput
+      - TableSizeBytes
+      - ItemCount
+      - GlobalSecondaryIndexes
+      - Replicas
+      - DeletionProtectionEnabled
+      - StreamSpecification
+      - SSEDescription
+      - PointInTimeRecoveryDescription
+
+  relationships:
+    enabled: true
+    collect:
+      - global_table_replicas
+      - global_secondary_indexes
+      - streams
+      - backups
+      - point_in_time_recovery
+      - tags
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/DynamoDB
+
+      table_metrics:
+
+        - name: ConsumedReadCapacityUnits
+          statistic: Sum
+          unit: Count
+          key: consumed_read_capacity_units
+
+        - name: ConsumedWriteCapacityUnits
+          statistic: Sum
+          unit: Count
+          key: consumed_write_capacity_units
+
+        - name: ProvisionedReadCapacityUnits
+          statistic: Average
+          unit: Count
+          key: provisioned_read_capacity_units
+
+        - name: ProvisionedWriteCapacityUnits
+          statistic: Average
+          unit: Count
+          key: provisioned_write_capacity_units
+
+        - name: ReadThrottleEvents
+          statistic: Sum
+          unit: Count
+          key: read_throttle_events
+
+        - name: WriteThrottleEvents
+          statistic: Sum
+          unit: Count
+          key: write_throttle_events
+
+      gsi_metrics:
+
+        - name: ConsumedReadCapacityUnits
+          statistic: Sum
+          unit: Count
+          key: consumed_read_capacity_units
+
+        - name: ConsumedWriteCapacityUnits
+          statistic: Sum
+          unit: Count
+          key: consumed_write_capacity_units
+
+        - name: ProvisionedReadCapacityUnits
+          statistic: Average
+          unit: Count
+          key: provisioned_read_capacity_units
+
+        - name: ProvisionedWriteCapacityUnits
+          statistic: Average
+          unit: Count
+          key: provisioned_write_capacity_units
+
+        - name: ReadThrottleEvents
+          statistic: Sum
+          unit: Count
+          key: read_throttle_events
+
+        - name: WriteThrottleEvents
+          statistic: Sum
+          unit: Count
+          key: write_throttle_events
+
+  topology:
+    enabled: false
+

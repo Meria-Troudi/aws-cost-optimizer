@@ -73,7 +73,7 @@ export default function CollectionSummaryModal({
               id="collection-summary-title"
               className="modal-title"
             >
-              Scan #{scan?.id ?? '—'} Summary
+              Collection Details
             </h2>
           </div>
 
@@ -88,6 +88,7 @@ export default function CollectionSummaryModal({
                 Threshold {formatMoneyOrDash(scan.cost_threshold)}
               </span>
               <span>Started {formatDateTime(scan.created_at)}</span>
+              <span className="mono-meta">Scan #{scan?.id ?? '—'}</span>
             </div>
           )}
         </div>
@@ -128,12 +129,6 @@ export default function CollectionSummaryModal({
                       </strong>
                     </div>
 
-                    <div className="detail-summary-card">
-                      <span className="block-label">Difference</span>
-                      <strong className="mono">
-                        {formatMoneyOrDash(costCollection.difference)}
-                      </strong>
-                    </div>
 
                     <div className="detail-summary-card">
                       <span className="block-label">Match</span>

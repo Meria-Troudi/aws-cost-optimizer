@@ -69,11 +69,6 @@ class OptimizationPipeline:
 
             aggregated_findings = finding_result["aggregated_findings"]
 
-            # Recommendations are built from raw (one-resource) findings
-            # only -- aggregated_findings is a reporting view and must
-            # never be fed back into recommendation generation, or
-            # e.g. 3 idle NAT gateways would collapse into 1
-            # recommendation instead of 3.
             recommendations = self.recommendation_engine.generate(raw_findings)
 
             saved = (

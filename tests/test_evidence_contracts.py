@@ -19,7 +19,7 @@ def _rds_resource(**overrides) -> dict:
         "resource_type": "rds_instance",
         "configuration": {
             "instance_class": "db.r6g.large",
-            "engine": "aurora-postgresql",
+            "engine": "postgres",
             "status": "stopped",
             "multi_az": False,
             "publicly_accessible": False,
@@ -102,11 +102,23 @@ class TestFinancialImpactContract:
 
         raise AssertionError("expected an rds_stopped_instance finding")
 
-    def test_observed_cost_is_populated(self):
+    def test_plan_level_cost_is_shown_as_observed_cost_with_a_shared_basis(self):
+        """
+        The Cost Explorer amount is collection-plan evidence, not a
+        proven per-resource cost -- but it IS still shown as
+        observed_monthly_cost (so the UI never renders a blank field
+        when real billing evidence exists), labeled by savings_basis as
+        a shared bucket rather than this resource's own confirmed
+        figure. Only estimated_monthly_savings stays unquantified.
+        """
+
         finding = self._stopped_finding(_rds_resource())
 
         assert finding.impact["observed_monthly_cost"] == 302.28
-        assert finding.impact["currency"] == "USD"
+        assert finding.impact["savings_basis"] == "cost_not_resource_attributed"
+        # Shared bucket total preserved as context too.
+        assert finding.evidence.billing.get("amount") == 302.28
+        assert finding.evidence.billing.get("claimable_resource_cost") is None
 
     def test_plan_level_cost_never_becomes_savings(self):
         """
@@ -124,9 +136,9 @@ class TestFinancialImpactContract:
         """
         Resource-attributed cost alone is not enough to claim full
         savings: a stopped RDS instance can still carry storage/backup
-        cost, so "high confidence this instance is stopped" must not
-        become "100% of its cost is saved". Only findings the analyzer
-        has explicitly marked cost_optimization_type="elimination" may
+        cost, so \"high confidence this instance is stopped\" must not
+        become \"100% of its cost is saved\". Only findings the analyzer
+        has explicitly marked cost_optimization_type=\"elimination\" may
         claim the full resource-attributed cost -- rds_stopped_instance
         is not one of them.
         """
@@ -135,10 +147,13 @@ class TestFinancialImpactContract:
         resource["cost_context"] = {
             **resource["cost_context"],
             "attribution_scope": "resource",
+            "resource_cost_attributed": True,
+            "claimable_resource_cost": 302.28,
         }
 
         finding = self._stopped_finding(resource)
 
+        assert finding.impact["observed_monthly_cost"] == 302.28
         assert finding.impact["estimated_monthly_savings"] is None
         assert finding.impact["savings_basis"] == "target_cost_required"
 

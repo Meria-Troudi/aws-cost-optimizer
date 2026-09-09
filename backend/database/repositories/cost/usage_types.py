@@ -8,9 +8,9 @@ from backend.database.models.cost_record import CostRecord
 
 
 def get_usage_types_by_service(
-    db: Session, scan_run_id: int, service: str, limit: int = 3
+    db: Session, scan_run_id: int, service: str, limit: int | None = None
 ):
-    rows = (
+    query = (
         db.query(
             CostRecord.usage_type,
             func.sum(CostRecord.amount).label("cost"),
@@ -21,9 +21,8 @@ def get_usage_types_by_service(
         )
         .group_by(CostRecord.usage_type)
         .order_by(func.sum(CostRecord.amount).desc())
-        .limit(limit)
-        .all()
     )
+    rows = query.all() if limit is None else query.limit(limit).all()
     service_total = (
         db.query(func.sum(CostRecord.amount))
         .filter(

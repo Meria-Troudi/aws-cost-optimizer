@@ -26,9 +26,6 @@ class EBSCollector(BaseCollector):
     key = "ebs"
     resource_type = "ebs_volume"
 
-    DEFAULT_NAMESPACE = "AWS/EBS"
-    DEFAULT_PERIOD = 3600
-
     def __init__(
         self,
         scan,
@@ -164,16 +161,9 @@ class EBSCollector(BaseCollector):
         ):
             return
 
-        namespace = str(
-            cloudwatch_profile.get("namespace") or self.DEFAULT_NAMESPACE
-        ).strip()
+        namespace = self.cloudwatch_namespace()
 
-        requested_period = int(
-            cloudwatch_profile.get(
-                "period",
-                self.DEFAULT_PERIOD,
-            )
-        )
+        requested_period = self.cloudwatch_period()
 
         try:
             start, end = self.get_analysis_period()
@@ -371,16 +361,9 @@ class EBSCollector(BaseCollector):
                 "cloudwatch": {},
             }
 
-        namespace = str(
-            cloudwatch_profile.get("namespace") or self.DEFAULT_NAMESPACE
-        ).strip()
+        namespace = self.cloudwatch_namespace()
 
-        requested_period = int(
-            cloudwatch_profile.get(
-                "period",
-                self.DEFAULT_PERIOD,
-            )
-        )
+        requested_period = self.cloudwatch_period()
 
         try:
             start, end = self.get_analysis_period()

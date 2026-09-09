@@ -175,34 +175,6 @@ def main(
 
         for plan in plans:
 
-            # Billing dimensions only. The attribution verdict
-            # (whether this cost is genuinely this resource's own,
-            # or shared/historical/unknown) is decided once, per
-            # resource, by reconciliation -- not guessed here before
-            # any resource has even been matched against the bill.
-            cost_context = {
-                "service": plan.get(
-                    "service",
-                    "",
-                ),
-                "usage_type": plan.get(
-                    "usage_type",
-                    "",
-                ),
-                "region": plan.get("region"),
-                "cost": {
-                    "value": float(
-                        plan.get(
-                            "cost_context",
-                            0.0,
-                        )
-                        or 0.0
-                    ),
-                    "currency": "USD",
-                    "scope": "usage_type_region",
-                },
-            }
-
             try:
 
                 result = manager.execute(
@@ -210,7 +182,7 @@ def main(
                     scan=scan,
                     collector_name=plan["collector"],
                     region=plan["region"],
-                    cost_context=cost_context,
+                    collection_plan_id=plan.get("collection_plan_id"),
                 )
 
                 results.append(result)
@@ -255,6 +227,7 @@ def main(
                 results.append(
                     {
                         "collector": plan["collector"],
+                        "collection_plan_id": plan.get("collection_plan_id"),
                         "region": plan["region"],
                         "resources": 0,
                         "metrics": 0,
@@ -306,6 +279,7 @@ def main(
             scan=scan,
             resources=all_resources,
             collection_plans=plans,
+            enriched_results=results,
             pre_findings=reconciliation_findings,
         )
 

@@ -4,10 +4,16 @@ Financial impact helpers.
 Rules:
 - Observed cost and savings are different concepts.
 - Collection-plan/service/account cost is NOT automatically
-  resource-level cost.
+  resource-level cost -- but it IS shown as observed_monthly_cost
+  when attribution_scope != "resource", labeled by savings_basis
+  ("cost_not_resource_attributed") as a shared bucket rather than
+  this resource's own confirmed figure, so the UI has a real number
+  to display instead of a blank field.
 - Savings are only quantified when the cost is explicitly
   attributed to the affected resource, or when a future
-  deterministic target_cost is supplied.
+  deterministic target_cost is supplied. A non-resource-attributed
+  bucket total is shown for context, but never produces an
+  estimated_monthly_savings figure.
 """
 
 from __future__ import annotations
@@ -78,11 +84,13 @@ def calculate_savings(
             "savings_basis": "cost_invalid",
         }
 
-    # --------------------------------------------------------------
     # Cost exists, but it is not attributed to the affected
-    # resource.
-    # --------------------------------------------------------------
-
+    # resource. The bucket total is still shown as observed_monthly_cost
+    # (labeled by savings_basis as shared, not this resource's own
+    # confirmed figure) so the UI never renders a blank "Observed cost"
+    # when real billing evidence exists -- but estimated_monthly_savings
+    # stays null regardless: we still never claim a savings amount for a
+    # cost that isn't attributed to this specific resource.
     if normalized_scope != "resource":
         return {
             "observed_monthly_cost": round(
@@ -93,10 +101,6 @@ def calculate_savings(
             "savings_confidence": None,
             "savings_basis": "cost_not_resource_attributed",
         }
-
-    # --------------------------------------------------------------
-    # Future rightsizing / target-based calculation.
-    # --------------------------------------------------------------
 
     if target_cost is not None:
         try:
@@ -128,13 +132,6 @@ def calculate_savings(
                 "savings_confidence": (normalized_confidence),
                 "savings_basis": "target_cost",
             }
-    # --------------------------------------------------------------
-    # Whole-cost savings are only allowed when the resource cost is
-    # attributed AND the finding itself means the resource can be
-    # fully eliminated (not merely "underutilized" or "stopped" --
-    # a stopped instance can still carry storage/backup cost, and
-    # confidence in the *detection* is not proof of full removal).
-    # --------------------------------------------------------------
 
     if full_elimination:
 

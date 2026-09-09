@@ -38,6 +38,7 @@ CENTRAL_ELIGIBILITY = {
     "vpc_endpoint.py": False,
     "load_balancer.py": True,
     "nat_gateway.py": True,
+    "ec2.py": True,
 }
 
 

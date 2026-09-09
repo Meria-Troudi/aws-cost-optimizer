@@ -1,8 +1,5 @@
 """
 Base collector.
-
-Provides the common lifecycle for all AWS resource collectors:
-
 discovery
     -> identity
     -> configuration
@@ -21,7 +18,6 @@ from typing import Any, Dict, List
 
 
 class BaseCollector(ABC):
-
     key: str | None = None
     resource_type: str | None = None
 
@@ -42,6 +38,52 @@ class BaseCollector(ABC):
         self.scan = scan
         self.region = region or scan.region
         self.profile = profile if isinstance(profile, dict) else {}
+
+    def cloudwatch_profile(
+        self,
+    ) -> Dict[str, Any]:
+        observations = self.profile.get("observations", {})
+
+        cloudwatch = (
+            observations.get("cloudwatch", {}) if isinstance(observations, dict) else {}
+        )
+
+        return cloudwatch if isinstance(cloudwatch, dict) else {}
+
+    def cloudwatch_namespace(
+        self,
+    ) -> str:
+        namespace = str(self.cloudwatch_profile().get("namespace") or "").strip()
+
+        if not namespace:
+
+            raise ValueError(
+                f"{self.__class__.__name__} profile must define "
+                "observations.cloudwatch.namespace."
+            )
+
+        return namespace
+
+    def cloudwatch_period(
+        self,
+    ) -> int:
+
+        from aws_cost_optimizer.collection.metrics.cloudwatch import (
+            DEFAULT_CLOUDWATCH_PERIOD,
+        )
+
+        period = self.cloudwatch_profile().get("period")
+
+        try:
+
+            return int(period)
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+
+            return DEFAULT_CLOUDWATCH_PERIOD
 
     def collect(
         self,
@@ -113,7 +155,7 @@ class BaseCollector(ABC):
             "resource_id": str(resource_id),
             "resource_type": self.resource_type,
             "region": self.region,
-            "collection_status": "complete",
+            "collection_status": "completed",
             "collection_errors": {},
         }
         self._safe_collect_section(
@@ -174,7 +216,7 @@ class BaseCollector(ABC):
             {},
         )
 
-        context["collection_status"] = "partial" if errors else "complete"
+        context["collection_status"] = "partial" if errors else "completed"
         context["data_quality"] = self._build_data_quality(context)
         context["raw"] = resource
 
@@ -368,13 +410,26 @@ class BaseCollector(ABC):
         )
 
         return {
-            "collection_status": ("partial" if errors else "complete"),
+            "collection_status": ("partial" if errors else "completed"),
             "section_errors": dict(errors),
-            "identity_available": bool(context.get("identity")),
-            "configuration_available": bool(context.get("configuration")),
-            "relationships_available": bool(context.get("relationships")),
+            "identity_available": (
+                bool(context.get("identity"))
+                and context.get("identity", {}).get("status")
+                not in {"error", "disabled"}
+            ),
+            "configuration_available": (
+                bool(context.get("configuration"))
+                and context.get("configuration", {}).get("status")
+                not in {"error", "disabled"}
+            ),
+            "relationships_available": (
+                bool(context.get("relationships"))
+                and context.get("relationships", {}).get("status")
+                not in {"error", "disabled"}
+            ),
             "topology_available": topology_status == "ok",
             "observations_available": queried > 0,
+            "observations_with_data": observed > 0,
             "optimization_evidence_available": bool(optimization_evidence),
             "metric_result_count": queried,
             "queried_metric_count": queried,
@@ -694,10 +749,17 @@ class BaseCollector(ABC):
 
             print(f"  Collection status: " f"{status}")
 
-    @staticmethod
     def _safe_resource_id(
+        self,
         resource: Dict[str, Any],
     ) -> str:
+        try:
+            resource_id = self.get_resource_id(resource)
+        except Exception:
+            resource_id = None
+
+        if resource_id:
+            return str(resource_id)
 
         return str(
             resource.get("id")

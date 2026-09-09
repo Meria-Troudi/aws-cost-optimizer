@@ -24,6 +24,14 @@ That means the guard under-detects rather than over-detects. It is a
 backstop against the model asserting a fact the pipeline refused to
 compute, not a general-purpose content filter, and it never sees a
 number the deterministic layer did not already put in the payload.
+
+Two checks run unconditionally, regardless of the route's `never_invent`
+list, because they are never acceptable in this system's output: an AWS
+CLI/API command (this system stops at recommending and validating; it
+never hands out remediation commands -- see recommendations/plan.py),
+and a claim that widens one resource's evidence into an account-wide
+statement (the payload is always scoped to a single resource; see
+explanation.py's `resource` block).
 """
 
 from __future__ import annotations
@@ -55,6 +63,9 @@ _CONCEPT_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ),
     "replacement_resource": (re.compile(_INSTANCE_TYPE, re.I),),
     "replacement_size": (re.compile(_INSTANCE_TYPE, re.I),),
+    "replacement_instance": (re.compile(_INSTANCE_TYPE, re.I),),
+    "replacement_instance_class": (re.compile(_INSTANCE_TYPE, re.I),),
+    "instance_type": (re.compile(_INSTANCE_TYPE, re.I),),
     "replacement_capacity": (
         re.compile(
             r"\b(?:set|change|resize)\D{0,30}\b\d+\s*(?:acu|rcu|wcu|vcpu|gib|gb)\b",
@@ -97,6 +108,25 @@ _CONCEPT_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         ),
         re.compile(
             r"\b(?:delete|remove|terminate)\b\D{0,30}\b(?:is\s+safe|safely)\b", re.I
+        ),
+    ),
+    # Same claim shape, different scope (a cluster rather than a single
+    # resource) -- catalog routes that operate on clusters declare this
+    # as its own concept, but the assertion pattern is identical.
+    "cluster_deletion_safety": (
+        re.compile(
+            r"\b(?:safe|no\s+risk|without\s+risk|risk-free)\b\D{0,30}"
+            r"\b(?:delete|remove|terminate)\b",
+            re.I,
+        ),
+        re.compile(
+            r"\b(?:delete|remove|terminate)\b\D{0,30}\b(?:is\s+safe|safely)\b", re.I
+        ),
+    ),
+    "migration_safety": (
+        re.compile(
+            r"\b(?:safe|no\s+risk|without\s+risk|risk-free)\b\D{0,30}\bmigrat\w*\b",
+            re.I,
         ),
     ),
     "resource_deletion": (
@@ -165,10 +195,131 @@ _CONCEPT_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "required_configuration": (
         re.compile(r"\byou\s+must\s+(?:set|configure|enable)\b", re.I),
     ),
+    # --- "nothing depends on this" / "no requirement exists" -------------
+    # Same claim shape across a whole family of catalog concepts: the
+    # deterministic layer explicitly did not establish an absence, so a
+    # model asserting "no X" or "not required" for any of these is
+    # exactly the failure mode this guard exists to catch.
+    "dependency": (
+        re.compile(r"\b(?:no|without|has\s+no)\s+dependenc(?:y|ies)\b", re.I),
+        re.compile(r"\bnothing\s+depends\s+on\b", re.I),
+    ),
+    "user_dependency": (
+        re.compile(
+            r"\b(?:no|without|has\s+no)\s+(?:user|consumer)\s+dependenc(?:y|ies)\b",
+            re.I,
+        ),
+    ),
+    "business_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?business\s+requirement\b", re.I),
+        re.compile(r"\bnot\s+required\s+(?:by|for)\s+the\s+business\b", re.I),
+    ),
+    "business_requirements": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?business\s+requirements?\b", re.I),
+    ),
+    "workload_requirements": (
+        re.compile(r"\b(?:no|not)\s+workload\s+requirements?\b", re.I),
+    ),
+    "recovery_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?recovery\s+requirement\b", re.I),
+    ),
+    "disaster_recovery_requirement": (
+        re.compile(
+            r"\b(?:no|not)\s+(?:a\s+)?disaster\s+recovery\s+requirement\b", re.I
+        ),
+    ),
+    "failover_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?failover\s+requirement\b", re.I),
+    ),
+    "read_routing_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?read\s+routing\s+requirement\b", re.I),
+    ),
+    "replication_requirements": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?replication\s+requirements?\b", re.I),
+    ),
+    "reporting_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?reporting\s+requirement\b", re.I),
+    ),
+    "retention_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?retention\s+requirement\b", re.I),
+    ),
+    "backup_requirement": (
+        re.compile(r"\b(?:no|not)\s+(?:a\s+)?backup\s+requirement\b", re.I),
+    ),
+    "production_requirement": (
+        re.compile(r"\bnot\s+(?:used|running)\s+in\s+production\b", re.I),
+        re.compile(
+            r"\b(?:no|not)\s+(?:a\s+)?production\s+(?:use|dependency|requirement)\b",
+            re.I,
+        ),
+    ),
+    "production_unsuitability": (
+        re.compile(r"\bnot\s+suitable\s+for\s+production\b", re.I),
+    ),
+    "compatibility": (re.compile(r"\b(?:is|are)\s+compatible\s+with\b", re.I),),
 }
 
-# Explanation fields whose free text is checked.
+# Checked unconditionally, on every explanation, regardless of the
+# route's never_invent list -- see module docstring.
+# Checked unconditionally, on every explanation, regardless of the
+# route's never_invent list -- see module docstring.
+_UNCONDITIONAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "aws_cli_command",
+        # Require hyphen in the final word so this matches real CLI
+        # subcommands like "describe-instances" or "put-object" rather
+        # than natural English such as "AWS account has".
+        re.compile(r"\baws\s+[a-z0-9][a-z0-9-]*\s+[a-z][a-z-]*-[a-z-]*\b", re.I),
+    ),
+    (
+        "aws_cli_command",
+        re.compile(
+            r"\b(?:describe|list|get|put|delete|release|create|modify|"
+            r"update|terminate|stop|start|attach|detach|associate|"
+            r"disassociate|authorize|revoke|enable|disable)-[a-z][a-z-]*\b",
+            re.I,
+        ),
+    ),
+    ("code_block_or_shell_flag", re.compile(r"```|(?<!\w)--[a-z][a-z-]*\b", re.I)),
+            (
+        "account_scope_widening",
+        # Only flag explicit account-wide claims that assert a lack of
+        # resources/costs/budgets, not legitimate mentions of "the account"
+        # in passing (e.g. "the AWS account has no observed data").
+        # Add optional "s" to catch plurals ("resources", "budgets").
+        re.compile(
+            r"\b(?:the|your)\s+(?:aws\s+)?account\b\D{0,40}"
+            r"\b(?:has\s+no|has\s+not|does\s+not\s+have|is\s+not)\s+"
+            r"\b(?:any\s+|multiple\s+|many\s+|all\s+|entire\s+)?"
+            r"\b(?:resource|cost|budget|spend|optimization|savings|"
+            r"recommendation|instance|gateway|bucket)s?\b",
+            re.I,
+        ),
+    ),
+    (
+        "account_scope_widening",
+        re.compile(
+            r"\b(?:your|the)\s+(?:entire\s+)?(?:infrastructure|environment)\b"
+            r"\D{0,25}\b(?:has\s+no|is|does\s+not)\b",
+            re.I,
+        ),
+    ),
+    (
+        "account_scope_widening",
+        re.compile(r"\bacross\s+(?:the|your)\s+(?:aws\s+)?account\b", re.I),
+    ),
+)
+
+
+# Explanation fields whose free text is checked. The list fields
+# (limitations, what_to_verify, possible_actions) are lists of sentences
+# generated directly by the model, so they need their own extraction
+# below -- but they must be guarded exactly like the string fields,
+# since the model can smuggle a command or a forbidden assertion into a
+# bullet just as easily as into prose.
 _TEXT_FIELDS = ("summary", "why", "action", "confidence_note", "risk")
+
+_LIST_FIELDS = ("limitations", "what_to_verify", "possible_actions")
 
 
 def _explanation_text(explanation: Mapping[str, Any]) -> str:
@@ -177,6 +328,12 @@ def _explanation_text(explanation: Mapping[str, Any]) -> str:
         for field in _TEXT_FIELDS
         if explanation.get(field)
     ]
+
+    for field in _LIST_FIELDS:
+        items = explanation.get(field)
+
+        if isinstance(items, (list, tuple)):
+            parts.extend(str(item) for item in items if item)
 
     return "\n".join(parts)
 
@@ -200,6 +357,15 @@ def violations(
         return []
 
     found: list[str] = []
+
+    for concept, pattern in _UNCONDITIONAL_PATTERNS:
+        match = pattern.search(text)
+
+        if match:
+            found.append(
+                f"explanation asserts forbidden concept {concept!r} "
+                f"(matched {match.group(0)!r})"
+            )
 
     for concept in never_invent or []:
         key = str(concept).strip()

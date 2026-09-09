@@ -52,27 +52,24 @@ export default function ScanPage({
   const [accountLoading, setAccountLoading] = useState(true)
   const [accountError, setAccountError] = useState(null)
   const [availableRegions, setAvailableRegions] = useState([])
+  const [regionError, setRegionError] = useState(null)
+  const [dateError, setDateError] = useState(null)
 
   useEffect(() => {
     let mounted = true
 
+    // Account details and the region list come from two different
+    // backend calls that can fail independently -- a region-discovery
+    // failure affects scan scope (the picker silently falls back to
+    // "All regions"), while an account-detail failure is cosmetic. Keep
+    // their errors separate so the user can tell which one happened.
     async function loadAccount() {
       try {
-        const [data, regionData] = await Promise.all([
-          getAccount(),
-          getCostRegions(),
-        ])
-
+        const data = await getAccount()
         if (mounted) {
           setAccount(data)
-          setAvailableRegions(
-            Array.isArray(regionData?.regions) ? regionData.regions : [],
-          )
         }
       } catch (err) {
-        // Account details are optional, but an unreachable backend
-        // must not look like "this account simply has no regions" --
-        // that renders an empty region picker with no explanation.
         if (mounted) {
           setAccountError(
             err instanceof Error
@@ -87,7 +84,27 @@ export default function ScanPage({
       }
     }
 
+    async function loadRegions() {
+      try {
+        const regionData = await getCostRegions()
+        if (mounted) {
+          setAvailableRegions(
+            Array.isArray(regionData?.regions) ? regionData.regions : [],
+          )
+        }
+      } catch (err) {
+        if (mounted) {
+          setRegionError(
+            err instanceof Error
+              ? err.message
+              : String(err),
+          )
+        }
+      }
+    }
+
     loadAccount()
+    loadRegions()
 
     return () => {
       mounted = false
@@ -105,12 +122,16 @@ export default function ScanPage({
     event.preventDefault()
 
     if (!form.start_date || !form.end_date) {
+      setDateError('Select a start and end date.')
       return
     }
 
     if (form.start_date >= form.end_date) {
+      setDateError('Start date must be before end date.')
       return
     }
+
+    setDateError(null)
 
     await onRunAnalysis(form)
   }
@@ -132,10 +153,18 @@ export default function ScanPage({
     scanData?.scan_id ??
     null
 
+  // The backend doesn't always report a numeric progress mid-scan --
+  // showing a fabricated 50% would read as measured progress rather
+  // than "we don't actually know yet", so track whether the value is
+  // real separately from the number used to size the fill bar.
+  const hasKnownProgress =
+    scanData?.progress_percent != null ||
+    scanData?.progress != null
+
   const progress =
     scanData?.progress_percent ??
     scanData?.progress ??
-    (isRunning ? 50 : isDone ? 100 : 0)
+    (isDone ? 100 : 0)
 
   const safeProgress = Math.min(
     100,
@@ -170,9 +199,10 @@ export default function ScanPage({
           </h1>
 
           <div className="sub">
-            Run a deep AWS cost optimization analysis.
-            The scan collects resources, utilization,
-            dependencies, findings, and recommendations.
+            Run an evidence-based AWS cost optimization analysis.
+            The scan identifies cost drivers, collects targeted
+            resource evidence, and evaluates findings against
+            cost conditions.
           </div>
         </div>
       </div>
@@ -183,10 +213,16 @@ export default function ScanPage({
         </div>
       )}
 
-      {!error && accountError && (
+      {!error && regionError && (
         <div className="page-error section-gap">
-          Could not load account details or the region list:{' '}
-          {accountError}
+          Could not load the region list, so scope is limited to
+          "All regions": {regionError}
+        </div>
+      )}
+
+      {!error && !regionError && accountError && (
+        <div className="page-error section-gap">
+          Could not load account details: {accountError}
         </div>
       )}
 
@@ -305,6 +341,12 @@ export default function ScanPage({
               </div>
             </div>
 
+            {dateError && (
+              <div className="form-error">
+                {dateError}
+              </div>
+            )}
+
             <div className="scan-actions">
               <button
                 type="submit"
@@ -313,16 +355,6 @@ export default function ScanPage({
               >
                 {isRunning ? 'Analyzing…' : 'Start Analysis'}
               </button>
-
-              {isDone && (
-                <button
-                  type="button"
-                  className="small-btn"
-                  onClick={() => onViewResults(scanId)}
-                >
-                  View Results
-                </button>
-              )}
             </div>
           </form>
         </div>
@@ -336,10 +368,6 @@ export default function ScanPage({
 
               <div className="panel-sub">
                 Current analysis progress and scope
-              </div>
-
-              <div className="panel-sub">
-                Backend analysis pipeline
               </div>
             </div>
 
@@ -406,15 +434,23 @@ export default function ScanPage({
             <div className="scan-progress">
               <div className="scan-progress-head">
                 <span>Analysis in progress</span>
-                <span>{Math.round(safeProgress)}%</span>
+                {hasKnownProgress && (
+                  <span>{Math.round(safeProgress)}%</span>
+                )}
               </div>
 
-              <div className="scan-progress-track">
+              <div
+                className={`scan-progress-track ${
+                  hasKnownProgress ? '' : 'indeterminate'
+                }`}
+              >
                 <div
                   className="scan-progress-fill"
-                  style={{
-                    width: `${safeProgress}%`,
-                  }}
+                  style={
+                    hasKnownProgress
+                      ? { width: `${safeProgress}%` }
+                      : undefined
+                  }
                 />
               </div>
 

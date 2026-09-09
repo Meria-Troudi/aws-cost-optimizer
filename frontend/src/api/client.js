@@ -2,11 +2,14 @@ const API_BASE = (
   import.meta.env.VITE_API_BASE ?? ''
 ).replace(/\/$/, '')
 
+const API_KEY = import.meta.env.VITE_API_KEY ?? ''
+
 async function request(path, options = {}) {
   const url = `${API_BASE}${path}`
 
   const headers = {
     Accept: 'application/json',
+    ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
     ...options.headers,
   }
 
@@ -153,6 +156,66 @@ export function getCostExplorerService(
 
   return request(
     `/api/cost/explorer/service${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export function getDailyTrend(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
+  )
+
+  return request(
+    `/api/dashboard/daily-trend${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export function getWeeklyServiceChanges(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
+  )
+
+  return request(
+    `/api/dashboard/weekly-service-changes${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export function getMonthlyDimension(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
+  )
+
+  return request(
+    `/api/dashboard/monthly-dimension${
+      query ? `?${query}` : ''
+    }`,
+  )
+}
+
+export function getAwsRecommendations(
+  params = {},
+) {
+
+  const query = buildQuery(
+    params,
+  )
+
+  return request(
+    `/api/dashboard/aws-recommendations${
       query ? `?${query}` : ''
     }`,
   )
@@ -367,6 +430,26 @@ export function explainRecommendation(
     )}/explain${
       query ? `?${query}` : ''
     }`,
+    {
+      method: 'POST',
+    },
+  )
+}
+
+export function prefetchExplanations(
+  scanId,
+) {
+
+  if (!scanId) {
+    throw new Error(
+      'Scan ID is required.',
+    )
+  }
+
+  return request(
+    `/api/recommendations/scan/${encodeURIComponent(
+      scanId,
+    )}/explain-pending`,
     {
       method: 'POST',
     },

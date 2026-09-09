@@ -71,14 +71,6 @@ def metric_has_observed_data(
 
     if not isinstance(metric, dict):
         return False
-
-    # metric_summary() output already carries the correct verdict
-    # under "observed", using its own "observed"/"zero"/"missing"/
-    # "unknown"/"error" vocabulary -- its "status" is never "ok",
-    # so the raw-shape check below would silently return False for
-    # every summary, including fully-observed ones. Detect the
-    # summary shape (the raw collector output never has this key)
-    # and trust its own verdict instead of re-deriving it.
     if "observed" in metric:
         return metric.get("observed") is True
 
@@ -104,13 +96,6 @@ def metric_is_zero(
 ) -> bool:
 
     return metric_has_observed_data(metric) and float(metric["value"]) == 0.0
-
-
-def metric_is_detected(
-    metric: dict[str, Any] | None,
-) -> bool:
-
-    return metric_status(metric) == "observed"
 
 
 def metric_numeric_value(
@@ -158,6 +143,26 @@ def metric_sum_value(
         return None
 
     if not metric_is_sum(metric):
+        return None
+
+    return metric_numeric_value(metric)
+
+
+def metric_is_average(
+    metric: dict[str, Any] | None,
+) -> bool:
+
+    return metric_statistic(metric) == "Average"
+
+
+def metric_average_value(
+    metric: dict[str, Any] | None,
+) -> float | None:
+
+    if not metric_has_observed_data(metric):
+        return None
+
+    if not metric_is_average(metric):
         return None
 
     return metric_numeric_value(metric)
@@ -212,13 +217,6 @@ def count_observed_metrics(
     return sum(metric_has_observed_data(metric) for metric in _metric_list(metrics))
 
 
-def count_zero_metrics(
-    metrics: dict[str, Any] | list[Any] | None,
-) -> int:
-
-    return sum(metric_is_zero(metric) for metric in _metric_list(metrics))
-
-
 def count_missing_metrics(
     metrics: dict[str, Any] | list[Any] | None,
 ) -> int:
@@ -231,75 +229,6 @@ def count_metric_errors(
 ) -> int:
 
     return sum(metric_status(metric) == "error" for metric in _metric_list(metrics))
-
-
-def count_persistable_metrics(
-    metrics: dict[str, Any] | list[Any] | None,
-) -> int:
-
-    return count_observed_metrics(metrics)
-
-
-def all_metrics_observed(
-    metrics: dict[str, Any],
-    names: list[str],
-) -> bool:
-
-    return all(metric_has_observed_data(metrics.get(name)) for name in names)
-
-
-def any_metric_observed(
-    metrics: dict[str, Any],
-    names: list[str],
-) -> bool:
-
-    return any(metric_has_observed_data(metrics.get(name)) for name in names)
-
-
-def all_metrics_zero(
-    metrics: dict[str, Any],
-    names: list[str],
-) -> bool:
-
-    return all(metric_is_zero(metrics.get(name)) for name in names)
-
-
-def any_metric_zero(
-    metrics: dict[str, Any],
-    names: list[str],
-) -> bool:
-
-    return any(metric_is_zero(metrics.get(name)) for name in names)
-
-
-def sum_observed_values(
-    metrics: dict[str, Any],
-    names: list[str],
-) -> float | None:
-
-    values = [metric_numeric_value(metrics.get(name)) for name in names]
-
-    values = [value for value in values if value is not None]
-
-    if not values:
-        return None
-
-    return float(sum(values))
-
-
-def sum_sum_metrics(
-    metrics: dict[str, Any],
-    names: list[str],
-) -> float | None:
-
-    values = [metric_sum_value(metrics.get(name)) for name in names]
-
-    values = [value for value in values if value is not None]
-
-    if not values:
-        return None
-
-    return float(sum(values))
 
 
 def metric_summary(

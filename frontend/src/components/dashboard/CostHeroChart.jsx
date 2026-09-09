@@ -7,6 +7,14 @@ import { PALETTE } from '../../utils/serviceStyle'
 const CHART_W = 1160
 const CHART_H = 250
 
+// The label row below the chart used to render one cost+date pair per
+// data point -- fine for ~5 months, but a wall of 30 stacked labels
+// for the 30D view, pushing the panel far taller than the Monthly/7D
+// view. Every bar stays hoverable on the chart itself regardless; this
+// only caps the persistent label row so the panel's footprint stays
+// the same across every granularity.
+const MAX_VISIBLE_LABELS = 10
+
 const LINE_COLOR = PALETTE[0]
 
 function buildSmoothPath(points) {
@@ -42,6 +50,7 @@ export default function CostHeroChart({
   hero,
   forecast,
   forecastInfo,
+  partialLabel = 'MTD',
 })  {
   const [activeIdx, setActiveIdx] = useState(null)
   const [mounted, setMounted] = useState(false)
@@ -122,6 +131,33 @@ export default function CostHeroChart({
     })
   }, [points, forecast, hasForecast])
 
+  // Evenly sample down to MAX_VISIBLE_LABELS bars for the persistent
+  // label row -- always keeping the first, last, and current/partial
+  // point so the range and "today" stay legible even when most days
+  // are thinned out. Every bar remains hoverable on the chart itself;
+  // this only thins the always-visible label row underneath it.
+  const labelBars = useMemo(() => {
+    if (bars.length <= MAX_VISIBLE_LABELS) {
+      return bars
+    }
+
+    const keep = new Set([0, bars.length - 1])
+
+    const currentIndex = bars.findIndex(bar => bar.is_current)
+
+    if (currentIndex >= 0) {
+      keep.add(currentIndex)
+    }
+
+    const step = (bars.length - 1) / (MAX_VISIBLE_LABELS - 1)
+
+    for (let i = 0; i < MAX_VISIBLE_LABELS; i += 1) {
+      keep.add(Math.round(i * step))
+    }
+
+    return bars.filter(bar => keep.has(bar.index))
+  }, [bars])
+
   useEffect(() => {
     if (!bars.length) {
       setActiveIdx(null)
@@ -200,7 +236,7 @@ export default function CostHeroChart({
           </span>
 
           {activeBar.is_partial && (
-            <small>MTD</small>
+            <small>{partialLabel}</small>
           )}
         </div>
       )}
@@ -374,7 +410,7 @@ export default function CostHeroChart({
       </svg>
 
       <div className="hero-point-labels">
-        {bars.map(bar => (
+        {labelBars.map(bar => (
           <button
             type="button"
             key={
@@ -410,7 +446,7 @@ export default function CostHeroChart({
               )}
 
               {bar.is_partial && (
-                <small>MTD</small>
+                <small>{partialLabel}</small>
               )}
             </span>
           </button>

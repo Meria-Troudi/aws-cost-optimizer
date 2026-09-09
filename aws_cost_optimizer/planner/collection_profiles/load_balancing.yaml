@@ -1,0 +1,284 @@
+# =============================================================================
+# COLLECTION PROFILES -- LOAD_BALANCING
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+
+
+# =============================================================================
+# LOAD BALANCING
+# =============================================================================
+load_balancer:
+
+  identity:
+    enabled: true
+    fields:
+      - load_balancer_arn
+      - load_balancer_name
+      - type
+      - scheme
+      - state
+      - vpc_id
+      - tags
+
+  configuration:
+    enabled: true
+    fields:
+      - load_balancer_arn
+      - load_balancer_name
+      - type
+      - scheme
+      - state
+      - state_reason
+      - created_time
+      - vpc_id
+      - dns_name
+      - canonical_hosted_zone_id
+      - ip_address_type
+      - availability_zones
+      - availability_zone_count
+      - subnet_ids
+      - subnet_count
+      - security_groups
+      - security_group_count
+      - service_managed
+      - optimization_allowed
+      - release_allowed
+      - tags
+
+  relationships:
+    enabled: true
+    collect:
+      - listeners
+      - listener_rules
+      - target_groups
+      - registered_targets
+      - target_health
+      - target_group_attributes
+
+  observations:
+    enabled: true
+
+    cloudwatch_by_type:
+
+      application:
+        enabled: true
+        namespace: AWS/ApplicationELB
+        period: 3600
+
+        metrics:
+
+          # ----------------------------------------------------------
+          # LOAD BALANCER LEVEL
+          # ----------------------------------------------------------
+
+          - name: RequestCount
+            statistic: Sum
+            unit: Count
+            key: request_count
+            dimensions:
+              - LoadBalancer
+
+          - name: ProcessedBytes
+            statistic: Sum
+            unit: Bytes
+            key: processed_bytes
+            dimensions:
+              - LoadBalancer
+
+          - name: ActiveConnectionCount
+            statistic: Maximum
+            unit: Count
+            key: active_connections
+            dimensions:
+              - LoadBalancer
+
+          - name: NewConnectionCount
+            statistic: Sum
+            unit: Count
+            key: new_connections
+            dimensions:
+              - LoadBalancer
+
+          - name: RuleEvaluations
+            statistic: Sum
+            unit: Count
+            key: rule_evaluations
+            dimensions:
+              - LoadBalancer
+
+          - name: ConsumedLCUs
+            statistic: Maximum
+            omit_unit: true
+            key: consumed_lcus
+            dimensions:
+              - LoadBalancer
+
+          # ----------------------------------------------------------
+          # TARGET GROUP LEVEL
+          # ----------------------------------------------------------
+
+          - name: HealthyHostCount
+            statistic: Average
+            unit: Count
+            key: healthy_host_count
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+          - name: UnHealthyHostCount
+            statistic: Average
+            unit: Count
+            key: unhealthy_host_count
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+          - name: TargetResponseTime
+            statistic: Average
+            unit: Seconds
+            key: target_response_time
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+          - name: RequestCountPerTarget
+            statistic: Sum
+            unit: Count
+            key: request_count_per_target
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+
+      network:
+        enabled: true
+        namespace: AWS/NetworkELB
+        period: 3600
+
+        metrics:
+
+          # ----------------------------------------------------------
+          # LOAD BALANCER LEVEL
+          # ----------------------------------------------------------
+
+          - name: ProcessedBytes
+            statistic: Sum
+            unit: Bytes
+            key: processed_bytes
+            dimensions:
+              - LoadBalancer
+
+          - name: ProcessedPackets
+            statistic: Sum
+            unit: Count
+            key: processed_packets
+            dimensions:
+              - LoadBalancer
+
+          - name: ActiveFlowCount
+            statistic: Sum
+            unit: Count
+            key: active_flow_count
+            dimensions:
+              - LoadBalancer
+
+          - name: NewFlowCount
+            statistic: Sum
+            unit: Count
+            key: new_flow_count
+            dimensions:
+              - LoadBalancer
+
+          - name: ConsumedLCUs
+            statistic: Maximum
+            omit_unit: true
+            key: consumed_lcus
+            dimensions:
+              - LoadBalancer
+
+          # ----------------------------------------------------------
+          # TARGET GROUP LEVEL
+          # ----------------------------------------------------------
+
+          - name: HealthyHostCount
+            statistic: Average
+            unit: Count
+            key: healthy_host_count
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+          - name: UnHealthyHostCount
+            statistic: Average
+            unit: Count
+            key: unhealthy_host_count
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+
+      gateway:
+        enabled: true
+        namespace: AWS/GatewayELB
+        period: 3600
+
+        metrics:
+
+          # ----------------------------------------------------------
+          # LOAD BALANCER LEVEL
+          # ----------------------------------------------------------
+
+          - name: ProcessedBytes
+            statistic: Sum
+            unit: Bytes
+            key: processed_bytes
+            dimensions:
+              - LoadBalancer
+
+          - name: ProcessedPackets
+            statistic: Sum
+            unit: Count
+            key: processed_packets
+            dimensions:
+              - LoadBalancer
+
+          - name: ActiveFlowCount
+            statistic: Sum
+            unit: Count
+            key: active_flow_count
+            dimensions:
+              - LoadBalancer
+
+          - name: NewFlowCount
+            statistic: Sum
+            unit: Count
+            key: new_flow_count
+            dimensions:
+              - LoadBalancer
+
+          - name: ConsumedLCUs
+            statistic: Maximum
+            omit_unit: true
+            key: consumed_lcus
+            dimensions:
+              - LoadBalancer
+
+          # ----------------------------------------------------------
+          # TARGET GROUP LEVEL
+          # ----------------------------------------------------------
+
+          - name: UnHealthyHostCount
+            statistic: Average
+            unit: Count
+            key: unhealthy_host_count
+            dimensions:
+              - LoadBalancer
+              - TargetGroup
+
+  topology:
+    enabled: false
+

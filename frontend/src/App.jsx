@@ -4,6 +4,8 @@ import Nav from './components/Nav'
 import DashboardTab from './components/DashboardTab'
 import ScanPage from './components/ScanPage'
 import ResultsPage from './components/ResultsPage'
+import AnalysisHistoryPage from './components/AnalysisHistoryPage'
+import AboutPage from './components/AboutPage'
 
 import { useDashboard } from './hooks/useDashboard'
 import { useScan } from './hooks/useScan'
@@ -16,7 +18,13 @@ export default function App() {
 
 
   const routeToTab = (pathname) => (
-    { '/analysis': 'analysis', '/results': 'results', '/overview': 'overview' }[pathname] || 'overview'
+    {
+      '/analysis': 'analysis',
+      '/results': 'results',
+      '/overview': 'overview',
+      '/history': 'history',
+      '/about': 'about',
+    }[pathname] || 'overview'
   )
   const [activeTab, setActiveTab] = useState(() => routeToTab(window.location.pathname))
   const [selectedScanId, setSelectedScanId] = useState(null)
@@ -179,6 +187,7 @@ export default function App() {
   error={dashboardError}
   onRunAnalysis={handleOpenAnalysis}
   onViewOptimization={handleViewOptimization}
+  onViewHistory={() => handleTabChange('history')}
   onRefreshCosts={refreshCosts}
   onScanCurrentMonth={scanCurrentMonth}
   scanning={dashboardScanning}
@@ -229,6 +238,16 @@ export default function App() {
             }
           />
         )}
+
+        {activeTab === 'history' && (
+          <AnalysisHistoryPage
+            onViewResults={handleViewResults}
+            onRunAnalysis={handleOpenAnalysis}
+            onBack={() => handleTabChange('overview')}
+          />
+        )}
+
+        {activeTab === 'about' && <AboutPage />}
 
       </main>
     </div>

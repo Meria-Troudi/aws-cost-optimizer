@@ -1,6 +1,5 @@
-"""
+﻿"""
 Collector execution manager.
-
 """
 
 from __future__ import annotations
@@ -8,8 +7,8 @@ from __future__ import annotations
 import traceback
 
 from collection.registry import (
-    load_collectors,
     get_collector,
+    load_collectors,
 )
 
 from collection.persistence import (
@@ -19,6 +18,14 @@ from collection.persistence import (
 from aws_cost_optimizer.planner.collection_profile import (
     CollectionProfile,
 )
+
+VALID_COLLECTION_STATUSES = frozenset({"completed", "partial", "failed"})
+
+COLLECTION_STATUS_ALIASES = {
+    "complete": "completed",
+    "ok": "completed",
+    "success": "completed",
+}
 
 
 class CollectorManager:
@@ -36,15 +43,15 @@ class CollectorManager:
         scan,
         collector_name: str,
         region: str | None = None,
-        cost_context: dict | None = None,
+        collection_plan_id: int | str | None = None,
     ) -> dict:
 
         region = region or scan.region
 
         if not region:
-
             return {
                 "collector": collector_name,
+                "collection_plan_id": collection_plan_id,
                 "region": region,
                 "status": "failed",
                 "error": "Collector requires a region",
@@ -55,12 +62,12 @@ class CollectorManager:
         collector_class = get_collector(collector_name)
 
         if not collector_class:
-
             return {
                 "collector": collector_name,
+                "collection_plan_id": collection_plan_id,
                 "region": region,
                 "status": "failed",
-                "error": f"Collector not found: " f"{collector_name}",
+                "error": (f"Collector not found: " f"{collector_name}"),
             }
 
         profile = self.profile_loader.get(collector_class.resource_type)
@@ -68,14 +75,11 @@ class CollectorManager:
         if not profile:
 
             print(
-                f"[WARNING] No collection_profiles.yaml entry "
-                f"resolves for resource_type="
+                "[WARNING] No collection_profiles.yaml "
+                f"entry resolves for "
+                f"resource_type="
                 f"{collector_class.resource_type!r} "
-                f"(collector={collector_name!r}). The collector "
-                f"will run with an empty profile -- identity/"
-                f"configuration/observations config that should "
-                f"come from the YAML will silently fall back to "
-                f"collector-side defaults (or collect nothing). "
+                f"(collector={collector_name!r})."
             )
 
         try:
@@ -85,27 +89,10 @@ class CollectorManager:
                 region=region,
                 profile=profile,
             )
-
             resources = collector.collect()
-
             if not isinstance(resources, list):
-                raise TypeError("Collector.collect() must return a list")
-
-            # Billing is context only, and reconciliation (run per
-            # resource, after this) writes an attribution verdict
-            # onto each resource's own cost_context -- so every
-            # resource must get its own copy. Sharing one dict
-            # object here would mean promoting one resource to
-            # resource-scoped cost silently promotes every sibling
-            # resource in this same collector run too.
-            if cost_context:
-
-                for resource in resources:
-
-                    if isinstance(resource, dict):
-                        resource["cost_context"] = dict(cost_context)
-
-            resource_ids = [
+                raise TypeError("Collector.collect() " "must return a list")
+            discovered_resource_ids = [
                 str(resource.get("resource_id"))
                 for resource in resources
                 if (isinstance(resource, dict) and resource.get("resource_id"))
@@ -121,6 +108,7 @@ class CollectorManager:
 
             return {
                 "collector": collector_name,
+                "collection_plan_id": collection_plan_id,
                 "region": region,
                 "status": "failed",
                 "error": str(exc),
@@ -133,51 +121,83 @@ class CollectorManager:
         metric_errors = 0
         topology_count = 0
         partial_resources = 0
-        failed_resources = 0
+        collection_failed_resources = 0
+        persistence_failed_resources = 0
+
+        persisted_resource_ids = []
+
+        usable_resources = []
 
         resource_summaries = []
-
         for resource in resources:
-
             if not isinstance(resource, dict):
                 continue
+
+            rid = resource.get("resource_id")
+            rtyp = resource.get("resource_type")
+            if not rid or not rtyp:
+                print(
+                    f"  SKIP resource missing identity: "
+                    f"resource_id={rid!r}, resource_type={rtyp!r}"
+                )
+                collection_failed_resources += 1
+                continue
+
+            # Guard against collector emitting uncontrolled status strings.
+            raw_status = str(resource.get("collection_status") or "").strip().lower()
+            raw_status = COLLECTION_STATUS_ALIASES.get(
+                raw_status,
+                raw_status,
+            )
+            safe_status = (
+                raw_status if raw_status in VALID_COLLECTION_STATUSES else "failed"
+            )
+            resource["collection_status"] = safe_status
 
             metric_counts = self.persistence.metric_counts(resource)
 
             queried_metrics += metric_counts["queried"]
-
             saved_observed_metrics += metric_counts["observed"]
 
             no_data_metrics += metric_counts["no_data"]
-
             metric_errors += metric_counts["errors"]
-
             if resource.get("topology"):
                 topology_count += 1
 
-            if resource.get("collection_status") == "partial":
-                partial_resources += 1
+            collection_status = resource.get("collection_status")
+            if collection_status == "failed":
+                collection_failed_resources += 1
+                continue
 
-            if resource.get("collection_status") == "failed":
-                failed_resources += 1
+            if collection_status == "partial":
+                partial_resources += 1
 
             try:
 
-                self.persistence.save(
-                    db,
-                    scan,
-                    resource,
-                )
+                with db.begin_nested():
+                    self.persistence.save(
+                        db,
+                        scan,
+                        resource,
+                    )
 
                 saved_resources += 1
+
+                usable_resources.append(resource)
+
+                persisted_resource_ids.append(str(resource.get("resource_id")))
 
                 resource_summaries.append(
                     {
                         "resource_id": resource.get("resource_id"),
-                        "collection_status": resource.get("collection_status"),
+                        "collection_status": (collection_status),
                         "metric_counts": metric_counts,
                         "topology_available": (
-                            resource.get("topology", {}).get("status") == "ok"
+                            resource.get(
+                                "topology",
+                                {},
+                            ).get("status")
+                            == "ok"
                             if isinstance(
                                 resource.get("topology"),
                                 dict,
@@ -189,8 +209,6 @@ class CollectorManager:
 
             except Exception as exc:
 
-                db.rollback()
-
                 print(
                     f"ERROR saving resource "
                     f"{resource.get('resource_id')}: "
@@ -199,7 +217,7 @@ class CollectorManager:
 
                 traceback.print_exc()
 
-                failed_resources += 1
+                persistence_failed_resources += 1
 
                 continue
 
@@ -215,10 +233,21 @@ class CollectorManager:
 
             return {
                 "collector": collector_name,
+                "collection_plan_id": collection_plan_id,
                 "region": region,
                 "status": "failed",
-                "error": f"Commit failed: {exc}",
+                "error": (f"Commit failed: {exc}"),
             }
+
+        if (
+            collection_failed_resources > 0
+            or persistence_failed_resources > 0
+            or partial_resources > 0
+        ):
+            collection_status = "partial"
+
+        else:
+            collection_status = "completed"
 
         print(
             f"{collector_name}: "
@@ -232,22 +261,23 @@ class CollectorManager:
 
         return {
             "collector": collector_name,
+            "collection_plan_id": collection_plan_id,
             "region": region,
-            "resource_type": collector_class.resource_type,
-            "status": "completed",
-            "resources": saved_resources,
-            "resource_count": len(resources),
-            "resource_ids": resource_ids,
-            # Backwards-compatible observed count.
-            "metrics": saved_observed_metrics,
-            # Explicit counts.
+            "resource_type": (collector_class.resource_type),
+            "status": collection_status,
+            "discovered_count": len(resources),
+            "persisted_count": saved_resources,
+            "discovered_resource_ids": discovered_resource_ids,
+            "persisted_resource_ids": persisted_resource_ids,
+            "discovered_resource_data": resources,
+            "resource_data": usable_resources,
             "queried_metrics": queried_metrics,
             "observed_metrics": saved_observed_metrics,
             "no_data_metrics": no_data_metrics,
             "metric_errors": metric_errors,
             "topology_resources": topology_count,
             "partial_resources": partial_resources,
-            "failed_resources": failed_resources,
+            "collection_failed_resources": (collection_failed_resources),
+            "persistence_failed_resources": (persistence_failed_resources),
             "resource_summaries": resource_summaries,
-            "resource_data": resources,
         }

@@ -25,6 +25,7 @@ nat_gateway:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -53,6 +54,7 @@ public_ipv4:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -61,9 +63,6 @@ public_ipv4:
     usage_patterns:
       - "*PublicIPv4*"
       - "*PublicIpv4*"
-
-    # VPC billing is shared by multiple resource types.
-    # Never guess from the service alone.
     service_fallback: false
 
   collector:
@@ -78,6 +77,7 @@ vpc_endpoint:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -102,6 +102,7 @@ transit_gateway:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -128,6 +129,7 @@ vpc_peering:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -151,6 +153,7 @@ carrier_gateway:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -173,6 +176,7 @@ internet_gateway:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -195,6 +199,7 @@ egress_only_internet_gateway:
 
   domain: network
   subdomain: vpc
+  service: Amazon VPC
 
   billing:
     services:
@@ -221,6 +226,7 @@ rds_instance:
 
   domain: database
   subdomain: null
+  service: Amazon RDS
 
   billing:
     services:
@@ -247,6 +253,7 @@ dynamodb_table:
 
   domain: database
   subdomain: null
+  service: Amazon DynamoDB
 
   billing:
     services:
@@ -257,10 +264,6 @@ dynamodb_table:
       - "*WriteCapacityUnit*"
       - "*PayPerRequestThroughput*"
       - "*CommittedThroughput*"
-
-    # "Amazon DynamoDB" also carries storage/stream/backup usage
-    # types under some account billing layouts -- never guess from
-    # the service alone.
     service_fallback: false
 
   collector:
@@ -269,16 +272,11 @@ dynamodb_table:
 
   rules:
     enabled: true
-
-
-# ============================================================
-# COMPUTE / EC2
-# ============================================================
-
 ec2_instance:
 
   domain: compute
   subdomain: null
+  service: Amazon EC2
 
   billing:
     services:
@@ -287,10 +285,6 @@ ec2_instance:
     usage_patterns:
       - "*BoxUsage*"
       - "*SpotUsage*"
-
-    # "Amazon Elastic Compute Cloud - Compute" also carries EBS/other
-    # usage types under some account billing layouts -- never guess
-    # from the service alone.
     service_fallback: false
 
   collector:
@@ -309,6 +303,7 @@ eks_cluster:
 
   domain: compute
   subdomain: eks
+  service: Amazon EKS
 
   billing:
     services:
@@ -336,6 +331,7 @@ load_balancer:
 
   domain: load_balancing
   subdomain: null
+  service: Elastic Load Balancing
 
   billing:
     services:
@@ -363,6 +359,7 @@ quicksight:
 
   domain: analytics
   subdomain: quicksight
+  service: Amazon QuickSight
 
   billing:
     services:
@@ -392,6 +389,7 @@ ebs_volume:
 
   domain: storage
   subdomain: null
+  service: Amazon EBS
 
   billing:
     services:
@@ -399,9 +397,6 @@ ebs_volume:
 
     usage_patterns:
       - "*EBS:VolumeUsage*"
-
-    # EC2 - Other is shared with nat_gateway; a distinct usage
-    # pattern is matched first, so fallback is never needed here.
     service_fallback: false
 
   collector:
@@ -411,13 +406,38 @@ ebs_volume:
   rules:
     enabled: true
 
+s3_bucket:
+  domain: storage
+  subdomain: null
+  service: Amazon S3
+
+  billing:
+    services:
+      - Amazon Simple Storage Service
+
+    usage_patterns:
+      - "*TimedStorage*"
+      - "*BucketStorage*"
+      - "*Requests*"
+
+    service_fallback: false
+
+  collector:
+    key: s3
+    resource_type: s3_bucket
+
+  rules:
+    enabled: true
+
+
 # ============================================================
-# SECURITY / AWS WAF
+# DATABASE
 # ============================================================
 aurora_cluster:
 
   domain: database
   subdomain: null
+  service: Amazon Aurora
 
   billing:
     services:
@@ -435,10 +455,15 @@ aurora_cluster:
 
   rules:
     enabled: true
+
+# ============================================================
+# SECURITY / AWS WAF
+# ============================================================
 waf_web_acl:
 
   domain: security
   subdomain: null
+  service: AWS WAF
 
   billing:
     services:
@@ -455,8 +480,6 @@ waf_web_acl:
       - "*BotControl*"
       - "*FraudControl*"
 
-    # AWS WAF is currently the only enabled catalog entry claiming
-    # the AWS WAF service in this project.
     service_fallback: true
 
   collector:

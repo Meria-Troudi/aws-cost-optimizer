@@ -72,10 +72,9 @@ def get_cost_explorer(
     month: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-    limit: int = Query(
-        default=12,
+    limit: int | None = Query(
+        default=None,
         ge=1,
-        le=30,
     ),
 ):
 
@@ -128,10 +127,9 @@ def get_cost_explorer_service(
     month: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-    limit: int = Query(
-        default=10,
+    limit: int | None = Query(
+        default=None,
         ge=1,
-        le=20,
     ),
 ):
 

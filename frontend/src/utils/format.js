@@ -39,36 +39,6 @@ export function formatMoneyOrUnavailable(
   return formatMoneyOrDash(value)
 }
 
-export function formatCompact(
-  value,
-) {
-  if (
-    value === null ||
-    value === undefined ||
-    !Number.isFinite(
-      Number(value),
-    )
-  ) {
-    return '—'
-  }
-
-  const number = Number(value)
-
-  if (Math.abs(number) >= 1000000) {
-    return `${(
-      number / 1000000
-    ).toFixed(1)}M`
-  }
-
-  if (Math.abs(number) >= 1000) {
-    return `${(
-      number / 1000
-    ).toFixed(1)}k`
-  }
-
-  return number.toFixed(0)
-}
-
 export function formatChange(
   value,
 ) {
@@ -261,6 +231,12 @@ export function pluralize(
   return `${number} ${
     number === 1 ? singular : plural
   }`
+}
+
+export function formatReasonCode(reason) {
+  return String(reason)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, (char) => char.toUpperCase())
 }
 
 export function truncateId(

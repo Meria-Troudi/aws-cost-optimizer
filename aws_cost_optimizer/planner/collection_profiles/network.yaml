@@ -1,0 +1,743 @@
+# =============================================================================
+# COLLECTION PROFILES -- NETWORK
+#
+# PURPOSE
+# Define the minimum evidence required to explain AWS cost causes and identify
+# defensible optimization opportunities.
+# COLLECTION PRINCIPLE
+#   1. Why does this resource cost money?
+#   2. Is the resource actually being used?
+#   3. Is the resource oversized / over-provisioned?
+#   4. Is there a cheaper configuration or pricing model worth evaluating?
+#   5. Can current/historical billing be attributed to this resource?
+#   6. Is another AWS resource causing avoidable cost for this resource?
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+# =============================================================================
+# NETWORK / NAT GATEWAY
+# =============================================================================
+nat_gateway:
+
+  identity:
+    enabled: true
+    fields:
+      - source: NatGatewayId
+        output: nat_gateway_id
+      - source: State
+        output: state
+      - source: VpcId
+        output: vpc_id
+      - source: SubnetId
+        output: subnet_id
+      - source: ConnectivityType
+        output: connectivity_type
+      - source: AvailabilityMode
+        output: availability_mode
+      - source: Tags
+        output: tags
+
+  configuration:
+    enabled: true
+    fields:
+      - source: NatGatewayId
+        output: nat_gateway_id
+      - source: State
+        output: state
+      - source: VpcId
+        output: vpc_id
+      - source: SubnetId
+        output: subnet_id
+      - source: ConnectivityType
+        output: connectivity_type
+      - source: AvailabilityMode
+        output: availability_mode
+      - source: CreateTime
+        output: create_time
+      - source: DeleteTime
+        output: delete_time
+      - source: NatGatewayAddresses
+        output: nat_gateway_addresses
+      - source: AutoProvisionZones
+        output: auto_provision_zones
+      - source: AutoScalingIps
+        output: auto_scaling_ips
+      - source: AttachedAppliances
+        output: attached_appliances
+      - source: RouteTableId
+        output: route_table_id
+      - source: FailureCode
+        output: failure_code
+      - source: FailureMessage
+        output: failure_message
+      - source: Tags
+        output: tags
+
+  relationships:
+    enabled: true
+    collect:
+      - subnet
+      - vpc
+      - dependent_subnets
+      - effective_route_table
+      - effective_routes
+      - same_az_nat_gateways
+      - same_vpc_nat_gateways
+      - transit_gateway
+      - internet_gateway
+      - vpc_endpoints
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/NATGateway
+
+      dimension_sets:
+
+        nat_gateway:
+          - NatGatewayId
+
+        regional_nat_gateway:
+          - NatGatewayId
+          - AvailabilityZone
+
+      metrics:
+        - name: BytesInFromSource
+          statistic: Sum
+          unit: Bytes
+          key: bytes_in_from_source
+          group: traffic
+          role: core_traffic
+
+        - name: BytesOutToDestination
+          statistic: Sum
+          unit: Bytes
+          key: bytes_out_to_destination
+          group: traffic
+          role: core_traffic
+
+        - name: BytesInFromDestination
+          statistic: Sum
+          unit: Bytes
+          key: bytes_in_from_destination
+          group: traffic
+          role: core_traffic
+
+        - name: BytesOutToSource
+          statistic: Sum
+          unit: Bytes
+          key: bytes_out_to_source
+          group: traffic
+          role: core_traffic
+
+        - name: PeakBytesPerSecond
+          statistic: Maximum
+          unit: Bytes/Second
+          key: peak_bytes_per_second
+          group: traffic
+          role: peak
+
+        - name: ActiveConnectionCount
+          statistic: Maximum
+          unit: Count
+          key: active_connection_count
+          group: connection
+          role: core_connection
+
+        - name: ConnectionAttemptCount
+          statistic: Sum
+          unit: Count
+          key: connection_attempt_count
+          group: connection
+          role: diagnostic
+
+        - name: ConnectionEstablishedCount
+          statistic: Sum
+          unit: Count
+          key: connection_established_count
+          group: connection
+          role: diagnostic
+
+        - name: ErrorPortAllocation
+          statistic: Sum
+          unit: Count
+          key: error_port_allocation
+          group: connection
+          role: diagnostic
+
+        - name: IdleTimeoutCount
+          statistic: Sum
+          unit: Count
+          key: idle_timeout_count
+          group: connection
+          role: diagnostic
+
+        - name: PacketsDropCount
+          statistic: Sum
+          unit: Count
+          key: packets_drop_count
+          group: connection
+          role: diagnostic
+
+        - name: PacketsInFromSource
+          statistic: Sum
+          unit: Count
+          key: packets_in_from_source
+          group: connection
+          role: packet
+
+        - name: PacketsInFromDestination
+          statistic: Sum
+          unit: Count
+          key: packets_in_from_destination
+          group: connection
+          role: packet
+
+        - name: PacketsOutToDestination
+          statistic: Sum
+          unit: Count
+          key: packets_out_to_destination
+          group: connection
+          role: packet
+
+        - name: PacketsOutToSource
+          statistic: Sum
+          unit: Count
+          key: packets_out_to_source
+          group: connection
+          role: packet
+
+        - name: PeakPacketsPerSecond
+          statistic: Maximum
+          unit: Count
+          key: peak_packets_per_second
+          group: connection
+          role: peak
+
+  topology:
+    enabled: true
+
+  states:
+    active_route_states:
+      - active
+    operational_states:
+      - available
+
+
+
+# =============================================================================
+# NETWORK / PUBLIC IPv4
+# =============================================================================
+
+public_ipv4:
+
+  identity:
+    enabled: true
+    fields:
+      - public_ip
+      - allocation_id
+      - association_id
+      - resource_id
+      - resource_type
+      - source
+      - network_interface_id
+      - network_interface_type
+      - requester_managed
+      - requester_id
+      - tags
+
+  configuration:
+    enabled: true
+    fields:
+
+      - public_ip
+      - allocation_id
+      - association_id
+      - associated
+      - state
+
+      - resource_id
+      - resource_type
+      - instance_id
+      - instance_state
+      - network_interface_id
+      - network_interface_type
+      - network_interface_owner_id
+
+      - vpc_id
+      - subnet_id
+      - availability_zone
+
+      - requester_managed
+      - requester_id
+      - service_managed
+      - service_principal
+
+      - public_ip_type
+      - address_type
+      - address_source
+      - public_ipv4_pool
+      - network_border_group
+      - customer_owned_ip
+      - customer_owned_ipv4_pool
+
+      - cost_relevant
+      - billing_usage_type
+
+      - tags
+
+  relationships:
+    enabled: true
+    collect:
+      - associated_instance
+      - associated_network_interface
+      - subnet
+      - vpc
+      - requester
+      - service
+
+  observations:
+    enabled: false
+  topology:
+    enabled: false
+
+
+
+# =============================================================================
+# NETWORK / VPC ENDPOINT
+
+vpc_endpoint:
+
+  identity:
+    enabled: true
+    fields:
+      - vpc_endpoint_id
+      - vpc_id
+      - service_name
+      - service_region
+      - endpoint_type
+      - category
+      - state
+      - owner_id
+      - requester_managed
+      - tags
+
+  configuration:
+    enabled: true
+    fields:
+
+      - vpc_endpoint_id
+      - vpc_id
+      - service_name
+      - service_region
+      - endpoint_type
+      - category
+      - state
+      - creation_timestamp
+
+      # Interface endpoint.
+      - private_dns_enabled
+      - dns_options
+      - subnet_ids
+      - network_interface_ids
+      - security_group_ids
+
+      # Gateway endpoint.
+      - route_table_ids
+
+      - owner_id
+      - requester_managed
+
+      - ip_address_type
+
+      - last_error
+      - failure_reason
+
+      - is_gateway
+      - is_interface
+      - is_gateway_load_balancer
+      - is_resource
+      - is_service_network
+
+      - tags
+
+  relationships:
+    enabled: true
+    collect:
+
+      - vpc
+
+      # Direct endpoint placement.
+      - subnets
+      - network_interfaces
+
+      # Endpoint-specific relationships.
+      - nat_gateway_dependencies
+      - transit_gateway_dependencies
+      - internet_gateway_dependencies
+      - peering_dependencies
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/PrivateLinkEndpoints
+
+      dimension_sets:
+
+        endpoint:
+          - Endpoint Type
+          - Service Name
+          - VPC Endpoint Id
+          - VPC Id
+
+        interface_subnet:
+          - Endpoint Type
+          - Service Name
+          - Subnet Id
+          - VPC Endpoint Id
+          - VPC Id
+
+      metrics:
+
+        - name: BytesProcessed
+          statistic: Sum
+          unit: Bytes
+          key: bytes_processed
+
+        - name: ActiveConnections
+          statistic: Maximum
+          unit: Count
+          key: active_connections
+
+        - name: NewConnections
+          statistic: Sum
+          unit: Count
+          key: new_connections
+
+  topology:
+    enabled: true
+
+# =============================================================================
+# NETWORK / TRANSIT GATEWAY
+# =============================================================================
+# NETWORK / TRANSIT GATEWAY
+# =============================================================================
+
+transit_gateway:
+
+  # ---------------------------------------------------------------------------
+  # IDENTITY
+  # ---------------------------------------------------------------------------
+
+  identity:
+    enabled: true
+
+    fields:
+      - source: TransitGatewayId
+        output: transit_gateway_id
+
+      - source: State
+        output: state
+
+      - source: OwnerId
+        output: owner_id
+
+      - source: Description
+        output: description
+
+      - source: CreationTime
+        output: creation_time
+
+      - source: Tags
+        output: tags
+
+  # ---------------------------------------------------------------------------
+  # CONFIGURATION
+  # ---------------------------------------------------------------------------
+
+  configuration:
+    enabled: true
+
+    fields:
+      - source: TransitGatewayId
+        output: transit_gateway_id
+
+      - source: State
+        output: state
+
+      - source: Options.AmazonSideAsn
+        output: amazon_side_asn
+
+      - source: Options.TransitGatewayCidrBlocks
+        output: transit_gateway_cidr_blocks
+
+      - source: Options.DefaultRouteTableAssociation
+        output: default_route_table_association
+
+      - source: Options.DefaultRouteTablePropagation
+        output: default_route_table_propagation
+
+      - source: Options.AssociationDefaultRouteTableId
+        output: association_default_route_table_id
+
+      - source: Options.PropagationDefaultRouteTableId
+        output: propagation_default_route_table_id
+
+      - source: Options.DnsSupport
+        output: dns_support
+
+      - source: Options.VpnEcmpSupport
+        output: vpn_ecmp_support
+
+      - source: Options.MulticastSupport
+        output: multicast_support
+
+      - source: Options.AutoAcceptSharedAttachments
+        output: auto_accept_shared_attachments
+
+      - source: Options.SecurityGroupReferencingSupport
+        output: security_group_referencing_support
+
+  # ---------------------------------------------------------------------------
+  # RELATIONSHIPS
+  #
+  # Required to explain:
+  # - what is attached to the TGW
+  # - whether attachments are actually used
+  # - whether routing topology exists
+  # ---------------------------------------------------------------------------
+
+  relationships:
+    enabled: true
+
+    collect:
+      - vpc_attachments
+      - peering_attachments
+      - vpn_attachments
+      - direct_connect_gateway_attachments
+      - connect_attachments
+      - network_function_attachments
+      - other_attachments
+
+      - route_tables
+      - associations
+      - propagations
+      - routes
+
+  # ---------------------------------------------------------------------------
+  # OBSERVATIONS
+  #
+  # Cost optimization needs usage evidence.
+  # Gateway-level metrics establish aggregate TGW activity.
+  # Attachment-level metrics identify which attachment generates traffic.
+  # Drop metrics are diagnostic evidence and should not independently
+  # generate a cost recommendation.
+  # ---------------------------------------------------------------------------
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/TransitGateway
+
+      dimension_sets:
+
+        gateway:
+          - TransitGateway
+
+        attachment:
+          - TransitGatewayAttachment
+
+      metrics:
+
+        # ---------------------------------------------------------------------
+        # TRAFFIC
+        # ---------------------------------------------------------------------
+
+        - name: BytesIn
+          statistic: Sum
+          unit: Bytes
+          key: bytes_in
+          group: traffic
+          role: core_traffic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: BytesOut
+          statistic: Sum
+          unit: Bytes
+          key: bytes_out
+          group: traffic
+          role: core_traffic
+          scopes:
+            - gateway
+            - attachment
+
+        # ---------------------------------------------------------------------
+        # PACKETS
+        #
+        # Useful as supporting activity evidence.
+        # They should not replace byte-based traffic evaluation.
+        # ---------------------------------------------------------------------
+
+        - name: PacketsIn
+          statistic: Sum
+          unit: Count
+          key: packets_in
+          group: traffic
+          role: packet
+          scopes:
+            - gateway
+            - attachment
+
+        - name: PacketsOut
+          statistic: Sum
+          unit: Count
+          key: packets_out
+          group: traffic
+          role: packet
+          scopes:
+            - gateway
+            - attachment
+
+        # ---------------------------------------------------------------------
+        # DROP / ROUTING DIAGNOSTICS
+        #
+        # These explain ineffective or misrouted traffic.
+        # They are evidence, not direct cost findings.
+        # ---------------------------------------------------------------------
+
+        - name: BytesDropCountBlackhole
+          statistic: Sum
+          unit: Bytes
+          key: bytes_drop_blackhole
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: BytesDropCountNoRoute
+          statistic: Sum
+          unit: Bytes
+          key: bytes_drop_no_route
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: BytesDropCountNoPolicy
+          statistic: Sum
+          unit: Bytes
+          key: bytes_drop_no_policy
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: PacketDropCountBlackhole
+          statistic: Sum
+          unit: Count
+          key: packets_drop_blackhole
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: PacketDropCountNoRoute
+          statistic: Sum
+          unit: Count
+          key: packets_drop_no_route
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: PacketDropCountNoPolicy
+          statistic: Sum
+          unit: Count
+          key: packets_drop_no_policy
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+        - name: PacketDropCountTTLExpired
+          statistic: Sum
+          unit: Count
+          key: packets_drop_ttl_expired
+          group: drops
+          role: diagnostic
+          scopes:
+            - gateway
+            - attachment
+
+  # ---------------------------------------------------------------------------
+  # TOPOLOGY
+  # ---------------------------------------------------------------------------
+
+  topology:
+    enabled: true
+
+  # ---------------------------------------------------------------------------
+  # STATES
+  # ---------------------------------------------------------------------------
+
+  states:
+
+    operational_states:
+      - available
+
+    transitional_states:
+      - pending
+
+    inactive_states:
+      - modifying
+      - deleting
+      - deleted
+
+  # ---------------------------------------------------------------------------
+  # ATTACHMENT TYPES
+  # ---------------------------------------------------------------------------
+
+  attachment_types:
+
+    vpc:
+      - vpc
+
+    peering:
+      - peering
+      - tgw-peering
+
+    vpn:
+      - vpn
+
+    direct_connect:
+      - direct-connect-gateway
+
+    connect:
+      - connect
+
+    network_function:
+      - network-function
+
+    client_vpn:
+      - client-vpn
+
+    other:
+      - vpn-concentrator
+

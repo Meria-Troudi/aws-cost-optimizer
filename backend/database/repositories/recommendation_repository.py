@@ -184,6 +184,7 @@ def save_recommendations(
                 title=str(data.get("title") or "Review resource"),
                 reason=str(data.get("reason") or ""),
                 action=str(data.get("action") or ""),
+                plan=_json_value(data.get("plan") or {}),
                 priority=priority,
                 confidence=confidence,
                 affected_resources=_json_value(affected_resources),
@@ -209,6 +210,8 @@ def save_recommendations(
             recommendation.reason = str(data.get("reason") or recommendation.reason)
 
             recommendation.action = str(data.get("action") or recommendation.action)
+
+            recommendation.plan = _json_value(data.get("plan") or {})
 
             recommendation.priority = priority
             recommendation.confidence = confidence

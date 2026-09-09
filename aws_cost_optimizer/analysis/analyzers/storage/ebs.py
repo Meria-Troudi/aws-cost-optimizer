@@ -9,16 +9,8 @@ Supported findings:
     2. gp2 volume eligible for gp3 migration
     3. Provisioned IOPS with insufficient observed utilization
     4. Provisioned throughput with insufficient observed utilization
-    5. EBS volume with incomplete utilization evidence
 
-Important:
 
-    This analyzer does NOT attribute Cost Explorer service-level
-    EBS charges to individual volumes.
-
-    A billing amount in AnalysisContext is treated as contextual
-    evidence only. It is never presented as the cost of the
-    individual EBS volume.
 """
 
 from __future__ import annotations
@@ -30,6 +22,7 @@ from ...context import AnalysisContext
 from ...condition import EvidenceStatement
 from ...evidence import Evidence
 from ...finding import Finding, ObservationPeriod
+from ...metrics import metric_statistic
 from ...registry import register
 
 
@@ -236,7 +229,7 @@ class EBSAnalyzer(Analyzer):
 
         return Finding(
             finding_type="unattached_ebs_volume",
-            title="Review unattached EBS volume",
+            title="Unattached EBS volume",
             resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
@@ -251,21 +244,6 @@ class EBSAnalyzer(Analyzer):
             conditions=conditions,
             evidence=evidence,
             observation_period=(self._observation_period(context)),
-            limitations=[
-                (
-                    "Unattached state alone does not prove "
-                    "the volume is safe to delete."
-                ),
-                (
-                    "The volume may be intentionally retained "
-                    "for backup, recovery, migration, or "
-                    "operational purposes."
-                ),
-                (
-                    "Business ownership and retention requirements "
-                    "must be confirmed before deletion."
-                ),
-            ],
             metadata={
                 "region": context.region,
                 "volume_type": volume.get("volume_type"),
@@ -329,7 +307,7 @@ class EBSAnalyzer(Analyzer):
 
         return Finding(
             finding_type="ebs_gp2_to_gp3",
-            title="Review gp2 EBS volume for gp3 migration",
+            title="gp2 EBS volume eligible for gp3 migration",
             resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
@@ -348,18 +326,6 @@ class EBSAnalyzer(Analyzer):
             conditions=conditions,
             evidence=evidence,
             observation_period=(self._observation_period(context)),
-            limitations=[
-                (
-                    "Migration suitability depends on the "
-                    "volume's IOPS, throughput, workload, "
-                    "and application requirements."
-                ),
-                ("This finding does not claim a specific " "savings amount."),
-                (
-                    "Actual pricing depends on region and "
-                    "provisioned gp3 configuration."
-                ),
-            ],
             metadata={
                 "region": context.region,
                 "current_volume_type": "gp2",
@@ -402,24 +368,39 @@ class EBSAnalyzer(Analyzer):
         }:
             return None
 
-        metric_name = "VolumeReadOps"
+        # CloudWatch operation-count metrics are collected with
+        # statistic Sum: "value" is the raw operation TOTAL across all
+        # datapoints in the query window, NOT an operations-per-second
+        # rate. Provisioned IOPS is operations per SECOND, so the
+        # utilization ratio requires an explicit period conversion:
+        #
+        #   (read ops + write ops) / period_seconds  -> avg IOPS
+        #   avg IOPS / provisioned IOPS              -> utilization
+        #
+        # Read-only evidence would silently understate total IOPS
+        # utilization, so BOTH directions are required.
+        read_metric = "VolumeReadOps"
+        write_metric = "VolumeWriteOps"
 
-        metric = context.metric(metric_name)
+        totals_bundle = self._sum_metric_totals(
+            context,
+            (read_metric, write_metric),
+        )
 
-        if not metric:
+        if totals_bundle is None:
             return None
 
-        datapoints = context.metric_datapoints(metric_name)
+        period_seconds, datapoints, totals = totals_bundle
 
-        if datapoints < self.MIN_OBSERVATION_DATAPOINTS:
-            return None
+        read_operations = totals.get(read_metric, 0.0)
 
-        observed = context.metric_value(metric_name)
+        write_operations = totals.get(write_metric, 0.0)
 
-        if observed is None:
-            return None
+        observed_operations = read_operations + write_operations
 
-        utilization = observed / provisioned if provisioned > 0 else None
+        observed_iops = observed_operations / period_seconds
+
+        utilization = observed_iops / provisioned if provisioned > 0 else None
 
         if utilization is None:
             return None
@@ -439,23 +420,47 @@ class EBSAnalyzer(Analyzer):
             ),
             EvidenceStatement(
                 name="observed read operations",
-                value=observed,
+                value=read_operations,
                 description=(
-                    "Observed CloudWatch read-operation "
-                    "value used as utilization evidence."
+                    "Sum of VolumeReadOps over the observation "
+                    "window (CloudWatch statistic Sum)."
                 ),
                 source=["CloudWatch"],
-                evidence_keys=[f"observations.cloudwatch.metrics." f"{metric_name}"],
+                evidence_keys=[f"observations.cloudwatch.metrics.{read_metric}"],
                 unit="operations",
+                observed=True,
+            ),
+            EvidenceStatement(
+                name="observed write operations",
+                value=write_operations,
+                description=(
+                    "Sum of VolumeWriteOps over the observation "
+                    "window (CloudWatch statistic Sum)."
+                ),
+                source=["CloudWatch"],
+                evidence_keys=[f"observations.cloudwatch.metrics.{write_metric}"],
+                unit="operations",
+                observed=True,
+            ),
+            EvidenceStatement(
+                name="metric period seconds",
+                value=period_seconds,
+                description=(
+                    "CloudWatch datapoint period used to convert "
+                    "summed operations into operations per second."
+                ),
+                source=["CloudWatch", "derived"],
+                evidence_keys=["observations.derived.metric_period_seconds"],
+                unit="seconds",
                 observed=True,
             ),
             EvidenceStatement(
                 name="estimated IOPS utilization",
                 value=utilization,
                 description=(
-                    "Observed operations divided by "
-                    "provisioned IOPS. This is an approximation "
-                    "and depends on the metric period."
+                    "Average observed IOPS (combined read and write "
+                    "operations per second) divided by provisioned "
+                    "IOPS."
                 ),
                 source=["CloudWatch", "derived"],
                 evidence_keys=["observations.derived.iops_utilization"],
@@ -471,8 +476,12 @@ class EBSAnalyzer(Analyzer):
                 "derived": {
                     "iops_utilization": utilization,
                     "provisioned_iops": provisioned,
-                    "observed_operations": observed,
-                    "metric": metric_name,
+                    "observed_read_operations": read_operations,
+                    "observed_write_operations": write_operations,
+                    "observed_operations_total": observed_operations,
+                    "observed_iops": observed_iops,
+                    "metric_period_seconds": period_seconds,
+                    "statistic": "Sum",
                     "datapoints": datapoints,
                 }
             },
@@ -480,7 +489,7 @@ class EBSAnalyzer(Analyzer):
 
         return Finding(
             finding_type="ebs_low_iops_utilization",
-            title="Review provisioned EBS IOPS",
+            title="Provisioned EBS IOPS",
             resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
@@ -489,31 +498,20 @@ class EBSAnalyzer(Analyzer):
             confidence="medium",
             reason=(
                 f"EBS volume {volume_id} has "
-                f"{provisioned:,.0f} provisioned IOPS while "
-                f"the observed metric indicates approximately "
+                f"{provisioned:,.0f} provisioned IOPS while the "
+                f"combined read and write workload averages "
+                f"approximately {observed_iops:,.1f} operations per "
+                f"second over the observation window, about "
                 f"{utilization:.1%} utilization."
             ),
             conditions=conditions,
             evidence=evidence,
             observation_period=(self._observation_period(context)),
-            limitations=[
-                (
-                    "The utilization calculation is an "
-                    "approximation based on the available "
-                    "CloudWatch metric and its period."
-                ),
-                ("Read operations alone do not represent " "total I/O demand."),
-                (
-                    "Peak workload requirements must be "
-                    "considered before changing provisioned IOPS."
-                ),
-            ],
             metadata={
                 "region": context.region,
                 "volume_type": volume_type,
                 "provisioned_iops": provisioned,
-                "observed_metric": metric_name,
-                "observed_value": observed,
+                "observed_iops": observed_iops,
                 "utilization": utilization,
             },
             recommendation_eligible=True,
@@ -548,31 +546,36 @@ class EBSAnalyzer(Analyzer):
         if volume_type != "gp3":
             return None
 
-        metric_name = "VolumeWriteBytes"
+        # Byte metrics are collected with statistic Sum: "value" is
+        # the total bytes transferred across the query window, not a
+        # rate. Provisioned throughput is MiB per SECOND, so both
+        # read AND write byte totals are required and must be
+        # normalized by the metric period:
+        #
+        #   (read bytes + write bytes) / period_seconds / MiB
+        #
+        # Write-only evidence would understate total throughput, so
+        # the finding is explicitly TOTAL throughput utilization.
+        read_metric = "VolumeReadBytes"
+        write_metric = "VolumeWriteBytes"
 
-        metric = context.metric(metric_name)
+        totals_bundle = self._sum_metric_totals(
+            context,
+            (read_metric, write_metric),
+        )
 
-        if not metric:
+        if totals_bundle is None:
             return None
 
-        datapoints = context.metric_datapoints(metric_name)
+        period_seconds, datapoints, totals = totals_bundle
 
-        if datapoints < self.MIN_OBSERVATION_DATAPOINTS:
-            return None
+        read_bytes = totals.get(read_metric, 0.0)
 
-        observed = context.metric_value(metric_name)
+        write_bytes = totals.get(write_metric, 0.0)
 
-        if observed is None:
-            return None
+        observed_bytes = read_bytes + write_bytes
 
-        # CloudWatch byte metrics need a period conversion
-        # before they can be compared to MiB/s.
-        period_seconds = self._metric_period_seconds(metric)
-
-        if period_seconds is None:
-            return None
-
-        observed_mibps = observed / period_seconds / 1024 / 1024
+        observed_mibps = observed_bytes / period_seconds / 1024 / 1024
 
         utilization = observed_mibps / provisioned
 
@@ -590,19 +593,48 @@ class EBSAnalyzer(Analyzer):
                 observed=True,
             ),
             EvidenceStatement(
-                name="observed write bytes",
-                value=observed,
-                description=("Observed CloudWatch write-byte value."),
+                name="observed read bytes",
+                value=read_bytes,
+                description=(
+                    "Sum of VolumeReadBytes over the observation "
+                    "window (CloudWatch statistic Sum)."
+                ),
                 source=["CloudWatch"],
-                evidence_keys=[f"observations.cloudwatch.metrics." f"{metric_name}"],
+                evidence_keys=[f"observations.cloudwatch.metrics.{read_metric}"],
                 unit="bytes",
                 observed=True,
             ),
             EvidenceStatement(
-                name="estimated throughput utilization",
+                name="observed write bytes",
+                value=write_bytes,
+                description=(
+                    "Sum of VolumeWriteBytes over the observation "
+                    "window (CloudWatch statistic Sum)."
+                ),
+                source=["CloudWatch"],
+                evidence_keys=[f"observations.cloudwatch.metrics.{write_metric}"],
+                unit="bytes",
+                observed=True,
+            ),
+            EvidenceStatement(
+                name="metric period seconds",
+                value=period_seconds,
+                description=(
+                    "CloudWatch datapoint period used to convert "
+                    "summed bytes into bytes per second."
+                ),
+                source=["CloudWatch", "derived"],
+                evidence_keys=["observations.derived.metric_period_seconds"],
+                unit="seconds",
+                observed=True,
+            ),
+            EvidenceStatement(
+                name="estimated total throughput utilization",
                 value=utilization,
                 description=(
-                    "Observed throughput divided by " "provisioned throughput."
+                    "Average total throughput (combined read and "
+                    "write bytes per second) divided by provisioned "
+                    "throughput."
                 ),
                 source=["CloudWatch", "derived"],
                 evidence_keys=["observations.derived.throughput_utilization"],
@@ -618,10 +650,12 @@ class EBSAnalyzer(Analyzer):
                 "derived": {
                     "throughput_utilization": utilization,
                     "provisioned_throughput_mibps": provisioned,
-                    "observed_write_bytes": observed,
+                    "observed_read_bytes": read_bytes,
+                    "observed_write_bytes": write_bytes,
+                    "observed_bytes_total": observed_bytes,
                     "observed_throughput_mibps": observed_mibps,
                     "metric_period_seconds": period_seconds,
-                    "metric": metric_name,
+                    "statistic": "Sum",
                     "datapoints": datapoints,
                 }
             },
@@ -629,7 +663,7 @@ class EBSAnalyzer(Analyzer):
 
         return Finding(
             finding_type="ebs_low_throughput_utilization",
-            title="Review provisioned EBS throughput",
+            title="Provisioned EBS throughput",
             resource_type=(context.resource_type or "ebs_volume"),
             resource_id=volume_id,
             analyzer=self.name,
@@ -639,24 +673,15 @@ class EBSAnalyzer(Analyzer):
             reason=(
                 f"EBS volume {volume_id} has "
                 f"{provisioned:,.2f} MiB/s provisioned "
-                f"throughput while the observed metric "
-                f"indicates approximately "
-                f"{utilization:.1%} utilization."
+                f"throughput while the combined read and write "
+                f"workload averages approximately "
+                f"{observed_mibps:,.4f} MiB/s over the observation "
+                f"window, about {utilization:.1%} total throughput "
+                f"utilization."
             ),
             conditions=conditions,
             evidence=evidence,
             observation_period=(self._observation_period(context)),
-            limitations=[
-                ("The calculation depends on the " "CloudWatch metric period."),
-                (
-                    "Write throughput alone does not "
-                    "represent total workload throughput."
-                ),
-                (
-                    "Peak workload requirements must be "
-                    "considered before reducing throughput."
-                ),
-            ],
             metadata={
                 "region": context.region,
                 "volume_type": volume_type,
@@ -805,6 +830,70 @@ class EBSAnalyzer(Analyzer):
                 return float(value)
 
         return None
+
+    def _sum_metric_totals(
+        self,
+        context: AnalysisContext,
+        metric_names: tuple[str, str],
+    ) -> tuple[float, int, dict[str, float]] | None:
+        """
+        Fail-closed Sum-metric reader.
+
+        Returns (period_seconds, min_datapoints, {name: total}) only
+        when EVERY requested metric is observed, was collected with
+        statistic Sum, carries at least MIN_OBSERVATION_DATAPOINTS
+        datapoints, and records an explicit period. Anything else
+        returns None -- a utilization ratio computed from unknown
+        statistic/period semantics is worse than no finding.
+        """
+
+        totals: dict[str, float] = {}
+
+        min_datapoints: int | None = None
+
+        period_seconds: float | None = None
+
+        for name in metric_names:
+
+            metric = context.metric(name)
+
+            if not metric:
+                return None
+
+            if metric_statistic(metric) != "Sum":
+                return None
+
+            datapoints = context.metric_datapoints(name)
+
+            if datapoints < self.MIN_OBSERVATION_DATAPOINTS:
+                return None
+
+            value = context.metric_value(name)
+
+            if value is None:
+                return None
+
+            metric_period = self._metric_period_seconds(metric)
+
+            if metric_period is None or metric_period <= 0:
+                return None
+
+            # All metrics in one profile share one period; require
+            # agreement rather than assuming it.
+            if period_seconds is not None and period_seconds != metric_period:
+                return None
+
+            period_seconds = metric_period
+
+            if min_datapoints is None or datapoints < min_datapoints:
+                min_datapoints = datapoints
+
+            totals[name] = float(value)
+
+        if period_seconds is None or min_datapoints is None:
+            return None
+
+        return period_seconds, min_datapoints, totals
 
     @staticmethod
     def _observation_period(

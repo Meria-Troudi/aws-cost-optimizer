@@ -5,20 +5,35 @@ The collector supplies evidence.
 
 This analyzer only evaluates rules.
 
-Rules
------
+Cost-oriented rules
+-------------------
+A single load balancer is reported at most ONCE, with one canonical
+optimization finding.
+
+CANONICAL idle condition (targets == 0, complete observation, no
+traffic):
+- elb_idle_with_cost  -> cost resource-attributed (elimination)
+- elb_idle            -> cost not resource-attributed (review)
+
+Otherwise the granular rules below run in priority order and only the
+FIRST qualifying finding is returned:
 1. No observed activity.
 2. Low observed traffic.
 3. No registered targets.
-4. Idle target group.
-5. No healthy targets + no traffic.
+4. No healthy targets + no traffic.
+
+The overlapping granular rules (no activity / no targets / empty target
+groups) all describe the same idle condition and must never produce
+duplicate "Review Load Balancer Removal" recommendations for one ELB.
 
 Important
---------
+---------
 - Missing CloudWatch data is never zero.
 - Unhealthy targets alone are never an optimization finding.
 - Incomplete target-health data never becomes zero targets.
 - No savings are invented.
+- Billing amounts are used only when resource-level attribution
+  has explicitly been established by reconciliation.
 - Findings are review recommendations, not deletion commands.
 """
 
@@ -31,10 +46,7 @@ from ...condition import EvidenceStatement
 from ...context import AnalysisContext
 from ...evidence import Evidence
 from ...finding import Finding, ObservationPeriod
-from ...metrics import (
-    metric_has_observed_data,
-    metric_summary,
-)
+from ...metrics import metric_has_observed_data
 from ...registry import register
 
 # ======================================================================
@@ -44,21 +56,25 @@ from ...registry import register
 DEFAULT_POLICY = {
     "activity": {
         "enabled": True,
-        "minimum_metric_coverage": 0.80,
     },
     "low_traffic": {
         "enabled": True,
-        "minimum_metric_coverage": 0.80,
-        "request_count_max": 100.0,
+        # ALB
+        "application_request_count_max": 100.0,
+        # All ELB families
         "processed_gib_max": 1.0,
+        # NLB / GWLB
+        "network_new_flow_count_max": 100.0,
+        "gateway_new_flow_count_max": 100.0,
     },
     "target_groups": {
         "enabled": True,
-        "minimum_health_completeness": True,
     },
     "healthy_targets": {
         "enabled": True,
-        "minimum_health_completeness": True,
+    },
+    "idle_with_cost": {
+        "enabled": True,
     },
 }
 
@@ -87,22 +103,11 @@ ELB_CONFIGURATION_FIELDS = (
 )
 
 
-TRAFFIC_METRICS = (
-    "request_count",
-    "processed_bytes",
-)
-
-CONNECTION_METRICS = (
-    "active_connections",
-    "new_connections",
-)
-
-
 @register
 class ElbAnalyzer(Analyzer):
 
     name = "elb"
-    version = "3.0"
+    version = "4.0"
 
     SUPPORTED_RESOURCE_TYPES = {
         "load_balancer",
@@ -137,25 +142,41 @@ class ElbAnalyzer(Analyzer):
         if not self._eligible(context):
             return []
 
-        findings: list[Finding] = []
+        # A single load balancer is reported at most ONCE, with ONE
+        # canonical optimization finding.  Overlapping granular rules
+        # (no activity, no targets, empty target groups, ...) all
+        # describe the same underlying idle condition, so reporting all of
+        # them produces duplicate "Review Load Balancer Removal"
+        # recommendations for the same resource.  Instead we:
+        #
+        #   1. detect the canonical idle condition (0 targets + complete
+        #      observation + no traffic) -> elb_idle_with_cost /
+        #      elb_idle, carrying the supporting signals as metadata;
+        #   2. otherwise run the granular checks in priority order and
+        #      keep only the FIRST qualifying finding.
+        signals = self._signals(context)
 
-        checks = (
+        canonical = self._canonical_idle_finding(
+            context,
+            signals,
+        )
+
+        if canonical is not None:
+            return [canonical]
+
+        for check in (
             self._check_no_observed_activity,
             self._check_low_traffic,
             self._check_no_registered_targets,
-            self._check_idle_target_groups,
             self._check_no_healthy_targets_no_traffic,
-            self._check_idle_with_cost,
-        )
-
-        for check in checks:
+        ):
 
             finding = check(context)
 
             if finding is not None:
-                findings.append(finding)
+                return [finding]
 
-        return findings
+        return []
 
     # ==================================================================
     # POLICY
@@ -260,9 +281,8 @@ class ElbAnalyzer(Analyzer):
 
         configuration = cls._configuration(context)
 
-        allowed = configuration.get("optimization_allowed")
+        if configuration.get("optimization_allowed") is False:
 
-        if allowed is False:
             return False
 
         state = str(configuration.get("state") or "").strip().lower()
@@ -273,7 +293,19 @@ class ElbAnalyzer(Analyzer):
         return True
 
     # ==================================================================
-    # METRIC HELPERS
+    # RESOURCE FAMILY
+    # ==================================================================
+
+    @classmethod
+    def _lb_type(
+        cls,
+        context: AnalysisContext,
+    ) -> str:
+
+        return str(cls._configuration(context).get("type") or "").strip().lower()
+
+    # ==================================================================
+    # METRICS
     # ==================================================================
 
     @staticmethod
@@ -283,8 +315,11 @@ class ElbAnalyzer(Analyzer):
     ) -> dict[str, Any]:
 
         try:
+
             value = context.metric_summary(name)
+
         except Exception:
+
             return {}
 
         return (
@@ -301,7 +336,6 @@ class ElbAnalyzer(Analyzer):
         cls,
         context: AnalysisContext,
         name: str,
-        minimum_coverage: float,
     ) -> bool:
 
         metric = cls._metric(
@@ -312,48 +346,9 @@ class ElbAnalyzer(Analyzer):
         if not metric_has_observed_data(metric):
             return False
 
-        coverage = metric.get("coverage_ratio")
-
-        if not isinstance(
-            coverage,
+        return isinstance(
+            metric.get("value"),
             (int, float),
-        ):
-            return False
-
-        return float(coverage) >= minimum_coverage
-
-    @classmethod
-    def _all_metrics_ready(
-        cls,
-        context: AnalysisContext,
-        names: tuple[str, ...],
-        minimum_coverage: float,
-    ) -> bool:
-
-        return all(
-            cls._metric_ready(
-                context,
-                name,
-                minimum_coverage,
-            )
-            for name in names
-        )
-
-    @classmethod
-    def _any_metrics_ready(
-        cls,
-        context: AnalysisContext,
-        names: tuple[str, ...],
-        minimum_coverage: float,
-    ) -> bool:
-
-        return any(
-            cls._metric_ready(
-                context,
-                name,
-                minimum_coverage,
-            )
-            for name in names
         )
 
     @classmethod
@@ -382,7 +377,7 @@ class ElbAnalyzer(Analyzer):
         return None
 
     # ==================================================================
-    # TRAFFIC EVIDENCE
+    # TRAFFIC STATE
     # ==================================================================
 
     @classmethod
@@ -391,191 +386,109 @@ class ElbAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        policy = cls._policy(context)
+        lb_type = cls._lb_type(context)
 
-        activity_policy = policy.get(
-            "activity",
-            {},
-        )
-
-        minimum_coverage = float(
-            activity_policy.get(
-                "minimum_metric_coverage",
-                0.80,
-            )
-        )
-
-        request_ready = cls._metric_ready(
-            context,
-            "request_count",
-            minimum_coverage,
-        )
-
-        bytes_ready = cls._metric_ready(
+        processed_bytes = cls._metric_value(
             context,
             "processed_bytes",
-            minimum_coverage,
         )
 
-        active_ready = cls._metric_ready(
-            context,
-            "active_connections",
-            minimum_coverage,
-        )
-
-        new_ready = cls._metric_ready(
-            context,
-            "new_connections",
-            minimum_coverage,
-        )
-
-        request_count = (
-            cls._metric_value(
-                context,
-                "request_count",
-            )
-            if request_ready
-            else None
-        )
-
-        processed_bytes = (
-            cls._metric_value(
-                context,
-                "processed_bytes",
-            )
-            if bytes_ready
-            else None
-        )
-
-        active_connections = (
-            cls._metric_value(
-                context,
-                "active_connections",
-            )
-            if active_ready
-            else None
-        )
-
-        new_connections = (
-            cls._metric_value(
-                context,
-                "new_connections",
-            )
-            if new_ready
-            else None
-        )
-
-        active_flow_ready = cls._metric_ready(
-            context,
-            "active_flow_count",
-            minimum_coverage,
-        )
-
-        new_flow_ready = cls._metric_ready(
-            context,
-            "new_flow_count",
-            minimum_coverage,
-        )
-
-        active_flows = (
-            cls._metric_value(
-                context,
-                "active_flow_count",
-            )
-            if active_flow_ready
-            else None
-        )
-
-        new_flows = (
-            cls._metric_value(
-                context,
-                "new_flow_count",
-            )
-            if new_flow_ready
-            else None
-        )
-
-        lb_type = str(cls._configuration(context).get("type") or "").strip().lower()
-
-        # Different ELB families expose different primary traffic
-        # metrics (AWS/ApplicationELB has RequestCount; AWS/NetworkELB
-        # and AWS/GatewayELB do not). Requiring RequestCount
-        # universally makes NLB/GWLB traffic evidence permanently
-        # unreadable. Branch the readiness/observed requirement by
-        # LB type instead, and always accept ProcessedBytes as
-        # evidence since every family publishes it.
-        primary_values: list[float] = []
-
-        if processed_bytes is not None:
-            primary_values.append(processed_bytes)
+        request_count = None
+        active_connections = None
+        new_connections = None
+        active_flow_count = None
+        new_flow_count = None
 
         if lb_type == "application":
 
-            if request_count is not None:
-                primary_values.append(request_count)
+            request_count = cls._metric_value(
+                context,
+                "request_count",
+            )
+
+            required = (
+                request_count,
+                processed_bytes,
+            )
 
         elif lb_type == "network":
 
-            if active_flows is not None:
-                primary_values.append(active_flows)
+            active_connections = cls._metric_value(
+                context,
+                "active_connections",
+            )
 
-            if new_flows is not None:
-                primary_values.append(new_flows)
+            new_connections = cls._metric_value(
+                context,
+                "new_connections",
+            )
 
-            if active_connections is not None:
-                primary_values.append(active_connections)
+            active_flow_count = cls._metric_value(
+                context,
+                "active_flow_count",
+            )
 
-            if new_connections is not None:
-                primary_values.append(new_connections)
+            new_flow_count = cls._metric_value(
+                context,
+                "new_flow_count",
+            )
+
+            required = (
+                processed_bytes,
+                active_connections,
+                new_connections,
+                active_flow_count,
+                new_flow_count,
+            )
 
         elif lb_type == "gateway":
 
-            if active_flows is not None:
-                primary_values.append(active_flows)
+            active_flow_count = cls._metric_value(
+                context,
+                "active_flow_count",
+            )
 
-            if new_flows is not None:
-                primary_values.append(new_flows)
+            new_flow_count = cls._metric_value(
+                context,
+                "new_flow_count",
+            )
+
+            required = (
+                processed_bytes,
+                active_flow_count,
+                new_flow_count,
+            )
 
         else:
 
-            # Unknown/unclassified LB type: fall back to the
-            # original ALB-oriented requirement rather than
-            # guessing at a family-specific metric set.
-            if request_count is not None and processed_bytes is not None:
-                primary_values.append(request_count)
+            request_count = cls._metric_value(
+                context,
+                "request_count",
+            )
 
-        if not primary_values:
+            required = (
+                request_count,
+                processed_bytes,
+            )
 
-            return {
-                "ready": False,
-                "observed": None,
-                "request_count": request_count,
-                "processed_bytes": processed_bytes,
-                "processed_gib": (
-                    processed_bytes / (1024**3) if processed_bytes is not None else None
-                ),
-                "active_connections": active_connections,
-                "new_connections": new_connections,
-                "active_flows": active_flows,
-                "new_flows": new_flows,
-                "lb_type": lb_type,
-            }
-
-        traffic_positive = any(value > 0 for value in primary_values)
+        # Every metric relevant to this LB type must be observed --
+        # a single observed-zero metric alongside unqueried/no-data
+        # siblings is not proof the others are also zero.
+        ready = all(value is not None for value in required)
 
         return {
-            "ready": True,
-            "observed": traffic_positive,
+            "ready": ready,
+            "observed": (any(value > 0 for value in required) if ready else None),
+            "lb_type": lb_type,
             "request_count": request_count,
             "processed_bytes": processed_bytes,
             "processed_gib": (
                 processed_bytes / (1024**3) if processed_bytes is not None else None
             ),
-            "active_connections": active_connections,
-            "new_connections": new_connections,
-            "active_flows": active_flows,
-            "new_flows": new_flows,
-            "lb_type": lb_type,
+            "active_connections": (active_connections),
+            "new_connections": (new_connections),
+            "active_flow_count": (active_flow_count),
+            "new_flow_count": (new_flow_count),
         }
 
     # ==================================================================
@@ -607,45 +520,228 @@ class ElbAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        summary = cls._relationships(context).get(
+        value = cls._relationships(context).get(
             "summary",
             {},
         )
 
         return (
-            summary
+            value
             if isinstance(
-                summary,
+                value,
                 dict,
             )
             else {}
         )
 
+    # ==================================================================
+    # SIGNALS + CANONICAL IDLE
+    # ==================================================================
+
     @classmethod
-    def _target_groups(
+    def _signals(
         cls,
         context: AnalysisContext,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
 
-        groups = cls._relationships(context).get(
-            "target_groups",
-            [],
-        )
+        summary = cls._summary(context)
+
+        traffic = cls._traffic_state(context)
+
+        target_count = summary.get("target_count")
+
+        target_group_count = summary.get("target_group_count")
+
+        processed_bytes = traffic.get("processed_bytes")
+
+        observation_complete = traffic.get("ready") is True
+
+        return {
+            "no_registered_targets": (
+                isinstance(
+                    target_count,
+                    int,
+                )
+                and target_count == 0
+            ),
+            "no_observed_requests": (traffic.get("observed") is False),
+            "no_processed_bytes": (
+                isinstance(
+                    processed_bytes,
+                    (int, float),
+                )
+                and not isinstance(
+                    processed_bytes,
+                    bool,
+                )
+                and processed_bytes == 0
+            ),
+            "target_group_count": target_group_count,
+            "empty_target_group_count": (cls._empty_target_group_count(context)),
+            "observation_complete": observation_complete,
+        }
+
+    @classmethod
+    def _empty_target_group_count(
+        cls,
+        context: AnalysisContext,
+    ) -> int | None:
+
+        relationships = cls._relationships(context)
+
+        groups = relationships.get("target_groups")
 
         if not isinstance(
             groups,
             list,
         ):
-            return []
+            return None
 
-        return [
-            group
-            for group in groups
-            if isinstance(
+        count = 0
+
+        for group in groups:
+
+            if not isinstance(
                 group,
                 dict,
+            ):
+                continue
+
+            target_count = group.get("target_count")
+
+            if (
+                isinstance(
+                    target_count,
+                    int,
+                )
+                and target_count == 0
+            ):
+                count += 1
+
+        return count
+
+    def _canonical_idle_finding(
+        self,
+        context: AnalysisContext,
+        signals: dict[str, Any],
+    ) -> Finding | None:
+
+        # 1. Fully attributed idle -> elb_idle_with_cost (elimination).
+        idle_with_cost = self._check_idle_with_cost(context)
+
+        if idle_with_cost is not None:
+
+            metadata = dict(idle_with_cost.metadata)
+            metadata.setdefault(
+                "signals",
+                signals,
             )
-        ]
+            idle_with_cost.metadata = metadata
+
+            return idle_with_cost
+
+        # 2. Structural idle without attributable cost -> elb_idle
+        #    (removal review, no savings claimed).
+        return self._elb_idle_finding(
+            context,
+            signals,
+        )
+
+    def _elb_idle_finding(
+        self,
+        context: AnalysisContext,
+        signals: dict[str, Any],
+    ) -> Finding | None:
+
+        policy = self._policy(context).get(
+            "idle_with_cost",
+            {},
+        )
+
+        if not policy.get(
+            "enabled",
+            True,
+        ):
+            return None
+
+        summary = self._summary(context)
+
+        target_count = summary.get("target_count")
+
+        health_complete = summary.get("target_health_complete")
+
+        if health_complete is not True:
+            return None
+
+        if not isinstance(
+            target_count,
+            int,
+        ):
+            return None
+
+        if target_count != 0:
+            return None
+
+        traffic = self._traffic_state(context)
+
+        if traffic.get("ready") is not True:
+            return None
+
+        if traffic.get("observed") is not False:
+            return None
+
+        return self._finding(
+            context=context,
+            finding_type=("elb_idle"),
+            title=("Idle load balancer"),
+            severity="high",
+            confidence="high",
+            reason=(
+                "The load balancer is idle: it has no registered "
+                "targets, no observed traffic, and the target-health "
+                "and traffic observation evidence is complete. It is "
+                "a candidate for removal review, but its cost is not "
+                "resource-attributed, so no savings are claimed."
+            ),
+            statements=[
+                self._statement(
+                    name="target_count",
+                    value=0,
+                    description=(
+                        "No registered targets were observed across "
+                        "the load balancer target groups."
+                    ),
+                    source=["ELB.TargetGroups.TargetHealth"],
+                    observed=True,
+                ),
+                self._statement(
+                    name="target_health_complete",
+                    value=True,
+                    description=("Target-health collection completed " "successfully."),
+                    source=["ELB.TargetGroups.TargetHealth"],
+                    observed=True,
+                ),
+                self._statement(
+                    name="traffic_observed",
+                    value=False,
+                    description=(
+                        "No positive ELB activity was observed "
+                        "during the analysis period."
+                    ),
+                    source=["CloudWatch"],
+                    observed=True,
+                ),
+            ],
+            metadata={
+                "category": ("unused_resource"),
+                "finding_family": ("elb_inactivity"),
+                "lb_type": traffic.get("lb_type"),
+                "target_count": 0,
+                "target_group_count": summary.get("target_group_count"),
+                "cost_attribution": (context.billing().get("attribution_scope")),
+                "signals": signals,
+            },
+        )
 
     # ==================================================================
     # RULE 1 — NO OBSERVED ACTIVITY
@@ -669,76 +765,83 @@ class ElbAnalyzer(Analyzer):
 
         traffic = self._traffic_state(context)
 
-        if not traffic.get("ready"):
+        if traffic.get("ready") is not True:
             return None
 
         if traffic.get("observed") is not False:
             return None
 
-        active_connections = traffic.get("active_connections")
+        statements = []
 
-        new_connections = traffic.get("new_connections")
+        self._append_metric_statement(
+            statements,
+            context,
+            "processed_bytes",
+            "No processed bytes were observed.",
+            "CloudWatch.ProcessedBytes",
+            unit="Bytes",
+        )
 
-        # If connection metrics were available and positive,
-        # do not classify the resource as inactive.
-        if (
-            isinstance(
-                active_connections,
-                (int, float),
-            )
-            and active_connections > 0
-        ):
-            return None
+        self._append_metric_statement(
+            statements,
+            context,
+            "request_count",
+            "No requests were observed.",
+            "CloudWatch.RequestCount",
+            unit="Count",
+        )
 
-        if (
-            isinstance(
-                new_connections,
-                (int, float),
-            )
-            and new_connections > 0
-        ):
-            return None
+        self._append_metric_statement(
+            statements,
+            context,
+            "active_connections",
+            "No active connections were observed.",
+            "CloudWatch.ActiveConnectionCount",
+            unit="Count",
+        )
 
-        statements = [
+        self._append_metric_statement(
+            statements,
+            context,
+            "new_connections",
+            "No new connections were observed.",
+            "CloudWatch.NewConnectionCount",
+            unit="Count",
+        )
+
+        self._append_metric_statement(
+            statements,
+            context,
+            "active_flow_count",
+            "No active flows were observed.",
+            "CloudWatch.ActiveFlowCount",
+            unit="Count",
+        )
+
+        self._append_metric_statement(
+            statements,
+            context,
+            "new_flow_count",
+            "No new flows were observed.",
+            "CloudWatch.NewFlowCount",
+            unit="Count",
+        )
+
+        statements.append(
             self._statement(
                 name="traffic_observed",
                 value=False,
                 description=(
-                    "No request or processed-byte "
-                    "activity was observed during "
-                    "the analysis period."
+                    "No positive traffic or connection "
+                    "activity was observed during the "
+                    "analysis period."
                 ),
                 source=[
-                    "CloudWatch.RequestCount",
-                    "CloudWatch.ProcessedBytes",
+                    "CloudWatch",
                 ],
                 observed=True,
-            ),
-        ]
-
-        if active_connections is not None:
-
-            statements.append(
-                self._statement(
-                    name="active_connections",
-                    value=active_connections,
-                    description=("No active connections were " "observed."),
-                    source=["CloudWatch.ActiveConnectionCount"],
-                    observed=True,
-                )
             )
-
-        if new_connections is not None:
-
-            statements.append(
-                self._statement(
-                    name="new_connections",
-                    value=new_connections,
-                    description=("No new connections were " "observed."),
-                    source=["CloudWatch.NewConnectionCount"],
-                    observed=True,
-                )
-            )
+        )
 
         return self._finding(
             context=context,
@@ -747,32 +850,18 @@ class ElbAnalyzer(Analyzer):
             severity="medium",
             confidence="high",
             reason=(
-                "The load balancer had sufficient "
-                "traffic observations, but no request "
-                "or processed-byte activity was observed."
+                "The available ELB-family-specific "
+                "CloudWatch activity evidence was "
+                "successfully observed and contained "
+                "no positive traffic or connection "
+                "activity during the analysis period."
             ),
             statements=statements,
             metadata={
                 "category": "unused_resource",
                 "finding_family": "elb_inactivity",
-                "request_count": traffic.get("request_count"),
-                "processed_bytes": traffic.get("processed_bytes"),
-                "processed_gib": traffic.get("processed_gib"),
+                "lb_type": traffic.get("lb_type"),
             },
-            limitations=[
-                (
-                    "No observed activity does not prove "
-                    "that the load balancer is unnecessary."
-                ),
-                (
-                    "Scheduled or intermittent workloads "
-                    "may not appear in the selected window."
-                ),
-                (
-                    "Validate DNS, listeners, target groups, "
-                    "dependencies and workload schedules."
-                ),
-            ],
         )
 
     # ==================================================================
@@ -795,52 +884,20 @@ class ElbAnalyzer(Analyzer):
         ):
             return None
 
-        minimum_coverage = float(
-            policy.get(
-                "minimum_metric_coverage",
-                0.80,
-            )
-        )
+        traffic = self._traffic_state(context)
 
-        request_ready = self._metric_ready(
-            context,
-            "request_count",
-            minimum_coverage,
-        )
+        if traffic.get("ready") is not True:
 
-        bytes_ready = self._metric_ready(
-            context,
-            "processed_bytes",
-            minimum_coverage,
-        )
-
-        if not (request_ready and bytes_ready):
             return None
 
-        request_count = self._metric_value(
-            context,
-            "request_count",
-        )
+        if traffic.get("observed") is not True:
 
-        processed_bytes = self._metric_value(
-            context,
-            "processed_bytes",
-        )
-
-        if request_count is None or processed_bytes is None:
             return None
 
-        processed_gib = processed_bytes / (1024**3)
+        processed_gib = traffic.get("processed_gib")
 
-        if request_count <= 0 and processed_bytes <= 0:
+        if processed_gib is None:
             return None
-
-        request_limit = float(
-            policy.get(
-                "request_count_max",
-                100.0,
-            )
-        )
 
         gib_limit = float(
             policy.get(
@@ -849,37 +906,182 @@ class ElbAnalyzer(Analyzer):
             )
         )
 
-        if not (request_count <= request_limit and processed_gib <= gib_limit):
+        if processed_gib > gib_limit:
             return None
 
-        statements = [
-            self._statement(
-                name="request_count",
-                value=request_count,
-                description=(
-                    "Observed request volume is "
-                    "within the configured low-traffic "
-                    "review range."
+        lb_type = traffic.get("lb_type")
+
+        # --------------------------------------------------------------
+        # ALB
+        # --------------------------------------------------------------
+
+        if lb_type == "application":
+
+            request_count = traffic.get("request_count")
+
+            if request_count is None:
+                return None
+
+            request_limit = float(
+                policy.get(
+                    "application_request_count_max",
+                    100.0,
+                )
+            )
+
+            if request_count > request_limit:
+                return None
+
+            statements = [
+                self._statement(
+                    name="request_count",
+                    value=request_count,
+                    description=(
+                        "Observed ALB request volume "
+                        "is within the configured "
+                        "low-traffic review threshold."
+                    ),
+                    source=["CloudWatch.RequestCount"],
+                    unit="Count",
+                    observed=True,
                 ),
-                source=["CloudWatch.RequestCount"],
-                observed=True,
-            ),
-            self._statement(
-                name="processed_gib",
-                value=round(
-                    processed_gib,
-                    6,
+                self._statement(
+                    name="processed_gib",
+                    value=round(
+                        processed_gib,
+                        6,
+                    ),
+                    description=(
+                        "Observed processed traffic "
+                        "is within the configured "
+                        "low-traffic review threshold."
+                    ),
+                    source=["CloudWatch.ProcessedBytes"],
+                    unit="GiB",
+                    observed=True,
                 ),
-                description=(
-                    "Observed processed traffic is "
-                    "within the configured low-traffic "
-                    "review range."
+            ]
+
+            thresholds = {
+                "request_count_max": request_limit,
+                "processed_gib_max": gib_limit,
+            }
+
+        # --------------------------------------------------------------
+        # NLB
+        # --------------------------------------------------------------
+
+        elif lb_type == "network":
+
+            new_flow_count = traffic.get("new_flow_count")
+
+            if new_flow_count is None:
+                return None
+
+            flow_limit = float(
+                policy.get(
+                    "network_new_flow_count_max",
+                    100.0,
+                )
+            )
+
+            if new_flow_count > flow_limit:
+                return None
+
+            statements = [
+                self._statement(
+                    name="new_flow_count",
+                    value=new_flow_count,
+                    description=(
+                        "Observed NLB new-flow volume "
+                        "is within the configured "
+                        "low-traffic review threshold."
+                    ),
+                    source=["CloudWatch.NewFlowCount"],
+                    unit="Count",
+                    observed=True,
                 ),
-                source=["CloudWatch.ProcessedBytes"],
-                unit="GiB",
-                observed=True,
-            ),
-        ]
+                self._statement(
+                    name="processed_gib",
+                    value=round(
+                        processed_gib,
+                        6,
+                    ),
+                    description=(
+                        "Observed processed traffic "
+                        "is within the configured "
+                        "low-traffic review threshold."
+                    ),
+                    source=["CloudWatch.ProcessedBytes"],
+                    unit="GiB",
+                    observed=True,
+                ),
+            ]
+
+            thresholds = {
+                "new_flow_count_max": flow_limit,
+                "processed_gib_max": gib_limit,
+            }
+
+        # --------------------------------------------------------------
+        # GWLB
+        # --------------------------------------------------------------
+
+        elif lb_type == "gateway":
+
+            new_flow_count = traffic.get("new_flow_count")
+
+            if new_flow_count is None:
+                return None
+
+            flow_limit = float(
+                policy.get(
+                    "gateway_new_flow_count_max",
+                    100.0,
+                )
+            )
+
+            if new_flow_count > flow_limit:
+                return None
+
+            statements = [
+                self._statement(
+                    name="new_flow_count",
+                    value=new_flow_count,
+                    description=(
+                        "Observed GWLB new-flow volume "
+                        "is within the configured "
+                        "low-traffic review threshold."
+                    ),
+                    source=["CloudWatch.NewFlowCount"],
+                    unit="Count",
+                    observed=True,
+                ),
+                self._statement(
+                    name="processed_gib",
+                    value=round(
+                        processed_gib,
+                        6,
+                    ),
+                    description=(
+                        "Observed processed traffic "
+                        "is within the configured "
+                        "low-traffic review threshold."
+                    ),
+                    source=["CloudWatch.ProcessedBytes"],
+                    unit="GiB",
+                    observed=True,
+                ),
+            ]
+
+            thresholds = {
+                "new_flow_count_max": flow_limit,
+                "processed_gib_max": gib_limit,
+            }
+
+        else:
+
+            return None
 
         return self._finding(
             context=context,
@@ -888,28 +1090,19 @@ class ElbAnalyzer(Analyzer):
             severity="low",
             confidence="medium",
             reason=(
-                "The load balancer is active and both "
-                "observed request volume and processed "
-                "traffic are within the configured "
-                "low-traffic review range."
+                "The load balancer is active and its "
+                "ELB-family-specific traffic metrics "
+                "are within the configured low-traffic "
+                "review thresholds."
             ),
             statements=statements,
             metadata={
                 "category": "unused_resource",
                 "finding_family": "elb_low_traffic",
-                "request_count": request_count,
+                "lb_type": lb_type,
                 "processed_gib": processed_gib,
-                "request_count_threshold": request_limit,
-                "processed_gib_threshold": gib_limit,
+                "thresholds": thresholds,
             },
-            limitations=[
-                (
-                    "Low traffic does not prove that the "
-                    "load balancer is unnecessary."
-                ),
-                ("Traffic may be seasonal or intermittent."),
-                ("Validate workload schedules and " "application dependencies."),
-            ],
         )
 
     # ==================================================================
@@ -950,19 +1143,14 @@ class ElbAnalyzer(Analyzer):
         if target_count != 0:
             return None
 
-        traffic = self._traffic_state(context)
-
-        if traffic.get("ready") and traffic.get("observed") is True:
-            return None
-
         statements = [
             self._statement(
                 name="target_count",
-                value=target_count,
+                value=0,
                 description=(
                     "No registered targets were "
-                    "observed across the load "
-                    "balancer target groups."
+                    "observed across the load balancer "
+                    "target groups."
                 ),
                 source=["ELB.TargetGroups.TargetHealth"],
                 observed=True,
@@ -976,154 +1164,29 @@ class ElbAnalyzer(Analyzer):
             ),
         ]
 
-        # Traffic evidence is only claimed when it was actually
-        # observed and confirmed at zero -- "ready" being False
-        # (insufficient coverage, metrics not requested for this LB
-        # type, etc.) means traffic is unknown, not zero, and this
-        # finding must not assert a claim it never checked.
-        if traffic.get("ready") and traffic.get("observed") is False:
-            reason = (
-                "The load balancer has no registered "
-                "targets and observed traffic was "
-                "confirmed at zero."
-            )
-        else:
-            reason = "The load balancer has no registered " "targets."
-
         return self._finding(
             context=context,
             finding_type=("elb_no_registered_targets"),
             title=("Load balancer with no registered targets"),
             severity="medium",
             confidence="high",
-            reason=reason,
+            reason=(
+                "The load balancer has no registered "
+                "targets and target-health collection "
+                "completed successfully. Review whether "
+                "the load balancer is still required."
+            ),
             statements=statements,
             metadata={
                 "category": "unused_resource",
                 "finding_family": "elb_inactivity",
-                "target_count": target_count,
+                "target_count": 0,
                 "target_group_count": summary.get("target_group_count"),
             },
-            limitations=[
-                (
-                    "A load balancer can temporarily have "
-                    "no targets during deployment or scaling."
-                ),
-                (
-                    "Validate listeners, target groups, "
-                    "DNS records and deployment state."
-                ),
-            ],
         )
 
     # ==================================================================
-    # RULE 4 — IDLE TARGET GROUPS
-    # ==================================================================
-
-    def _check_idle_target_groups(
-        self,
-        context: AnalysisContext,
-    ) -> Finding | None:
-
-        policy = self._policy(context).get(
-            "target_groups",
-            {},
-        )
-
-        if not policy.get(
-            "enabled",
-            True,
-        ):
-            return None
-
-        traffic = self._traffic_state(context)
-
-        if not traffic.get("ready"):
-            return None
-
-        target_groups = self._target_groups(context)
-
-        idle_groups = []
-
-        for group in target_groups:
-
-            if group.get("target_health_status") != "ok":
-                continue
-
-            target_count = group.get("target_count")
-
-            if target_count == 0:
-                idle_groups.append(group)
-
-        if not idle_groups:
-            return None
-
-        statements = [
-            self._statement(
-                name="idle_target_group_count",
-                value=len(idle_groups),
-                description=(
-                    "Target groups with successful "
-                    "target-health collection and "
-                    "zero registered targets were "
-                    "identified."
-                ),
-                source=["ELB.TargetGroups.TargetHealth"],
-                observed=True,
-            ),
-        ]
-
-        for group in idle_groups:
-
-            statements.append(
-                self._statement(
-                    name="target_group",
-                    value={
-                        "arn": group.get("target_group_arn"),
-                        "name": group.get("target_group_name"),
-                        "target_count": group.get("target_count"),
-                    },
-                    description=(
-                        "Target group contains no "
-                        "registered targets and "
-                        "target-health collection "
-                        "completed successfully."
-                    ),
-                    source=["ELB.TargetGroups.TargetHealth"],
-                    observed=True,
-                )
-            )
-
-        return self._finding(
-            context=context,
-            finding_type=("elb_idle_target_group"),
-            title=("Load balancer target group with no targets"),
-            severity="low",
-            confidence="high",
-            reason=(
-                f"{len(idle_groups)} target group(s) " "have no registered targets."
-            ),
-            statements=statements,
-            metadata={
-                "category": "unused_resource",
-                "finding_family": "elb_target_group",
-                "idle_target_group_count": len(idle_groups),
-                "idle_target_groups": idle_groups,
-            },
-            limitations=[
-                (
-                    "An empty target group can be intentional "
-                    "during deployment or failover."
-                ),
-                (
-                    "Review listener rules and deployment "
-                    "configuration before changing it."
-                ),
-            ],
-        )
-
-    # ==================================================================
-    # RULE 5 — NO HEALTHY TARGETS + NO TRAFFIC
+    # RULE 4 — NO HEALTHY TARGETS + NO TRAFFIC
     # ==================================================================
 
     def _check_no_healthy_targets_no_traffic(
@@ -1173,7 +1236,7 @@ class ElbAnalyzer(Analyzer):
 
         traffic = self._traffic_state(context)
 
-        if not traffic.get("ready"):
+        if traffic.get("ready") is not True:
             return None
 
         if traffic.get("observed") is not False:
@@ -1197,11 +1260,10 @@ class ElbAnalyzer(Analyzer):
             self._statement(
                 name="traffic_observed",
                 value=False,
-                description=("No request or processed-byte " "activity was observed."),
-                source=[
-                    "CloudWatch.RequestCount",
-                    "CloudWatch.ProcessedBytes",
-                ],
+                description=(
+                    "No positive traffic or connection " "activity was observed."
+                ),
+                source=["CloudWatch"],
                 observed=True,
             ),
         ]
@@ -1209,55 +1271,38 @@ class ElbAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type=("elb_no_healthy_targets_no_traffic"),
-            title=("Load balancer has no healthy targets and no traffic"),
+            title=("Load balancer has no healthy targets " "and no traffic"),
             severity="medium",
             confidence="medium",
             reason=(
                 "The load balancer has registered "
                 "targets but none are healthy, while "
-                "no traffic was observed."
+                "the available ELB-family-specific "
+                "activity evidence shows no observed "
+                "traffic."
             ),
             statements=statements,
             metadata={
                 "category": "unused_resource",
                 "finding_family": "elb_inactivity",
+                "lb_type": traffic.get("lb_type"),
                 "target_count": target_count,
                 "healthy_target_count": healthy_count,
                 "unhealthy_target_count": summary.get("unhealthy_target_count"),
             },
-            limitations=[
-                ("This does not prove that the load " "balancer should be removed."),
-                (
-                    "The condition can be caused by an "
-                    "application deployment or health-check "
-                    "configuration."
-                ),
-                (
-                    "Validate application and target health "
-                    "configuration before changing resources."
-                ),
-            ],
         )
 
     # ==================================================================
-    # RULE 6 — IDLE + CONFIRMED ZERO TRAFFIC + COST
+    # RULE 5 — IDLE + ZERO TRAFFIC + RECONCILED COST
     # ==================================================================
 
     def _check_idle_with_cost(
         self,
         context: AnalysisContext,
     ) -> Finding | None:
-        """
-        The strongest version of "this load balancer is unused": no
-        registered targets, traffic was actually observed (not
-        merely unavailable) and confirmed at zero, and cost evidence
-        is present. Unlike _check_no_registered_targets, this rule
-        requires positive proof on every dimension, so it is the one
-        finding allowed to state a concrete recurring-cost figure.
-        """
 
         policy = self._policy(context).get(
-            "target_groups",
+            "idle_with_cost",
             {},
         )
 
@@ -1287,7 +1332,7 @@ class ElbAnalyzer(Analyzer):
 
         traffic = self._traffic_state(context)
 
-        if not traffic.get("ready"):
+        if traffic.get("ready") is not True:
             return None
 
         if traffic.get("observed") is not False:
@@ -1299,65 +1344,59 @@ class ElbAnalyzer(Analyzer):
             billing,
             dict,
         ):
-            billing = {}
+            return None
 
-        # Reconciliation is the sole cost-attribution authority --
-        # a positive billing amount must never be treated as this
-        # resource's own cost unless reconciliation has explicitly
-        # proven resource-level attribution.
         if billing.get("attribution_scope") != "resource":
             return None
 
         if billing.get("resource_cost_attributed") is not True:
             return None
 
-        cost = billing.get("amount")
+        cost = billing.get("claimable_resource_cost")
 
-        if (
-            not isinstance(
-                cost,
-                (int, float),
-            )
-            or cost <= 0
+        if not isinstance(
+            cost,
+            (int, float),
         ):
             return None
+
+        if cost <= 0:
+            return None
+
+        currency = str(billing.get("currency") or "USD")
 
         statements = [
             self._statement(
                 name="target_count",
-                value=target_count,
-                description=(
-                    "No registered targets were "
-                    "observed across the load "
-                    "balancer target groups."
-                ),
+                value=0,
+                description=("No registered targets were " "observed."),
                 source=["ELB.TargetGroups.TargetHealth"],
                 observed=True,
             ),
             self._statement(
-                name="request_count",
-                value=traffic.get("request_count"),
-                description=("Observed request count during " "the analysis period."),
-                source=["CloudWatch.RequestCount"],
-                observed=True,
-            ),
-            self._statement(
-                name="processed_bytes",
-                value=traffic.get("processed_bytes"),
-                description=("Observed processed bytes during " "the analysis period."),
-                source=["CloudWatch.ProcessedBytes"],
+                name="traffic_observed",
+                value=False,
+                description=(
+                    "No positive ELB activity was "
+                    "observed during the analysis "
+                    "period."
+                ),
+                source=["CloudWatch"],
                 observed=True,
             ),
             self._statement(
                 name="observed_cost",
                 value=cost,
                 description=(
-                    "Billing amount evidenced for this "
-                    "load balancer during the analysis "
-                    "period."
+                    "Billing cost explicitly "
+                    "attributed to this load balancer "
+                    "by the reconciliation layer."
                 ),
-                source=["CostExplorer"],
-                unit=str(billing.get("currency") or "USD"),
+                source=[
+                    "CostExplorer",
+                    "Reconciliation",
+                ],
+                unit=currency,
                 observed=True,
             ),
         ]
@@ -1365,45 +1404,64 @@ class ElbAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type=("elb_idle_with_cost"),
-            title=("Idle load balancer incurring recurring cost"),
+            title=("Idle load balancer with attributed cost"),
             severity="high",
             confidence="high",
             cost_optimization_type="elimination",
             reason=(
                 "The load balancer has no registered "
-                "targets, observed traffic was confirmed "
-                "at zero, and it is incurring "
-                f"{billing.get('currency') or 'USD'} "
-                f"{cost:,.2f} of billed cost during the "
-                "analysis period."
+                "targets, available activity evidence "
+                "confirms zero observed activity, and "
+                "the reconciliation layer explicitly "
+                "attributes "
+                f"{currency} {cost:,.2f} of cost to "
+                "this resource during the analysis "
+                "period."
             ),
             statements=statements,
             metadata={
                 "category": "unused_resource",
                 "finding_family": "elb_inactivity",
-                "target_count": target_count,
+                "lb_type": traffic.get("lb_type"),
+                "target_count": 0,
                 "observed_cost": cost,
-                "currency": billing.get("currency"),
-                "cost_attribution": billing.get("attribution_scope"),
+                "currency": currency,
+                "cost_attribution": (billing.get("attribution_scope")),
             },
-            limitations=[
-                (
-                    "A load balancer can temporarily have "
-                    "no targets during deployment or scaling."
-                ),
-                (
-                    "Validate listeners, target groups, "
-                    "DNS records and deployment state "
-                    "before removal."
-                ),
-                (
-                    "The cost figure reflects this "
-                    "resource's own billed usage only when "
-                    "attribution is resource-scoped; check "
-                    "the finding's billing evidence before "
-                    "reporting it as a guaranteed saving."
-                ),
-            ],
+        )
+
+    # ==================================================================
+    # METRIC STATEMENT HELPER
+    # ==================================================================
+
+    @classmethod
+    def _append_metric_statement(
+        cls,
+        statements: list[EvidenceStatement],
+        context: AnalysisContext,
+        metric_name: str,
+        description: str,
+        source: str,
+        unit: str | None = None,
+    ) -> None:
+
+        value = cls._metric_value(
+            context,
+            metric_name,
+        )
+
+        if value is None:
+            return
+
+        statements.append(
+            cls._statement(
+                name=metric_name,
+                value=value,
+                description=description,
+                source=[source],
+                unit=unit,
+                observed=True,
+            )
         )
 
     # ==================================================================
@@ -1422,7 +1480,6 @@ class ElbAnalyzer(Analyzer):
         reason: str,
         statements: list[EvidenceStatement],
         metadata: dict[str, Any],
-        limitations: list[str],
         cost_optimization_type: str = "review",
     ) -> Finding:
 
@@ -1463,17 +1520,39 @@ class ElbAnalyzer(Analyzer):
 
         relationships = cls._relationships(context)
 
+        collector_quality = {}
+
+        if hasattr(
+            context,
+            "collector_data_quality",
+        ):
+
+            try:
+
+                value = context.collector_data_quality()
+
+                if isinstance(
+                    value,
+                    dict,
+                ):
+
+                    collector_quality = value
+
+            except Exception:
+
+                collector_quality = {}
+
         evidence = Evidence(
             metrics=metric_evidence,
-            configuration=(filtered_configuration),
+            configuration=filtered_configuration,
             topology=dict(topology),
             billing=dict(billing),
             resource={
                 "resource_id": context.resource_id,
                 "resource_type": context.resource_type,
                 "region": context.region,
-                "load_balancer_name": configuration.get("load_balancer_name"),
-                "load_balancer_type": configuration.get("type"),
+                "load_balancer_name": (configuration.get("load_balancer_name")),
+                "load_balancer_type": (configuration.get("type")),
                 "scheme": configuration.get("scheme"),
             },
             derived={
@@ -1482,14 +1561,7 @@ class ElbAnalyzer(Analyzer):
                 "relationships": relationships,
             },
             data_quality={
-                **(
-                    context.collector_data_quality()
-                    if hasattr(
-                        context,
-                        "collector_data_quality",
-                    )
-                    else {}
-                ),
+                **collector_quality,
                 "metric_count": len(metric_evidence),
                 "relationship_data_available": bool(relationships),
                 "topology_available": bool(topology),
@@ -1503,17 +1575,16 @@ class ElbAnalyzer(Analyzer):
             resource_id=(context.resource_id or "unknown"),
             analyzer=cls.name,
             analyzer_version=cls.version,
-            severity=(str(severity).lower()),
-            confidence=(str(confidence).lower()),
+            severity=str(severity).lower(),
+            confidence=str(confidence).lower(),
             reason=reason,
             conditions=statements,
             evidence=evidence,
             observation_period=(cls._observation_period(context)),
-            limitations=list(limitations),
             metadata=metadata,
             recommendation_eligible=True,
             aggregation_scope="resource",
-            cost_optimization_type=cost_optimization_type,
+            cost_optimization_type=(cost_optimization_type),
         )
 
     # ==================================================================

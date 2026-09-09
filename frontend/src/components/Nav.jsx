@@ -3,6 +3,8 @@ export default function Nav({ activeTab, onTabChange }) {
     { id: 'overview', label: 'Overview' },
     { id: 'analysis', label: 'Cost Analysis' },
     { id: 'results', label: 'Optimization Results' },
+    { id: 'history', label: 'Analysis History' },
+    { id: 'about', label: 'About' },
   ]
 
   return (

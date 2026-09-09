@@ -148,16 +148,6 @@ export function useScanResults(lastScanId = null) {
     loadResults(lastScanId)
   }, [lastScanId, loadResults])
 
-  const clearResults = useCallback(() => {
-    setResultsScan(null)
-    setFindings({})
-    setRecommendations([])
-    setCostSummary(null)
-    setCostDrivers([])
-    setCollectionSummary(null)
-    setError(null)
-  }, [])
-
   return {
     resultsScan,
     findings,
@@ -171,7 +161,6 @@ export function useScanResults(lastScanId = null) {
     loading,
     error,
     loadResults,
-    clearResults,
     hasResults: isDisplayableScan(resultsScan),
   }
 }

@@ -27,8 +27,8 @@ def present_cost_drivers(
     db: Session,
     scan_run_id: int,
     *,
-    limit: int = 8,
-    usage_types_per_service: int = 5,
+    limit: int | None = None,
+    usage_types_per_service: int | None = None,
 ) -> list[dict[str, Any]]:
     services = get_service_costs_with_rank(
         db,

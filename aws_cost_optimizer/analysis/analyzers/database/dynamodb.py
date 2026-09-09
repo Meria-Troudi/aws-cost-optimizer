@@ -34,7 +34,6 @@ from ...registry import register
 DEFAULT_POLICY = {
     "utilization": {
         "enabled": True,
-        "minimum_coverage": 0.80,
         "low_read_percent": 20.0,
         "low_write_percent": 20.0,
     },
@@ -54,7 +53,6 @@ DEFAULT_POLICY = {
     },
     "gsi": {
         "enabled": True,
-        "minimum_coverage": 0.80,
         "low_read_percent": 20.0,
         "low_write_percent": 20.0,
     },
@@ -132,25 +130,9 @@ class _H:
         return _number(metric.get(field))
 
     @staticmethod
-    def coverage(metric: dict[str, Any]) -> float:
+    def ready(metric: dict[str, Any]) -> bool:
 
-        ratio = _number(metric.get("coverage_ratio"))
-
-        if ratio is not None:
-            return ratio / 100.0 if ratio > 1 else ratio
-
-        percent = _number(metric.get("coverage_percent"))
-
-        return percent / 100.0 if percent is not None else 0.0
-
-    @staticmethod
-    def ready(metric: dict[str, Any], minimum: float) -> bool:
-
-        return (
-            metric.get("has_data") is True
-            and _H.metric_value(metric) is not None
-            and _H.coverage(metric) >= minimum
-        )
+        return metric.get("has_data") is True and _H.metric_value(metric) is not None
 
     @staticmethod
     def observation_days(context: AnalysisContext) -> float | None:
@@ -301,8 +283,6 @@ class DynamoDBAnalyzer(Analyzer):
         if _H.billing_mode(context) != "PROVISIONED":
             return None
 
-        minimum = float(policy.get("minimum_coverage", 0.80))
-
         consumed_read = _H.metric(context, "ConsumedReadCapacityUnits")
         consumed_write = _H.metric(context, "ConsumedWriteCapacityUnits")
         provisioned_read = _H.metric(context, "ProvisionedReadCapacityUnits")
@@ -315,7 +295,7 @@ class DynamoDBAnalyzer(Analyzer):
             provisioned_write,
         )
 
-        if not all(_H.ready(metric, minimum) for metric in required):
+        if not all(_H.ready(metric) for metric in required):
             return None
 
         table_derived = _dict(_H.derived(context).get("table"))
@@ -356,11 +336,6 @@ class DynamoDBAnalyzer(Analyzer):
                 "write_utilization_percent": write_utilization,
             },
             recommendation_eligible=True,
-            limitations=[
-                "Average utilization can hide short traffic spikes.",
-                ("Capacity must not be reduced below workload " "requirements."),
-                ("The analyzer does not prescribe a new RCU or " "WCU value."),
-            ],
         )
 
     # ==================================================================
@@ -398,7 +373,7 @@ class DynamoDBAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type="dynamodb_provisioned_autoscaling_review",
-            title="Review DynamoDB Auto Scaling",
+            title="DynamoDB table without Auto Scaling",
             severity="low",
             confidence="high",
             reason=(
@@ -424,12 +399,6 @@ class DynamoDBAnalyzer(Analyzer):
                 "write_autoscaling_enabled": write_enabled,
             },
             recommendation_eligible=True,
-            limitations=[
-                (
-                    "A table may intentionally use fixed capacity "
-                    "for predictable workloads."
-                ),
-            ],
         )
 
     # ==================================================================
@@ -455,9 +424,7 @@ class DynamoDBAnalyzer(Analyzer):
         read = _H.metric(context, "ConsumedReadCapacityUnits")
         write = _H.metric(context, "ConsumedWriteCapacityUnits")
 
-        minimum = 0.80
-
-        if not (_H.ready(read, minimum) and _H.ready(write, minimum)):
+        if not (_H.ready(read) and _H.ready(write)):
             return None
 
         table_derived = _dict(_H.derived(context).get("table"))
@@ -499,17 +466,7 @@ class DynamoDBAnalyzer(Analyzer):
                 "observed_days": observed_days,
             },
             recommendation_eligible=True,
-            limitations=[
-                (
-                    "A table with no observed requests may still be "
-                    "retained intentionally."
-                ),
-                (
-                    "Review application references, backups, "
-                    "streams, exports and infrastructure "
-                    "definitions before deletion."
-                ),
-            ],
+            cost_optimization_type="elimination",
         )
 
     # ==================================================================
@@ -538,9 +495,7 @@ class DynamoDBAnalyzer(Analyzer):
         read = _H.metric(context, "ConsumedReadCapacityUnits")
         write = _H.metric(context, "ConsumedWriteCapacityUnits")
 
-        minimum = 0.80
-
-        if not (_H.ready(read, minimum) and _H.ready(write, minimum)):
+        if not (_H.ready(read) and _H.ready(write)):
             return None
 
         # On-demand mode has no provisioned baseline to compute a
@@ -550,7 +505,7 @@ class DynamoDBAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type="dynamodb_on_demand_billing_mode_review",
-            title="Review DynamoDB on-demand billing mode",
+            title="DynamoDB on-demand billing mode",
             severity="info",
             confidence="medium",
             reason=(
@@ -570,13 +525,6 @@ class DynamoDBAnalyzer(Analyzer):
                 "observed_days": observed_days,
             },
             recommendation_eligible=True,
-            limitations=[
-                (
-                    "On-demand vs provisioned economics require "
-                    "current pricing and workload shape."
-                ),
-                ("This analyzer does not calculate the " "alternative billing cost."),
-            ],
         )
 
     # ==================================================================
@@ -626,13 +574,6 @@ class DynamoDBAnalyzer(Analyzer):
                 "replica_regions": global_table.get("replica_regions"),
             },
             recommendation_eligible=True,
-            limitations=[
-                (
-                    "Replicas may be required for disaster "
-                    "recovery, latency, or regional availability."
-                ),
-                ("Replica utilization is not proven by replica " "inventory alone."),
-            ],
         )
 
     # ==================================================================
@@ -660,7 +601,6 @@ class DynamoDBAnalyzer(Analyzer):
         gsi_metrics = _dict(_H.cloudwatch(context).get("gsis"))
         gsi_derived = _dict(_H.derived(context).get("gsis"))
 
-        minimum = float(policy.get("minimum_coverage", 0.80))
         read_limit = float(policy.get("low_read_percent", 20.0))
         write_limit = float(policy.get("low_write_percent", 20.0))
 
@@ -694,8 +634,7 @@ class DynamoDBAnalyzer(Analyzer):
             )
 
             if not all(
-                isinstance(metric, dict) and _H.ready(metric, minimum)
-                for metric in required
+                isinstance(metric, dict) and _H.ready(metric) for metric in required
             ):
                 continue
 
@@ -754,16 +693,6 @@ class DynamoDBAnalyzer(Analyzer):
                 "gsis": candidates,
             },
             recommendation_eligible=True,
-            limitations=[
-                (
-                    "A GSI may exist for application access "
-                    "patterns that are not continuously active."
-                ),
-                (
-                    "The analyzer does not recommend deleting an "
-                    "index without dependency validation."
-                ),
-            ],
         )
 
     # ==================================================================
@@ -817,16 +746,6 @@ class DynamoDBAnalyzer(Analyzer):
             # recommendation -- always ineligible regardless of
             # policy overrides.
             recommendation_eligible=False,
-            limitations=[
-                (
-                    "Throttling is an operational capacity signal, "
-                    "not evidence of cost waste."
-                ),
-                (
-                    "The analyzer does not automatically increase "
-                    "provisioned capacity."
-                ),
-            ],
         )
 
     # ==================================================================
@@ -845,7 +764,7 @@ class DynamoDBAnalyzer(Analyzer):
         statements: list[EvidenceStatement],
         metadata: dict[str, Any],
         recommendation_eligible: bool,
-        limitations: list[str],
+        cost_optimization_type: str = "review",
     ) -> Finding:
 
         return Finding(
@@ -861,9 +780,9 @@ class DynamoDBAnalyzer(Analyzer):
             conditions=statements,
             evidence=self._build_evidence(context, metadata),
             observation_period=self._observation_period(context),
-            limitations=list(limitations),
             metadata=dict(metadata),
             recommendation_eligible=recommendation_eligible,
+            cost_optimization_type=cost_optimization_type,
             aggregation_scope="resource",
         )
 

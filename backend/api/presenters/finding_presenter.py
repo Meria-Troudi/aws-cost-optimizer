@@ -73,11 +73,10 @@ def _extract_cost(
 
     cost = _first_numeric(
         impact.get("observed_monthly_cost"),
-        billing.get("amount"),
-        billing.get("cost"),
-        billing.get("period_cost"),
-        evidence.get("period_cost"),
-        evidence.get("cost"),
+        # Only a proven claimable amount may stand in for the
+        # finding's cost -- never the contextual billing "amount",
+        # which is collection-plan/service/historical evidence.
+        billing.get("claimable_resource_cost"),
         impact.get("period_cost"),
         impact.get("cost"),
         impact.get("analysis_period_cost"),
@@ -85,12 +84,13 @@ def _extract_cost(
         financial.get("cost"),
     )
 
-    if cost is None:
-        cost = (
-            0.0
-            if ("billing" in evidence and isinstance(billing, dict) and billing)
-            else None
-        )
+    # cost stays None when nothing proved it -- an unattributable
+    # collection-plan/shared cost must render as "not available", never
+    # as a measured $0.00. Presenting the null as zero would tell the
+    # user this resource costs nothing, when the truth is its share of
+    # a shared billing line was never established. See
+    # aws_cost_optimizer/analysis/financial.py's identical rule for
+    # observed_monthly_cost.
 
     if billing:
         billing = dict(billing)
@@ -185,10 +185,17 @@ def present_finding(
         str(finding.finding_type).strip() if finding.finding_type else "finding"
     )
 
-    title = finding_type.replace(
-        "_",
-        " ",
-    ).title()
+    # Prefer the analyzer-authored title (e.g. "NAT Gateway is idle")
+    # when one was persisted; fall back to titleizing the machine key
+    # only for findings saved before Finding.title existed.
+    title = (
+        str(finding.title).strip()
+        if getattr(finding, "title", None)
+        else finding_type.replace(
+            "_",
+            " ",
+        ).title()
+    )
 
     return {
         "id": finding.id,

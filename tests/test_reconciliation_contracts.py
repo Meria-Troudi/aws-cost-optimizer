@@ -96,6 +96,60 @@ def test_billing_identity_mismatch_stays_historical_never_resource():
     assert result["claimable_resource_cost"] is None
 
 
+def test_gateway_endpoint_is_never_attributed_hourly_vpc_endpoint_billing():
+    """
+    EU-VpcEndpoint-Hours bills INTERFACE endpoint hours only; Gateway
+    endpoints are free. A discovered Gateway endpoint must therefore
+    not be reconciled as the current resource responsible for that
+    charge -- the bill stays historical/unattributed evidence instead.
+    """
+
+    plan = {
+        "service": "Amazon Virtual Private Cloud",
+        "usage_type": "EU-VpcEndpoint-Hours",
+        "region": "eu-west-1",
+        "cost_context": 75.37,
+        "resource_type": "vpc_endpoint",
+    }
+
+    result = reconcile_collection_plan(
+        plan,
+        [_resource("vpce-1", endpoint_type="Gateway")],
+        collection_complete=True,
+    )
+
+    assert result["status"] == "current_mismatch"
+    assert result["cost_attribution"] != "resource"
+    assert result["resource_cost_attributed"] is False
+    assert result["claimable_resource_cost"] is None
+
+
+def test_interface_endpoint_removes_vpc_endpoint_hours_identity_gate():
+    """
+    The counterpart of the gateway case: an actual Interface endpoint
+    is compatible with hourly endpoint billing and may still be
+    attributed (sole match + complete collection).
+    """
+
+    plan = {
+        "service": "Amazon Virtual Private Cloud",
+        "usage_type": "EU-VpcEndpoint-Hours",
+        "region": "eu-west-1",
+        "cost_context": 75.37,
+        "resource_type": "vpc_endpoint",
+    }
+
+    result = reconcile_collection_plan(
+        plan,
+        [_resource("vpce-2", endpoint_type="Interface")],
+        collection_complete=True,
+    )
+
+    assert result["status"] == "current"
+    assert result["resource_cost_attributed"] is True
+    assert result["claimable_resource_cost"] == 75.37
+
+
 def test_sole_match_requires_complete_collection_to_be_claimable():
     """
     The same sole-match ALB case as above, but with a partial

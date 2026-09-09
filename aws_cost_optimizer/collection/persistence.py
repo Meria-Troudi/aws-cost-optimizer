@@ -113,6 +113,13 @@ class CollectorPersistence:
                     configuration.get("availability_zone")
                     or identity.get("availability_zone")
                 ),
+                observations=self._safe_dict(resource.get("observations")),
+                data_quality=self._safe_dict(resource.get("data_quality")),
+                collection_errors=self._safe_dict(resource.get("collection_errors")),
+                collection_status=self._safe_string(
+                    resource.get("collection_status"),
+                    default="unknown",
+                ),
             )
 
         self._save_observations(
@@ -145,9 +152,6 @@ class CollectorPersistence:
 
         for metric in self._iter_metrics(metrics):
 
-            # Keep no_data/error results in the resource snapshot.
-            #
-            # Only confirmed observations become Metric rows.
             if not metric_has_observed_data(metric):
                 continue
 
@@ -180,34 +184,6 @@ class CollectorPersistence:
             "no_data": count_missing_metrics(metrics),
             "errors": count_metric_errors(metrics),
         }
-
-    def count_metrics(
-        self,
-        resource: dict,
-    ) -> int:
-
-        return self.metric_counts(resource)["observed"]
-
-    def count_queried_metrics(
-        self,
-        resource: dict,
-    ) -> int:
-
-        return self.metric_counts(resource)["queried"]
-
-    def count_missing_metrics(
-        self,
-        resource: dict,
-    ) -> int:
-
-        return self.metric_counts(resource)["no_data"]
-
-    def count_metric_errors(
-        self,
-        resource: dict,
-    ) -> int:
-
-        return self.metric_counts(resource)["errors"]
 
     @staticmethod
     def _iter_metrics(

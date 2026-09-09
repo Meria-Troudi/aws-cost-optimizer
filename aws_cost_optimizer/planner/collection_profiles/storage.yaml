@@ -1,0 +1,377 @@
+# =============================================================================
+# COLLECTION PROFILES -- STORAGE
+#
+# Split from the original single collection_profiles.yaml. See
+# planner/collection_profile.py::CollectionProfile for how the files in this
+# directory are loaded and merged.
+# =============================================================================
+
+# =============================================================================
+# STORAGE / EBS VOLUME
+# =============================================================================
+
+ebs_volume:
+
+  identity:
+    enabled: true
+    fields:
+      - source: VolumeId
+        output: volume_id
+      - source: State
+        output: state
+      - source: AvailabilityZone
+        output: availability_zone
+      - source: VolumeType
+        output: volume_type
+      - source: Size
+        output: size_gib
+      - source: Iops
+        output: iops
+      - source: Throughput
+        output: throughput_mibps
+      - source: SnapshotId
+        output: snapshot_id
+      - source: CreateTime
+        output: create_time
+      - source: Encrypted
+        output: encrypted
+      - source: KmsKeyId
+        output: kms_key_id
+      - source: Attachments
+        output: attachments
+      - source: Tags
+        output: tags
+
+  configuration:
+    enabled: true
+    fields:
+
+      # Resource identity / lifecycle
+      - volume_id
+      - state
+      - availability_zone
+      - create_time
+      - snapshot_id
+
+      # Capacity / pricing-related configuration
+      - size_gib
+      - volume_type
+      - iops
+      - throughput_mibps
+
+      # Attachment state
+      - attachments
+      - attachment_count
+      - attached
+      - instance_ids
+
+      # Encryption
+      - encrypted
+      - kms_key_id
+
+      # Cost / optimization classification
+      - cost_relevant
+      - billing_usage_type
+      - optimization_candidate
+      - release_candidate
+
+      - tags
+
+  relationships:
+    enabled: true
+    collect:
+
+      # Direct attachment relationship.
+      - attached_instances
+
+      # Useful for identifying whether the volume is actually orphaned.
+      - attachment_state
+      - instance
+      - snapshots
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/EBS
+
+      dimension_sets:
+
+        volume:
+          - VolumeId
+
+      metrics:
+
+
+        - name: VolumeReadOps
+          statistic: Sum
+          unit: Count
+          key: volume_read_ops
+
+        - name: VolumeWriteOps
+          statistic: Sum
+          unit: Count
+          key: volume_write_ops
+
+        - name: VolumeReadBytes
+          statistic: Sum
+          unit: Bytes
+          key: volume_read_bytes
+
+        - name: VolumeWriteBytes
+          statistic: Sum
+          unit: Bytes
+          key: volume_write_bytes
+
+        - name: VolumeQueueLength
+          statistic: Average
+          unit: Count
+          key: volume_queue_length
+
+        - name: VolumeIdleTime
+          statistic: Average
+          unit: Seconds
+          key: volume_idle_time
+        - name: BurstBalance
+          statistic: Average
+          unit: Percent
+          key: burst_balance
+  topology:
+    enabled: false
+
+# =============================================================================
+# STORAGE / AMAZON S3
+s3_bucket:
+
+  identity:
+    enabled: true
+
+    fields:
+      - bucket_name
+      - bucket_arn
+      - region
+      - creation_date
+      - tags
+
+  configuration:
+    enabled: true
+
+    fields:
+
+      - lifecycle_enabled
+      - lifecycle_rule_count
+      - lifecycle_rules
+
+      - versioning_status
+      - mfa_delete
+
+      - intelligent_tiering_enabled
+      - intelligent_tiering_configuration_count
+      - intelligent_tiering_configurations
+
+      - replication_enabled
+      - replication_rule_count
+      - replication_role
+      - replication_rules
+
+      - object_lock_enabled
+      - object_lock_mode
+      - object_lock_days
+      - object_lock_years
+
+      - encryption_enabled
+      - encryption_algorithm
+      - block_public_access
+      - object_ownership
+
+      - inventory_enabled
+      - inventory_configuration_count
+
+      - logging_enabled
+
+      - incomplete_multipart_uploads
+
+      - tags
+
+  relationships:
+    enabled: true
+
+    collect:
+      - replication_destination
+      - logging_target
+      - inventory_destination
+
+  observations:
+    enabled: true
+
+    cloudwatch:
+      enabled: true
+      namespace: AWS/S3
+
+      dimension_sets:
+
+        storage:
+          - BucketName
+          - StorageType
+
+        request:
+          - BucketName
+
+        filtered_request:
+          - BucketName
+          - FilterId
+
+      metrics:
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: STANDARD
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: StandardStorage
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: STANDARD_IA
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: StandardIAStorage
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: ONEZONE_IA
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: OneZoneIAStorage
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: INTELLIGENT_TIERING
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: IntelligentTieringFAStorage
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: GLACIER
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: GlacierStorage
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: GLACIER_IR
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: GlacierIRStorage
+
+        - name: BucketSizeBytes
+          group: storage
+          statistic: Average
+          unit: Bytes
+          period: 86400
+          storage_class: DEEP_ARCHIVE
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: DeepArchiveStorage
+
+        - name: NumberOfObjects
+          group: storage
+          statistic: Average
+          unit: Count
+          period: 86400
+          storage_class: ALL
+          dimensions:
+            - Name: BucketName
+              source: bucket_name
+            - Name: StorageType
+              value: AllStorageTypes
+
+        - name: AllRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+
+        - name: GetRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+
+        - name: PutRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+
+        - name: DeleteRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+
+        - name: HeadRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+
+        - name: PostRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+
+        - name: ListRequests
+          group: request
+          statistic: Sum
+          unit: Count
+          existing_configuration_required: true
+        - name: BytesDownloaded
+          group: request
+          statistic: Sum
+          unit: Bytes
+          existing_configuration_required: true
+
+        - name: BytesUploaded
+          group: request
+          statistic: Sum
+          unit: Bytes
+          existing_configuration_required: true
+
+  topology:
+    enabled: false

@@ -24,8 +24,9 @@ unknown when they genuinely are.
 - **Node.js 20+** (developed against 24)
 - **AWS credentials** with read access to Cost Explorer (`ce`) and the scanned
   services: `ec2`, `rds`, `eks`, `elbv2`, `dynamodb`, `wafv2`, `quicksight`,
-  `cloudwatch`, `cloudtrail`, `autoscaling`, `application-autoscaling`, `sts`.
-  The platform only ever reads; it never modifies or deletes AWS resources.
+  `s3`, `cloudwatch`, `cloudtrail`, `autoscaling`, `application-autoscaling`,
+  `sts`. The platform only ever reads; it never modifies or deletes AWS
+  resources.
 - **Ollama is entirely optional** — it powers natural-language explanations of
   recommendations. Everything else works without it.
 
@@ -74,7 +75,7 @@ cached. If Ollama is not running, the API returns the recommendation with
 ## Tests
 
 ```bash
-python -m pytest tests/ -q      # 115 passing
+python -m pytest tests/ -q      # 277 tests (274 passing; 3 known-failing, see CLAUDE.md)
 make check                       # formatting + tests, as CI runs them
 ```
 
@@ -104,7 +105,7 @@ pins an invariant that has actually been violated in this codebase at some point
 
 - **Recommendation eligibility is gated on declared evidence.** Every catalog
   route declares the evidence a recommendation of that kind must stand on, and
-  `recommendations/policy.py` enforces it: a requirement is satisfied only by a
+  `recommendations/engine.py` enforces it: a requirement is satisfied only by a
   non-empty value, and a declared concept the gate cannot evaluate is rejected
   rather than waved through. Withheld recommendations are logged with the reason.
 

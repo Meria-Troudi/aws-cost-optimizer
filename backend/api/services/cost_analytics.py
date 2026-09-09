@@ -28,7 +28,7 @@ def _safe_change_pct(change_amount: float, previous_cost: float) -> float | None
 def build_service_costs_with_changes(
     service_by_month: list[dict],
     period_total: float,
-    limit: int = 10,
+    limit: int | None = None,
 ) -> list[dict]:
     by_service: dict[str, dict[str, float]] = {}
     for row in service_by_month:
@@ -74,6 +74,7 @@ def build_service_costs_with_changes(
         )
 
     results.sort(key=lambda r: r["cost"], reverse=True)
-    for rank, item in enumerate(results[:limit], 1):
+    ranked = results if limit is None else results[:limit]
+    for rank, item in enumerate(ranked, 1):
         item["rank"] = rank
-    return results[:limit]
+    return ranked

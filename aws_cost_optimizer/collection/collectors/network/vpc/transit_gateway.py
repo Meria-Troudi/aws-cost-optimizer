@@ -1,89 +1,45 @@
 """
 AWS Transit Gateway collector.
 
-Purpose
--------
-Collect reliable evidence for:
-
-- TGW configuration
-- attachment inventory
-- TGW routing
-- VPC-side routing
-- CloudWatch traffic
-- attachment-level traffic
-- cost-exposure signals
-
-The collector does NOT calculate savings.
-
-AWS APIs called
----------------
-EC2         describe_transit_gateways (discovery, and owner lookup)
-            describe_transit_gateway_vpc_attachments
-            describe_transit_gateway_attachments (non-VPC types)
-            describe_transit_gateway_peering_attachments
-            describe_transit_gateway_route_tables
-            search_transit_gateway_routes
-            get_transit_gateway_route_table_associations
-            get_transit_gateway_route_table_propagations
-CloudWatch  GetMetricData, via collection.metrics.cloudwatch --
-            AWS/TransitGateway namespace, at both TGW level and
-            per-attachment level (TransitGatewayAttachment dimension)
-Shared      collection.shared.topology / .relationships for the
-            VPC-side view of routes pointing at the TGW
-
-Route-table inspection is skipped with status "inaccessible" when the
-TGW is owned by another account, rather than reported as empty.
-
-Handed to the analyzer
-----------------------
-Consumed by analysis/analyzers/network/vpc/transit_gateway.py
-(analyzer name "transit_gateway") as:
-
-    relationships       attachment inventory (VPC / peering / other),
-                        route tables, routes, associations,
-                        propagations, plus a collection_status block
-                        recording which of those are complete
-    observations        cloudwatch.traffic (TGW-level bytes in/out)
-                        and cloudwatch.attachment_traffic (per
-                        attachment, for source analysis)
-    topology            VPC-side routes targeting the TGW, including
-                        blackhole counts
-
-Important semantics
+Collection strategy
 -------------------
-Successful empty collection:
-    status = "ok"
 
-Failed collection:
-    status = "error"
+Transit Gateway collection is cost-driven.
 
-Inaccessible collection:
-    status = "inaccessible"
+Primary billing drivers:
 
-An empty successful result must never be confused with
-an unavailable result.
+1. TransitGateway-Hours
+   -> collect Transit Gateway identity and attachment inventory.
+
+2. TransitGateway-Bytes
+   -> collect Transit Gateway and attachment-level traffic
+      when configured in the collection profile.
+
+Optional topology evidence:
+
+3. Route tables
+4. Routes
+5. Associations
+6. Propagations
+
+These are collected only when explicitly requested by the
+collection profile.
+
+The collector never makes optimization decisions.
+It only produces evidence.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 
-from aws_cost_optimizer.config.client import get_client
-
-from collection.base import BaseCollector
-from collection.registry import register
-
-from collection.metrics.cloudwatch import (
+from aws_cost_optimizer.collection.base import BaseCollector
+from aws_cost_optimizer.collection.metrics.cloudwatch import (
     CloudWatchMetricCollector,
 )
+from aws_cost_optimizer.config.client import get_client
 
-from collection.shared.topology import (
-    NetworkTopologyCollector,
-)
-
-from collection.shared.relationships import (
-    NetworkRelationshipResolver,
-)
+from collection.registry import register
 
 
 @register
@@ -92,272 +48,999 @@ class TransitGatewayCollector(BaseCollector):
     key = "transit_gateway"
     resource_type = "transit_gateway"
 
-    DEFAULT_NAMESPACE = "AWS/TransitGateway"
-    DEFAULT_PERIOD = 3600
-
-    BILLABLE_SOURCE_TYPES = frozenset(
-        {
-            "vpc",
-            "vpn",
-            "direct-connect-gateway",
-            "network-function",
-        }
-    )
-
     def __init__(
         self,
-        scan: Any,
-        region: str,
-        profile: Any = None,
-    ) -> None:
-
+        scan,
+        region: str | None = None,
+        profile: Dict[str, Any] | None = None,
+    ):
         super().__init__(
             scan=scan,
             region=region,
             profile=profile,
         )
 
-        if not region:
-            raise ValueError("Transit Gateway collector requires a region.")
-
-        self.region = region
-
-        self.profile = profile if isinstance(profile, dict) else {}
-
-        self.account_id = str(
-            getattr(
-                scan,
-                "account_id",
-                "",
-            )
-            or ""
-        )
-
         self.ec2 = get_client(
             "ec2",
-            region,
+            self.region,
         )
 
         self.cloudwatch = get_client(
             "cloudwatch",
-            region,
+            self.region,
         )
 
-        self.metric_collector = CloudWatchMetricCollector(self.cloudwatch)
+        self.cloudwatch_collector = CloudWatchMetricCollector(
+            cloudwatch=self.cloudwatch,
+        )
 
-        self.topology_collector = NetworkTopologyCollector(region)
-
-        self._owner_cache: dict[
-            str,
-            Optional[str],
-        ] = {}
-
-        self._metrics_batch_cache: dict[
-            str,
-            list[dict[str, Any]],
-        ] = {}
-
-    # ==============================================================
+    # ==================================================================
     # PROFILE
-    # ==============================================================
+    # ==================================================================
 
-    def _observations_profile(
+    def _profile_section(
         self,
-    ) -> dict[str, Any]:
+        name: str,
+    ) -> Dict[str, Any]:
 
-        value = self.profile.get(
-            "observations",
-            {},
+        value = self.profile.get(name, {})
+
+        if not isinstance(value, dict):
+            return {}
+
+        return value
+
+    @staticmethod
+    def _config_enabled(
+        section: Dict[str, Any],
+        default: bool = False,
+    ) -> bool:
+        """
+        Whether an already-resolved profile section dict (e.g.
+        self._profile_section("identity")) declares itself enabled.
+
+        Deliberately named differently from BaseCollector._section_enabled
+        (self, section_name: str) -- that one looks up a section BY NAME
+        in self.profile; this one checks a dict the caller already
+        resolved. They used to share the name "_section_enabled", which
+        meant this override silently shadowed the base method for every
+        Transit Gateway resource: _safe_collect_section() calls
+        self._section_enabled("identity"), and passing that string into
+        this method's `section: Dict` parameter crashed on
+        section.get("enabled") with 'str' object has no attribute 'get'
+        -- collection never actually failed per-resource, it failed for
+        every single Transit Gateway, unconditionally, on the very first
+        section (same bug independently present in EC2Collector).
+        """
+
+        value = section.get("enabled")
+
+        if value is None:
+            return default
+
+        return value is True
+
+    def _requested_relationships(self) -> set[str]:
+
+        section = self._profile_section("relationships")
+
+        if not self._config_enabled(
+            section,
+            default=False,
+        ):
+            return set()
+
+        values = section.get(
+            "collect",
+            [],
         )
 
-        return value if isinstance(value, dict) else {}
+        if not isinstance(values, list):
+            return set()
 
-    def _cloudwatch_profile(
-        self,
-    ) -> dict[str, Any]:
+        return {str(value).strip().lower() for value in values if str(value).strip()}
 
-        value = self._observations_profile().get(
+    def _cloudwatch_enabled(self) -> bool:
+
+        observations = self._profile_section("observations")
+
+        if not self._config_enabled(
+            observations,
+            default=False,
+        ):
+            return False
+
+        cloudwatch = observations.get(
             "cloudwatch",
             {},
         )
 
-        return value if isinstance(value, dict) else {}
+        if not isinstance(cloudwatch, dict):
+            return False
 
-    # ==============================================================
-    # DISCOVERY
-    # ==============================================================
+        return cloudwatch.get("enabled") is True
 
-    def discover(
+    def _metric_specs(
         self,
+        scope: str | None = None,
     ) -> List[Dict[str, Any]]:
 
-        resources: list[Dict[str, Any]] = []
+        cloudwatch = self.cloudwatch_profile()
 
-        paginator = self.ec2.get_paginator("describe_transit_gateways")
-
-        try:
-
-            for page in paginator.paginate():
-
-                for tgw in page.get(
-                    "TransitGateways",
-                    [],
-                ):
-
-                    if not isinstance(
-                        tgw,
-                        dict,
-                    ):
-                        continue
-
-                    tgw_id = tgw.get("TransitGatewayId")
-
-                    if not tgw_id:
-                        continue
-
-                    state = str(
-                        tgw.get(
-                            "State",
-                            "",
-                        )
-                    ).lower()
-
-                    if state not in {
-                        "available",
-                        "pending",
-                    }:
-                        continue
-
-                    resources.append(
-                        {
-                            "id": str(tgw_id),
-                            "raw": tgw,
-                        }
-                    )
-
-        except Exception as exc:
-
-            raise RuntimeError(
-                "Failed to discover Transit Gateways " f"in {self.region}: {exc}"
-            ) from exc
-
-        self._prefetch_metrics_batch(resources)
-
-        return resources
-
-    # ==============================================================
-    # CLOUDWATCH PREFETCH
-    # ==============================================================
-
-    def _prefetch_metrics_batch(
-        self,
-        resources: list[dict[str, Any]],
-    ) -> None:
-
-        profile = self._cloudwatch_profile()
-
-        if not profile:
-            return
-
-        if (
-            profile.get(
-                "enabled",
-                True,
-            )
-            is not True
-        ):
-            return
-
-        specs = self._normalize_metric_specs(
-            profile.get(
-                "metrics",
-                [],
-            )
+        values = cloudwatch.get(
+            "metrics",
+            [],
         )
 
-        if not specs:
-            return
+        if not isinstance(values, list):
+            return []
 
-        namespace = str(
-            profile.get(
-                "namespace",
-                self.DEFAULT_NAMESPACE,
-            )
-        ).strip()
+        result: List[Dict[str, Any]] = []
 
-        try:
-            period = int(
-                profile.get(
-                    "period",
-                    self.DEFAULT_PERIOD,
-                )
-            )
-        except (
-            TypeError,
-            ValueError,
-        ):
-            period = self.DEFAULT_PERIOD
+        requested_scope = str(scope).strip().lower() if scope else None
 
-        period = max(
-            period,
-            60,
-        )
+        for item in values:
 
-        try:
-
-            start, end = self.get_analysis_period()
-
-        except ValueError:
-
-            return
-
-        requests: list[dict[str, Any]] = []
-
-        # ----------------------------------------------------------
-        # TGW-level metrics
-        # ----------------------------------------------------------
-
-        for resource in resources:
-
-            tgw_id = resource.get("id")
-
-            if not tgw_id:
+            if not isinstance(item, dict):
                 continue
 
-            requests.append(
+            name = str(item.get("name") or "").strip()
+
+            if not name:
+                continue
+
+            scopes = item.get(
+                "scopes",
+                [],
+            )
+
+            if requested_scope:
+
+                if not isinstance(
+                    scopes,
+                    list,
+                ):
+                    continue
+
+                normalized_scopes = {
+                    str(value).strip().lower() for value in scopes if str(value).strip()
+                }
+
+                if requested_scope not in normalized_scopes:
+                    continue
+
+            spec = dict(item)
+
+            spec["statistic"] = item.get(
+                "statistic",
+                "Sum",
+            )
+
+            result.append(spec)
+
+        return result
+
+    # ==================================================================
+    # DISCOVERY
+    # ==================================================================
+
+    def _allowed_gateway_states(self) -> set[str]:
+
+        states = self._profile_section("states")
+
+        operational = states.get(
+            "operational_states",
+            [],
+        )
+
+        transitional = states.get(
+            "transitional_states",
+            [],
+        )
+
+        allowed = []
+
+        if isinstance(
+            operational,
+            list,
+        ):
+            allowed.extend(operational)
+
+        if isinstance(
+            transitional,
+            list,
+        ):
+            allowed.extend(transitional)
+
+        normalized = {
+            str(value).strip().lower() for value in allowed if str(value).strip()
+        }
+
+        # Backward-compatible fallback.
+        if not normalized:
+
+            normalized = {
+                "available",
+                "pending",
+            }
+
+        return normalized
+
+    def discover(self) -> list:
+
+        allowed = self._allowed_gateway_states()
+
+        response = self.ec2.describe_transit_gateways()
+
+        result = []
+
+        for gateway in response.get(
+            "TransitGateways",
+            [],
+        ):
+
+            if not isinstance(
+                gateway,
+                dict,
+            ):
+                continue
+
+            state = str(gateway.get("State") or "").strip().lower()
+
+            if allowed and state not in allowed:
+                continue
+
+            result.append(gateway)
+
+        return result
+
+    # ==================================================================
+    # RESOURCE ID
+    # ==================================================================
+
+    def get_resource_id(
+        self,
+        resource: dict,
+    ) -> str:
+
+        value = resource.get("TransitGatewayId")
+
+        if not value:
+            raise ValueError("Transit Gateway ID is missing.")
+
+        return str(value)
+
+    # ==================================================================
+    # IDENTITY
+    # ==================================================================
+
+    def collect_identity(
+        self,
+        resource: dict,
+    ) -> dict:
+
+        section = self._profile_section("identity")
+
+        if not self._config_enabled(
+            section,
+            default=False,
+        ):
+            return {
+                "status": "disabled",
+            }
+
+        fields = section.get(
+            "fields",
+            [],
+        )
+
+        result = {
+            "status": "ok",
+        }
+
+        if not isinstance(
+            fields,
+            list,
+        ):
+            return result
+
+        for field in fields:
+
+            if not isinstance(
+                field,
+                dict,
+            ):
+                continue
+
+            source = field.get("source")
+
+            output = field.get("output")
+
+            if not source or not output:
+                continue
+
+            result[str(output)] = self._get_nested_value(
+                resource,
+                str(source),
+            )
+
+        return result
+
+    # ==================================================================
+    # CONFIGURATION
+    # ==================================================================
+
+    def collect_configuration(
+        self,
+        resource: dict,
+    ) -> dict:
+
+        section = self._profile_section("configuration")
+
+        if not self._config_enabled(
+            section,
+            default=False,
+        ):
+            return {
+                "status": "disabled",
+            }
+
+        fields = section.get(
+            "fields",
+            [],
+        )
+
+        result = {
+            "status": "ok",
+        }
+
+        if not isinstance(
+            fields,
+            list,
+        ):
+            return result
+
+        for field in fields:
+
+            if not isinstance(
+                field,
+                dict,
+            ):
+                continue
+
+            source = field.get("source")
+
+            output = field.get("output")
+
+            if not source or not output:
+                continue
+
+            result[str(output)] = self._get_nested_value(
+                resource,
+                str(source),
+            )
+
+        return result
+
+    # ==================================================================
+    # ATTACHMENTS
+    # ==================================================================
+
+    def _collect_attachments(
+        self,
+        transit_gateway_id: str,
+    ) -> List[Dict[str, Any]]:
+
+        response = self.ec2.describe_transit_gateway_attachments(
+            Filters=[
                 {
-                    "resource_key": str(tgw_id),
-                    "namespace": namespace,
-                    "dimensions": [
-                        {
-                            "Name": "TransitGateway",
-                            "Value": str(tgw_id),
-                        }
+                    "Name": "transit-gateway-id",
+                    "Values": [
+                        transit_gateway_id,
                     ],
-                    "metric_specs": specs,
+                }
+            ]
+        )
+
+        attachments = response.get(
+            "TransitGatewayAttachments",
+            [],
+        )
+
+        result = []
+
+        for attachment in attachments:
+
+            if not isinstance(
+                attachment,
+                dict,
+            ):
+                continue
+
+            attachment_id = attachment.get("TransitGatewayAttachmentId")
+
+            resource_id = attachment.get("ResourceId")
+
+            resource_type = str(attachment.get("ResourceType") or "").strip().lower()
+
+            result.append(
+                {
+                    "status": "ok",
+                    "attachment_id": attachment_id,
+                    "transit_gateway_attachment_id": attachment_id,
+                    "transit_gateway_id": attachment.get("TransitGatewayId"),
+                    "resource_id": resource_id,
+                    "resource_type": resource_type,
+                    "state": attachment.get("State"),
+                    "creation_time": attachment.get("CreationTime"),
+                    "association": attachment.get("Association"),
+                    "tags": attachment.get(
+                        "Tags",
+                        [],
+                    ),
+                    "classification": self._classify_attachment(resource_type),
                 }
             )
 
-        # ----------------------------------------------------------
-        # Attachment-level metrics
-        # ----------------------------------------------------------
+        return result
 
-        for resource in resources:
+    def _classify_attachment(
+        self,
+        resource_type: str,
+    ) -> str:
 
-            tgw_id = resource.get("id")
+        section = self._profile_section("attachment_types")
 
-            if not tgw_id:
+        normalized_type = str(resource_type).strip().lower()
+
+        for classification in (
+            "vpc",
+            "peering",
+            "other",
+        ):
+
+            values = section.get(
+                classification,
+                [],
+            )
+
+            if not isinstance(
+                values,
+                list,
+            ):
                 continue
+
+            normalized = {
+                str(value).strip().lower() for value in values if str(value).strip()
+            }
+
+            if normalized_type in normalized:
+                return classification
+
+        return "other"
+
+    # ==================================================================
+    # ROUTE TABLES
+    # ==================================================================
+
+    def _collect_route_tables(
+        self,
+        transit_gateway_id: str,
+    ) -> List[Dict[str, Any]]:
+
+        values = self._paginate(
+            self.ec2.describe_transit_gateway_route_tables,
+            request_kwargs={
+                "Filters": [
+                    {
+                        "Name": "transit-gateway-id",
+                        "Values": [
+                            transit_gateway_id,
+                        ],
+                    }
+                ]
+            },
+            result_key="TransitGatewayRouteTables",
+        )
+
+        result = []
+
+        for item in values:
+
+            result.append(
+                {
+                    "status": "ok",
+                    "transit_gateway_route_table_id": item.get(
+                        "TransitGatewayRouteTableId"
+                    ),
+                    "transit_gateway_id": item.get("TransitGatewayId"),
+                    "state": item.get("State"),
+                    "default_association_route_table": item.get(
+                        "DefaultAssociationRouteTable"
+                    ),
+                    "default_propagation_route_table": item.get(
+                        "DefaultPropagationRouteTable"
+                    ),
+                    "creation_time": item.get("CreationTime"),
+                    "tags": item.get(
+                        "Tags",
+                        [],
+                    ),
+                }
+            )
+
+        return result
+
+    # ==================================================================
+    # ROUTES
+    # ==================================================================
+
+    def _collect_routes(
+        self,
+        route_table_id: str,
+    ) -> Dict[str, Any]:
+
+        routes = self._paginate(
+            self.ec2.search_transit_gateway_routes,
+            request_kwargs={
+                "TransitGatewayRouteTableId": route_table_id,
+                "Filters": [],
+            },
+            result_key="Routes",
+        )
+
+        normalized = []
+
+        for route in routes:
+
+            normalized.append(
+                {
+                    "status": "ok",
+                    "route_table_id": route_table_id,
+                    "destination_cidr_block": route.get("DestinationCidrBlock"),
+                    "prefix_list_id": route.get("PrefixListId"),
+                    "type": route.get("Type"),
+                    "state": route.get("State"),
+                    "attachment_ids": route.get(
+                        "TransitGatewayAttachments",
+                        [],
+                    ),
+                }
+            )
+
+        blackholes = sum(
+            1
+            for item in normalized
+            if str(item.get("state") or "").strip().lower() == "blackhole"
+        )
+
+        return {
+            "status": "ok",
+            "route_table_id": route_table_id,
+            "route_count": len(normalized),
+            "blackhole_route_count": blackholes,
+            "routes": normalized,
+        }
+
+    # ==================================================================
+    # ASSOCIATIONS
+    # ==================================================================
+
+    def _collect_associations(
+        self,
+        route_table_id: str,
+    ) -> Dict[str, Any]:
+
+        values = self._paginate(
+            self.ec2.get_transit_gateway_route_table_associations,
+            request_kwargs={
+                "TransitGatewayRouteTableId": route_table_id,
+            },
+            result_key="Associations",
+        )
+
+        normalized = []
+
+        for item in values:
+
+            normalized.append(
+                {
+                    "status": "ok",
+                    "attachment_id": item.get("TransitGatewayAttachmentId"),
+                    "transit_gateway_attachment_id": item.get(
+                        "TransitGatewayAttachmentId"
+                    ),
+                    "route_table_id": route_table_id,
+                    "resource_id": item.get("ResourceId"),
+                    "state": item.get("State"),
+                    "resource_type": item.get("ResourceType"),
+                }
+            )
+
+        return {
+            "status": "ok",
+            "route_table_id": route_table_id,
+            "association_count": len(normalized),
+            "associations": normalized,
+        }
+
+    # ==================================================================
+    # PROPAGATIONS
+    # ==================================================================
+
+    def _collect_propagations(
+        self,
+        route_table_id: str,
+    ) -> Dict[str, Any]:
+
+        values = self._paginate(
+            self.ec2.get_transit_gateway_route_table_propagations,
+            request_kwargs={
+                "TransitGatewayRouteTableId": route_table_id,
+            },
+            result_key="TransitGatewayRouteTablePropagations",
+        )
+
+        normalized = []
+
+        for item in values:
+
+            normalized.append(
+                {
+                    "status": "ok",
+                    "attachment_id": item.get("TransitGatewayAttachmentId"),
+                    "transit_gateway_attachment_id": item.get(
+                        "TransitGatewayAttachmentId"
+                    ),
+                    "route_table_id": route_table_id,
+                    "resource_id": item.get("ResourceId"),
+                    "state": item.get("State"),
+                    "resource_type": item.get("ResourceType"),
+                }
+            )
+
+        return {
+            "status": "ok",
+            "route_table_id": route_table_id,
+            "propagation_count": len(normalized),
+            "propagations": normalized,
+        }
+
+    # ==================================================================
+    # RELATIONSHIPS
+    # ==================================================================
+
+    def collect_relationships(
+        self,
+        resource: dict,
+    ) -> dict:
+
+        section = self._profile_section("relationships")
+
+        if not self._config_enabled(
+            section,
+            default=False,
+        ):
+            return {
+                "status": "disabled",
+            }
+
+        tgw_id = self.get_resource_id(resource)
+
+        requested = self._requested_relationships()
+
+        attachments_requested = bool(
+            requested
+            & {
+                "attachments",
+                "vpc_attachments",
+                "peering_attachments",
+                "other_attachments",
+            }
+        )
+
+        route_tables_requested = bool(
+            requested
+            & {
+                "route_tables",
+                "routes",
+                "associations",
+                "propagations",
+            }
+        )
+
+        routes_requested = "routes" in requested
+
+        associations_requested = "associations" in requested
+
+        propagations_requested = "propagations" in requested
+
+        relationships = {
+            "status": "ok",
+            "transit_gateway_id": tgw_id,
+            "attachments": [],
+            "vpc_attachments": [],
+            "peering_attachments": [],
+            "other_attachments": [],
+            "route_tables": [],
+            "routes": [],
+            "associations": [],
+            "propagations": [],
+            "collection_status": {
+                "attachments_requested": attachments_requested,
+                "attachments_complete": None,
+                "route_tables_requested": route_tables_requested,
+                "route_tables_complete": None,
+                "routes_requested": routes_requested,
+                "routes_complete": None,
+                "association_evidence_requested": associations_requested,
+                "association_evidence_complete": None,
+                "propagation_evidence_requested": propagations_requested,
+                "propagation_evidence_complete": None,
+            },
+        }
+
+        errors = {}
+
+        # --------------------------------------------------------------
+        # Attachments
+        # --------------------------------------------------------------
+
+        if attachments_requested:
 
             try:
 
-                attachment_data = self._discover_attachments_for_metrics(str(tgw_id))
+                attachments = self._collect_attachments(tgw_id)
 
-            except Exception:
+                relationships["attachments"] = attachments
 
-                continue
+                relationships["vpc_attachments"] = [
+                    item for item in attachments if item.get("classification") == "vpc"
+                ]
 
-            for attachment in attachment_data:
+                relationships["peering_attachments"] = [
+                    item
+                    for item in attachments
+                    if item.get("classification") == "peering"
+                ]
+
+                relationships["other_attachments"] = [
+                    item
+                    for item in attachments
+                    if item.get("classification") == "other"
+                ]
+
+                relationships["collection_status"]["attachments_complete"] = True
+
+            except Exception as exc:
+
+                errors["attachments"] = str(exc)
+
+                relationships["collection_status"]["attachments_complete"] = False
+
+        # --------------------------------------------------------------
+        # Route tables
+        # --------------------------------------------------------------
+
+        route_tables = []
+
+        if route_tables_requested:
+
+            try:
+
+                route_tables = self._collect_route_tables(tgw_id)
+
+                relationships["route_tables"] = route_tables
+
+                relationships["collection_status"]["route_tables_complete"] = True
+
+            except Exception as exc:
+
+                errors["route_tables"] = str(exc)
+
+                relationships["collection_status"]["route_tables_complete"] = False
+
+        # --------------------------------------------------------------
+        # Routes
+        # --------------------------------------------------------------
+
+        if routes_requested:
+
+            if not route_tables_requested:
+
+                relationships["collection_status"]["routes_complete"] = False
+
+                errors["routes"] = (
+                    "Routes requested but route tables " "were not requested."
+                )
+
+            else:
+
+                try:
+
+                    relationships["routes"] = [
+                        self._collect_routes(item["transit_gateway_route_table_id"])
+                        for item in route_tables
+                        if item.get("transit_gateway_route_table_id")
+                    ]
+
+                    relationships["collection_status"]["routes_complete"] = True
+
+                except Exception as exc:
+
+                    errors["routes"] = str(exc)
+
+                    relationships["collection_status"]["routes_complete"] = False
+
+        # --------------------------------------------------------------
+        # Associations
+        # --------------------------------------------------------------
+
+        if associations_requested:
+
+            if not route_tables_requested:
+
+                relationships["collection_status"][
+                    "association_evidence_complete"
+                ] = False
+
+                errors["associations"] = (
+                    "Associations requested but route tables " "were not requested."
+                )
+
+            else:
+
+                try:
+
+                    relationships["associations"] = [
+                        self._collect_associations(
+                            item["transit_gateway_route_table_id"]
+                        )
+                        for item in route_tables
+                        if item.get("transit_gateway_route_table_id")
+                    ]
+
+                    relationships["collection_status"][
+                        "association_evidence_complete"
+                    ] = True
+
+                except Exception as exc:
+
+                    errors["associations"] = str(exc)
+
+                    relationships["collection_status"][
+                        "association_evidence_complete"
+                    ] = False
+
+        # --------------------------------------------------------------
+        # Propagations
+        # --------------------------------------------------------------
+
+        if propagations_requested:
+
+            if not route_tables_requested:
+
+                relationships["collection_status"][
+                    "propagation_evidence_complete"
+                ] = False
+
+                errors["propagations"] = (
+                    "Propagations requested but route tables " "were not requested."
+                )
+
+            else:
+
+                try:
+
+                    relationships["propagations"] = [
+                        self._collect_propagations(
+                            item["transit_gateway_route_table_id"]
+                        )
+                        for item in route_tables
+                        if item.get("transit_gateway_route_table_id")
+                    ]
+
+                    relationships["collection_status"][
+                        "propagation_evidence_complete"
+                    ] = True
+
+                except Exception as exc:
+
+                    errors["propagations"] = str(exc)
+
+                    relationships["collection_status"][
+                        "propagation_evidence_complete"
+                    ] = False
+
+        if errors:
+
+            relationships["status"] = "partial"
+
+            relationships["errors"] = errors
+
+        return relationships
+
+    # ==================================================================
+    # CLOUDWATCH
+    # ==================================================================
+
+    def collect_observations(
+        self,
+        resource: dict,
+    ) -> dict:
+
+        if not self._cloudwatch_enabled():
+
+            return {
+                "status": "disabled",
+            }
+
+        tgw_id = self.get_resource_id(resource)
+
+        start, end = self.get_analysis_period()
+
+        gateway_specs = self._metric_specs(scope="gateway")
+
+        attachment_specs = self._metric_specs(scope="attachment")
+
+        if not gateway_specs and not attachment_specs:
+
+            return {
+                "status": "empty",
+                "reason": "No CloudWatch metrics configured.",
+            }
+
+        # --------------------------------------------------------------
+        # Gateway metrics
+        # --------------------------------------------------------------
+
+        gateway_results = []
+
+        if gateway_specs:
+
+            gateway_dimensions = [
+                {
+                    "Name": "TransitGateway",
+                    "Value": tgw_id,
+                }
+            ]
+
+            gateway_results = self.cloudwatch_collector.collect(
+                namespace=(self.cloudwatch_namespace()),
+                dimensions=gateway_dimensions,
+                metric_specs=gateway_specs,
+                start=start,
+                end=end,
+                requested_period=(self.cloudwatch_period()),
+            )
+
+            self._attach_metric_roles(
+                gateway_results,
+                gateway_specs,
+            )
+
+        # --------------------------------------------------------------
+        # Attachment metrics
+        # --------------------------------------------------------------
+
+        attachment_results = {}
+        attachment_error = None
+        attachment_count = 0
+
+        if attachment_specs:
+
+            try:
+
+                attachments = self._collect_attachments(tgw_id)
+
+            except Exception as exc:
+
+                attachments = []
+                attachment_error = str(exc)
+
+            requests = []
+
+            for attachment in attachments:
 
                 attachment_id = attachment.get("attachment_id")
 
@@ -366,1856 +1049,345 @@ class TransitGatewayCollector(BaseCollector):
 
                 requests.append(
                     {
-                        "resource_key": self._attachment_metric_key(
-                            tgw_id,
-                            attachment_id,
-                        ),
-                        "namespace": namespace,
+                        "resource_key": str(attachment_id),
+                        "namespace": self.cloudwatch_namespace(),
                         "dimensions": [
                             {
                                 "Name": "TransitGatewayAttachment",
                                 "Value": str(attachment_id),
                             }
                         ],
-                        "metric_specs": specs,
+                        "metric_specs": attachment_specs,
                     }
                 )
 
-        if not requests:
-            return
+            attachment_count = len(requests)
 
-        self._metrics_batch_cache = self.metric_collector.collect_batch(
-            requests,
-            start=start,
-            end=end,
-            requested_period=period,
-        )
+            if requests:
 
-    def _discover_attachments_for_metrics(
-        self,
-        tgw_id: str,
-    ) -> list[dict[str, Any]]:
-
-        result: list[dict[str, Any]] = []
-
-        paginator = self.ec2.get_paginator("describe_transit_gateway_attachments")
-
-        for page in paginator.paginate(
-            Filters=[
-                {
-                    "Name": "transit-gateway-id",
-                    "Values": [tgw_id],
-                }
-            ]
-        ):
-
-            for attachment in page.get(
-                "TransitGatewayAttachments",
-                [],
-            ):
-
-                attachment_id = attachment.get("TransitGatewayAttachmentId")
-
-                if not attachment_id:
-                    continue
-
-                result.append(
-                    {
-                        "attachment_id": attachment_id,
-                        "resource_type": str(
-                            attachment.get(
-                                "ResourceType",
-                                "",
-                            )
-                        ).lower(),
-                    }
+                attachment_results = self.cloudwatch_collector.collect_batch(
+                    requests=requests,
+                    start=start,
+                    end=end,
+                    requested_period=(self.cloudwatch_period()),
                 )
 
-        return result
-
-    @staticmethod
-    def _attachment_metric_key(
-        tgw_id: str,
-        attachment_id: str,
-    ) -> str:
-
-        return f"{tgw_id}:attachment:{attachment_id}"
-
-    # ==============================================================
-    # IDENTITY
-    # ==============================================================
-
-    def get_resource_id(
-        self,
-        resource: Dict[str, Any],
-    ) -> str:
-
-        value = resource.get("id")
-
-        if not value:
-            raise ValueError("Transit Gateway ID is missing.")
-
-        return str(value)
-
-    def collect_identity(
-        self,
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        tgw = resource.get("raw") or {}
-
-        tags = self._tags(
-            tgw.get(
-                "Tags",
-                [],
-            )
-        )
-
-        owner_id = tgw.get("OwnerId")
-
-        return {
-            "name": (tags.get("Name") or tgw.get("Description") or resource.get("id")),
-            "transit_gateway_id": resource.get("id"),
-            "state": tgw.get("State"),
-            "owner_id": owner_id,
-            "description": tgw.get("Description"),
-            "ownership": {
-                "scan_account_id": self.account_id or None,
-                "owner_account_id": (str(owner_id) if owner_id else None),
-                "is_resource_owner": bool(
-                    self.account_id and owner_id and self.account_id == str(owner_id)
-                ),
-            },
-            "tags": tags,
-        }
-
-    # ==============================================================
-    # CONFIGURATION
-    # ==============================================================
-
-    def collect_configuration(
-        self,
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        tgw = resource.get("raw") or {}
-
-        options = tgw.get("Options") or {}
-
-        return {
-            "transit_gateway_id": tgw.get("TransitGatewayId"),
-            "state": tgw.get("State"),
-            "owner_id": tgw.get("OwnerId"),
-            "creation_time": self._iso(tgw.get("CreationTime")),
-            "description": tgw.get("Description"),
-            "amazon_side_asn": options.get("AmazonSideAsn"),
-            "transit_gateway_cidr_blocks": list(
-                options.get(
-                    "TransitGatewayCidrBlocks",
-                    [],
-                )
-                or []
-            ),
-            "default_route_table_association": options.get(
-                "DefaultRouteTableAssociation"
-            ),
-            "default_route_table_propagation": options.get(
-                "DefaultPropagationRouteTable"
-            )
-            or options.get("DefaultRouteTablePropagation"),
-            "association_default_route_table_id": options.get(
-                "AssociationDefaultRouteTableId"
-            ),
-            "propagation_default_route_table_id": options.get(
-                "PropagationDefaultRouteTableId"
-            ),
-            "dns_support": options.get("DnsSupport"),
-            "vpn_ecmp_support": options.get("VpnEcmpSupport"),
-            "auto_accept_shared_attachments": options.get(
-                "AutoAcceptSharedAttachments"
-            ),
-            "security_group_referencing_support": options.get(
-                "SecurityGroupReferencingSupport"
-            ),
-            "multicast_support": options.get("MulticastSupport"),
-        }
-
-    # ==============================================================
-    # RELATIONSHIPS
-    # ==============================================================
-
-    def collect_relationships(
-        self,
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        tgw_id = resource.get("id")
-
-        if not tgw_id:
-
-            return {
-                "status": "incomplete",
-                "reason": "Transit Gateway ID is missing.",
-            }
-
-        vpc_attachments, vpc_status = self._collect_vpc_attachments(str(tgw_id))
-
-        other_attachments, other_status = self._collect_other_attachments(str(tgw_id))
-
-        peering_attachments, peering_status = self._collect_peering_attachments(
-            str(tgw_id)
-        )
-
-        route_table_result = self._collect_route_tables(str(tgw_id))
-
-        route_tables = route_table_result.get(
-            "route_tables",
-            [],
-        )
-
-        route_access = route_table_result.get(
-            "access",
-            {},
-        )
-
-        routes: list[dict[str, Any]] = []
-
-        associations: list[dict[str, Any]] = []
-
-        propagations: list[dict[str, Any]] = []
-
-        routes_ok = True
-        associations_ok = True
-        propagations_ok = True
-
-        if route_access.get("status") == "accessible":
-
-            for table in route_tables:
-
-                route_table_id = table.get("transit_gateway_route_table_id")
-
-                if not route_table_id:
-                    continue
-
-                collected, status = self._collect_routes(route_table_id)
-
-                routes.extend(collected)
-
-                routes_ok &= status.get("status") == "ok"
-
-                collected, status = self._collect_associations(route_table_id)
-
-                associations.extend(collected)
-
-                associations_ok &= status.get("status") == "ok"
-
-                collected, status = self._collect_propagations(route_table_id)
-
-                propagations.extend(collected)
-
-                propagations_ok &= status.get("status") == "ok"
-
-        route_data_complete = (
-            route_access.get("status") == "accessible"
-            and routes_ok
-            and associations_ok
-            and propagations_ok
-        )
-
-        attachments_complete = all(
-            status.get("status") == "ok"
-            for status in (
-                vpc_status,
-                other_status,
-                peering_status,
-            )
-        )
-
-        active_routes = [route for route in routes if route.get("state") == "active"]
-
-        blackhole_routes = [
-            route for route in routes if route.get("state") == "blackhole"
-        ]
-
-        active_attachments = [
-            attachment
-            for attachment in (
-                vpc_attachments + other_attachments + peering_attachments
-            )
-            if str(
-                attachment.get(
-                    "state",
-                    "",
-                )
-            ).lower()
-            == "available"
-        ]
-
-        associated_attachment_ids = (
-            sorted(
-                {
-                    association.get("attachment_id")
-                    for association in associations
-                    if association.get("attachment_id")
-                }
-            )
-            if route_data_complete
-            else []
-        )
-
-        enabled_propagation_attachment_ids = (
-            sorted(
-                {
-                    propagation.get("attachment_id")
-                    for propagation in propagations
-                    if propagation.get("state") == "enabled"
-                }
-            )
-            if route_data_complete
-            else []
-        )
-
-        return {
-            "status": "ok",
-            "vpc_attachments": vpc_attachments,
-            "other_attachments": other_attachments,
-            "peering_attachments": peering_attachments,
-            "route_tables": route_tables,
-            "routes": routes,
-            "associations": associations,
-            "propagations": propagations,
-            "route_table_access": route_access,
-            "collection_status": {
-                "vpc_attachments": vpc_status,
-                "other_attachments": other_status,
-                "peering_attachments": peering_status,
-                "route_tables": route_access,
-                "routes": {
-                    "status": "ok" if routes_ok else "error",
-                },
-                "associations": {
-                    "status": "ok" if associations_ok else "error",
-                },
-                "propagations": {
-                    "status": "ok" if propagations_ok else "error",
-                },
-                "attachments_complete": attachments_complete,
-                "route_data_complete": route_data_complete,
-            },
-            "summary": {
-                "attachment_count": len(
-                    vpc_attachments + other_attachments + peering_attachments
-                ),
-                "active_attachment_count": len(active_attachments),
-                "vpc_attachment_count": len(vpc_attachments),
-                "active_vpc_attachment_count": sum(
-                    str(
-                        item.get(
-                            "state",
-                            "",
-                        )
-                    ).lower()
-                    == "available"
-                    for item in vpc_attachments
-                ),
-                "other_attachment_count": len(other_attachments),
-                "peering_attachment_count": len(peering_attachments),
-                "route_table_count": (
-                    len(route_tables)
-                    if route_access.get("status") == "accessible"
-                    else None
-                ),
-                "route_count": (len(routes) if route_data_complete else None),
-                "active_route_count": (
-                    len(active_routes) if route_data_complete else None
-                ),
-                "blackhole_route_count": (
-                    len(blackhole_routes) if route_data_complete else None
-                ),
-                "association_count": (
-                    len(associations) if route_data_complete else None
-                ),
-                "propagation_count": (
-                    len(propagations) if route_data_complete else None
-                ),
-                "associated_attachment_count": (
-                    len(associated_attachment_ids) if route_data_complete else None
-                ),
-                "enabled_propagation_attachment_count": (
-                    len(enabled_propagation_attachment_ids)
-                    if route_data_complete
-                    else None
-                ),
-                "collection_complete": (attachments_complete and route_data_complete),
-            },
-        }
-
-    # ==============================================================
-    # VPC ATTACHMENTS
-    # ==============================================================
-
-    def _collect_vpc_attachments(
-        self,
-        tgw_id: str,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        result: list[dict[str, Any]] = []
-
-        paginator = self.ec2.get_paginator("describe_transit_gateway_vpc_attachments")
-
-        try:
-
-            for page in paginator.paginate(
-                Filters=[
-                    {
-                        "Name": "transit-gateway-id",
-                        "Values": [tgw_id],
-                    }
-                ]
-            ):
-
-                for attachment in page.get(
-                    "TransitGatewayVpcAttachments",
-                    [],
-                ):
-
-                    attachment_id = attachment.get("TransitGatewayAttachmentId")
-
-                    if not attachment_id:
-                        continue
-
-                    association = attachment.get("Association") or {}
-
-                    options = attachment.get("Options") or {}
-
-                    result.append(
-                        {
-                            "attachment_id": attachment_id,
-                            "resource_type": "vpc",
-                            "transit_gateway_id": attachment.get("TransitGatewayId"),
-                            "vpc_id": attachment.get("VpcId"),
-                            "vpc_owner_id": attachment.get("VpcOwnerId"),
-                            "state": attachment.get("State"),
-                            "creation_time": self._iso(attachment.get("CreationTime")),
-                            "route_table_id": association.get(
-                                "TransitGatewayRouteTableId"
-                            ),
-                            "association_state": (
-                                attachment.get("AssociationState")
-                                or association.get("State")
-                            ),
-                            "subnet_ids": list(
-                                attachment.get(
-                                    "SubnetIds",
-                                    [],
-                                )
-                                or []
-                            ),
-                            "dns_support": options.get("DnsSupport"),
-                            "ipv6_support": options.get("Ipv6Support"),
-                            "appliance_mode_support": options.get(
-                                "ApplianceModeSupport"
-                            ),
-                            "security_group_referencing_support": options.get(
-                                "SecurityGroupReferencingSupport"
-                            ),
-                            "tags": self._tags(
-                                attachment.get(
-                                    "Tags",
-                                    [],
-                                )
-                            ),
-                        }
+                for values in attachment_results.values():
+
+                    self._attach_metric_roles(
+                        values,
+                        attachment_specs,
                     )
 
-        except Exception as exc:
-
-            return (
-                result,
-                {
-                    "status": "error",
-                    "error": str(exc),
-                },
-            )
-
-        return (
-            result,
-            {
-                "status": "ok",
-                "count": len(result),
-            },
-        )
-
-    # ==============================================================
-    # OTHER ATTACHMENTS
-    # ==============================================================
-
-    def _collect_other_attachments(
-        self,
-        tgw_id: str,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        result: list[dict[str, Any]] = []
-
-        paginator = self.ec2.get_paginator("describe_transit_gateway_attachments")
-
-        try:
-
-            for page in paginator.paginate(
-                Filters=[
-                    {
-                        "Name": "transit-gateway-id",
-                        "Values": [tgw_id],
-                    }
-                ]
-            ):
-
-                for attachment in page.get(
-                    "TransitGatewayAttachments",
-                    [],
-                ):
-
-                    attachment_id = attachment.get("TransitGatewayAttachmentId")
-
-                    if not attachment_id:
-                        continue
-
-                    resource_type = str(
-                        attachment.get(
-                            "ResourceType",
-                            "",
-                        )
-                    ).lower()
-
-                    if resource_type in {
-                        "vpc",
-                        "peering",
-                        "tgw-peering",
-                    }:
-                        continue
-
-                    association = attachment.get("Association") or {}
-
-                    result.append(
-                        {
-                            "attachment_id": attachment_id,
-                            "transit_gateway_id": tgw_id,
-                            "resource_type": resource_type,
-                            "resource_id": attachment.get("ResourceId"),
-                            "resource_owner_id": attachment.get("ResourceOwnerId"),
-                            "state": attachment.get("State"),
-                            "creation_time": self._iso(attachment.get("CreationTime")),
-                            "route_table_id": association.get(
-                                "TransitGatewayRouteTableId"
-                            ),
-                            "association_state": association.get("State"),
-                            "tags": self._tags(
-                                attachment.get(
-                                    "Tags",
-                                    [],
-                                )
-                            ),
-                        }
-                    )
-
-        except Exception as exc:
-
-            return (
-                result,
-                {
-                    "status": "error",
-                    "error": str(exc),
-                },
-            )
-
-        return (
-            result,
-            {
-                "status": "ok",
-                "count": len(result),
-            },
-        )
-
-    # ==============================================================
-    # PEERING
-    # ==============================================================
-
-    def _collect_peering_attachments(
-        self,
-        tgw_id: str,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        result: list[dict[str, Any]] = []
-
-        paginator = self.ec2.get_paginator(
-            "describe_transit_gateway_peering_attachments"
-        )
-
-        try:
-
-            for page in paginator.paginate():
-
-                for attachment in page.get(
-                    "TransitGatewayPeeringAttachments",
-                    [],
-                ):
-
-                    requester = attachment.get("RequesterTgwInfo") or {}
-
-                    accepter = attachment.get("AccepterTgwInfo") or {}
-
-                    requester_id = requester.get("TransitGatewayId")
-
-                    accepter_id = accepter.get("TransitGatewayId")
-
-                    if requester_id != tgw_id and accepter_id != tgw_id:
-                        continue
-
-                    attachment_id = attachment.get("TransitGatewayAttachmentId")
-
-                    if not attachment_id:
-                        continue
-
-                    result.append(
-                        {
-                            "attachment_id": attachment_id,
-                            "resource_type": "peering",
-                            "state": attachment.get("State"),
-                            "creation_time": self._iso(attachment.get("CreationTime")),
-                            "requester_tgw_id": requester_id,
-                            "accepter_tgw_id": accepter_id,
-                            "requester_owner_id": requester.get("OwnerId"),
-                            "accepter_owner_id": accepter.get("OwnerId"),
-                            "requester_region": requester.get("Region"),
-                            "accepter_region": accepter.get("Region"),
-                            "cross_region": (
-                                bool(
-                                    requester.get("Region")
-                                    and accepter.get("Region")
-                                    and requester.get("Region")
-                                    != accepter.get("Region")
-                                )
-                            ),
-                            "tags": self._tags(
-                                attachment.get(
-                                    "Tags",
-                                    [],
-                                )
-                            ),
-                        }
-                    )
-
-        except Exception as exc:
-
-            return (
-                result,
-                {
-                    "status": "error",
-                    "error": str(exc),
-                },
-            )
-
-        return (
-            result,
-            {
-                "status": "ok",
-                "count": len(result),
-            },
-        )
-
-    # ==============================================================
-    # TGW ROUTE TABLES
-    # ==============================================================
-
-    def _collect_route_tables(
-        self,
-        tgw_id: str,
-    ) -> dict[str, Any]:
-
-        owner_id = self._get_tgw_owner_id(tgw_id)
-
-        if self.account_id and owner_id and self.account_id != owner_id:
-
-            return {
-                "route_tables": [],
-                "access": {
-                    "status": "inaccessible",
-                    "reason": (
-                        "Transit Gateway is owned by another "
-                        "AWS account and route-table inspection "
-                        "is not considered available to the "
-                        "scanned account."
-                    ),
-                    "scan_account_id": self.account_id,
-                    "owner_account_id": owner_id,
-                },
-            }
-
-        result: list[dict[str, Any]] = []
-
-        paginator = self.ec2.get_paginator("describe_transit_gateway_route_tables")
-
-        try:
-
-            for page in paginator.paginate(
-                Filters=[
-                    {
-                        "Name": "transit-gateway-id",
-                        "Values": [tgw_id],
-                    }
-                ]
-            ):
-
-                for table in page.get(
-                    "TransitGatewayRouteTables",
-                    [],
-                ):
-
-                    if table.get("TransitGatewayRouteTableId"):
-
-                        result.append(self._normalize_route_table(table))
-
-        except Exception as exc:
-
-            return {
-                "route_tables": result,
-                "access": {
-                    "status": "error",
-                    "reason": "Transit Gateway route-table collection failed.",
-                    "error": str(exc),
-                    "scan_account_id": self.account_id or None,
-                    "owner_account_id": owner_id,
-                },
-            }
-
         return {
-            "route_tables": result,
-            "access": {
-                "status": "accessible",
-                "scan_account_id": self.account_id or None,
-                "owner_account_id": owner_id,
-                "route_table_count": len(result),
-            },
-        }
-
-    def _get_tgw_owner_id(
-        self,
-        tgw_id: str,
-    ) -> Optional[str]:
-
-        if tgw_id in self._owner_cache:
-
-            return self._owner_cache[tgw_id]
-
-        try:
-
-            response = self.ec2.describe_transit_gateways(TransitGatewayIds=[tgw_id])
-
-            gateways = response.get(
-                "TransitGateways",
-                [],
-            )
-
-            if not gateways:
-
-                self._owner_cache[tgw_id] = None
-
-                return None
-
-            owner_id = gateways[0].get("OwnerId")
-
-            result = str(owner_id) if owner_id else None
-
-            self._owner_cache[tgw_id] = result
-
-            return result
-
-        except Exception:
-
-            self._owner_cache[tgw_id] = None
-
-            return None
-
-    @staticmethod
-    def _normalize_route_table(
-        table: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        return {
-            "transit_gateway_route_table_id": table.get("TransitGatewayRouteTableId"),
-            "transit_gateway_id": table.get("TransitGatewayId"),
-            "state": table.get("State"),
-            "default_association": table.get("DefaultAssociationRouteTable"),
-            "default_propagation": table.get("DefaultPropagationRouteTable"),
-            "creation_time": TransitGatewayCollector._iso(table.get("CreationTime")),
-            "tags": TransitGatewayCollector._tags(
-                table.get(
-                    "Tags",
-                    [],
-                )
-            ),
-        }
-
-    # ==============================================================
-    # ROUTES
-    # ==============================================================
-
-    def _collect_routes(
-        self,
-        route_table_id: str,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        result: list[dict[str, Any]] = []
-
-        try:
-
-            paginator = self.ec2.get_paginator("search_transit_gateway_routes")
-
-            for page in paginator.paginate(
-                TransitGatewayRouteTableId=route_table_id,
-                Filters=[
-                    {
-                        "Name": "state",
-                        "Values": [
-                            "active",
-                            "blackhole",
-                        ],
-                    }
-                ],
-            ):
-
-                for route in page.get(
-                    "Routes",
-                    [],
-                ):
-
-                    attachments = []
-
-                    for attachment in (
-                        route.get(
-                            "TransitGatewayAttachments",
-                            [],
-                        )
-                        or []
-                    ):
-
-                        attachments.append(
-                            {
-                                "attachment_id": attachment.get(
-                                    "TransitGatewayAttachmentId"
-                                ),
-                                "resource_id": attachment.get("ResourceId"),
-                                "resource_type": attachment.get("ResourceType"),
-                            }
-                        )
-
-                    state = route.get("State")
-
-                    result.append(
-                        {
-                            "route_table_id": route_table_id,
-                            "destination": (
-                                route.get("DestinationCidrBlock")
-                                or route.get("PrefixListId")
-                            ),
-                            "destination_cidr_block": route.get("DestinationCidrBlock"),
-                            "prefix_list_id": route.get("PrefixListId"),
-                            "state": state,
-                            "type": route.get("Type"),
-                            "attachments": attachments,
-                            "is_blackhole": state == "blackhole",
-                            "has_attachment_target": bool(attachments),
-                        }
-                    )
-
-        except Exception as exc:
-
-            return (
-                result,
-                {
-                    "status": "error",
-                    "error": str(exc),
-                },
-            )
-
-        return (
-            result,
-            {
-                "status": "ok",
-                "count": len(result),
-            },
-        )
-
-    # ==============================================================
-    # ASSOCIATIONS / PROPAGATIONS
-    # ==============================================================
-
-    def _collect_associations(
-        self,
-        route_table_id: str,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        return self._collect_route_table_items(
-            operation="get_transit_gateway_route_table_associations",
-            result_key="Associations",
-            route_table_id=route_table_id,
-            normalize=self._normalize_association,
-        )
-
-    def _collect_propagations(
-        self,
-        route_table_id: str,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        return self._collect_route_table_items(
-            operation="get_transit_gateway_route_table_propagations",
-            result_key="TransitGatewayRouteTablePropagations",
-            route_table_id=route_table_id,
-            normalize=self._normalize_propagation,
-        )
-
-    def _collect_route_table_items(
-        self,
-        *,
-        operation: str,
-        result_key: str,
-        route_table_id: str,
-        normalize,
-    ) -> Tuple[
-        List[Dict[str, Any]],
-        Dict[str, Any],
-    ]:
-
-        result: list[dict[str, Any]] = []
-
-        token: Optional[str] = None
-
-        try:
-
-            while True:
-
-                client_method = getattr(
-                    self.ec2,
-                    operation,
-                )
-
-                kwargs = {
-                    "TransitGatewayRouteTableId": route_table_id,
-                }
-
-                if token:
-                    kwargs["NextToken"] = token
-
-                response = client_method(**kwargs)
-
-                for item in response.get(
-                    result_key,
-                    [],
-                ):
-
-                    if isinstance(
-                        item,
-                        dict,
-                    ):
-
-                        result.append(
-                            normalize(
-                                item,
-                                route_table_id,
-                            )
-                        )
-
-                token = response.get("NextToken")
-
-                if not token:
-                    break
-
-        except Exception as exc:
-
-            return (
-                result,
-                {
-                    "status": "error",
-                    "error": str(exc),
-                },
-            )
-
-        return (
-            result,
-            {
-                "status": "ok",
-                "count": len(result),
-            },
-        )
-
-    @staticmethod
-    def _normalize_association(
-        item: dict[str, Any],
-        route_table_id: str,
-    ) -> dict[str, Any]:
-
-        return {
-            "route_table_id": route_table_id,
-            "attachment_id": item.get("TransitGatewayAttachmentId"),
-            "resource_id": item.get("ResourceId"),
-            "resource_type": item.get("ResourceType"),
-            "state": item.get("State"),
-        }
-
-    @staticmethod
-    def _normalize_propagation(
-        item: dict[str, Any],
-        route_table_id: str,
-    ) -> dict[str, Any]:
-
-        return {
-            "route_table_id": route_table_id,
-            "attachment_id": item.get("TransitGatewayAttachmentId"),
-            "resource_id": item.get("ResourceId"),
-            "resource_type": item.get("ResourceType"),
-            "state": item.get("State"),
-            "route_table_announcement_id": item.get(
-                "TransitGatewayRouteTableAnnouncementId"
-            ),
-        }
-
-    # ==============================================================
-    # OBSERVATIONS
-    # ==============================================================
-
-    def collect_observations(
-        self,
-        resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
-
-        profile = self._cloudwatch_profile()
-
-        if not profile:
-
-            return {
-                "cloudwatch": {
-                    "status": "not_configured",
-                    "metrics": {},
-                }
-            }
-
-        if (
-            profile.get(
-                "enabled",
-                True,
-            )
-            is not True
-        ):
-
-            return {
-                "cloudwatch": {
-                    "status": "disabled",
-                    "metrics": {},
-                }
-            }
-
-        try:
-            start, end = self.get_analysis_period()
-        except ValueError as exc:
-
-            return {
-                "cloudwatch": {
-                    "status": "error",
-                    "metrics": {},
-                    "error": str(exc),
-                }
-            }
-
-        requested_period = self._safe_period(
-            profile.get(
-                "period",
-                self.DEFAULT_PERIOD,
-            )
-        )
-
-        tgw_id = str(resource.get("id"))
-
-        results = self._metrics_batch_cache.get(
-            tgw_id,
-            [],
-        )
-
-        metrics = self._normalize_metric_results(results)
-
-        attachment_metrics = self._collect_attachment_metric_results(tgw_id)
-
-        counts = self._metric_counts(metrics)
-
-        traffic = self._build_traffic_summary(metrics)
-
-        attachment_traffic = self._build_attachment_traffic_summary(attachment_metrics)
-
-        if counts["queried"] and counts["errors"] == counts["queried"]:
-
-            status = "error"
-
-        elif counts["observed"]:
-
-            status = "ok"
-
-        elif counts["no_data"] or counts["invalid"]:
-
-            status = "no_data"
-
-        else:
-
-            status = "not_queried"
-
-        return {
+            "status": "partial" if attachment_error else "ok",
+            "analysis_start": start.isoformat(),
+            "analysis_end": end.isoformat(),
             "cloudwatch": {
-                "status": status,
-                "namespace": str(
-                    profile.get(
-                        "namespace",
-                        self.DEFAULT_NAMESPACE,
-                    )
-                ),
-                "requested_period": requested_period,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "dimensions": [
-                    {
-                        "Name": "TransitGateway",
-                        "Value": tgw_id,
-                    }
-                ],
-                "metrics": metrics,
-                "traffic": traffic,
-                "attachment_traffic": attachment_traffic,
-                "metric_counts": counts,
-                "data_quality": {
-                    "traffic_complete": traffic.get("traffic_complete"),
-                    "attachment_traffic_complete": attachment_traffic.get("complete"),
+                "namespace": self.cloudwatch_namespace(),
+                "gateway": {
+                    "resource_id": tgw_id,
+                    "metrics": {
+                        item.get("metric_key"): item
+                        for item in gateway_results
+                        if isinstance(
+                            item,
+                            dict,
+                        )
+                        and item.get("metric_key")
+                    },
                 },
-            }
-        }
-
-    def _collect_attachment_metric_results(
-        self,
-        tgw_id: str,
-    ) -> dict[str, list[dict[str, Any]]]:
-
-        prefix = f"{tgw_id}:attachment:"
-
-        result: dict[
-            str,
-            list[dict[str, Any]],
-        ] = {}
-
-        for key, metrics in self._metrics_batch_cache.items():
-
-            if not key.startswith(prefix):
-                continue
-
-            attachment_id = key[len(prefix) :]
-
-            result[attachment_id] = self._normalize_metric_results(metrics)
-
-        return result
-
-    @staticmethod
-    def _normalize_metric_results(
-        results: list[dict[str, Any]],
-    ) -> dict[str, dict[str, Any]]:
-
-        metrics: dict[
-            str,
-            dict[str, Any],
-        ] = {}
-
-        for result in results or []:
-
-            if not isinstance(
-                result,
-                dict,
-            ):
-                continue
-
-            key = result.get("metric_key") or result.get("metric_name")
-
-            if key:
-                metrics[str(key)] = result
-
-        return metrics
-
-    @staticmethod
-    def _metric_counts(
-        metrics: dict[str, dict[str, Any]],
-    ) -> dict[str, int]:
-
-        return {
-            "queried": len(metrics),
-            "observed": sum(
-                metric.get("status") == "ok" and metric.get("has_data") is True
-                for metric in metrics.values()
-            ),
-            "no_data": sum(
-                metric.get("status") == "no_data" for metric in metrics.values()
-            ),
-            "invalid": sum(
-                metric.get("status") == "invalid_data" for metric in metrics.values()
-            ),
-            "errors": sum(
-                metric.get("status") == "error" for metric in metrics.values()
-            ),
-        }
-
-    @classmethod
-    def _metric_value(
-        cls,
-        metrics: dict[str, dict[str, Any]],
-        name: str,
-    ) -> Optional[float]:
-
-        metric = metrics.get(name)
-
-        if not isinstance(
-            metric,
-            dict,
-        ):
-            return None
-
-        if metric.get("status") != "ok":
-            return None
-
-        if metric.get("has_data") is not True:
-            return None
-
-        value = metric.get("value")
-
-        if isinstance(
-            value,
-            (int, float),
-        ):
-            return float(value)
-
-        return None
-
-    @classmethod
-    def _build_traffic_summary(
-        cls,
-        metrics: dict[str, dict[str, Any]],
-    ) -> dict[str, Any]:
-
-        bytes_in = cls._metric_value(
-            metrics,
-            "BytesIn",
-        )
-
-        bytes_out = cls._metric_value(
-            metrics,
-            "BytesOut",
-        )
-
-        traffic_complete = bytes_in is not None and bytes_out is not None
-
-        return {
-            "bytes_in": bytes_in,
-            "bytes_out": bytes_out,
-            "total_bytes": (bytes_in + bytes_out if traffic_complete else None),
-            "ingress_gib": (bytes_in / (1024**3) if bytes_in is not None else None),
-            "total_gib": (
-                (bytes_in + bytes_out) / (1024**3) if traffic_complete else None
-            ),
-            "traffic_observed": (
-                (bytes_in > 0 or bytes_out > 0)
-                if (bytes_in is not None and bytes_out is not None)
-                else None
-            ),
-            "traffic_complete": traffic_complete,
-            "missing_is_zero": False,
-            "semantics": {
-                "purpose": "operational_activity_and_cost_exposure",
-                "bytes_in_role": (
-                    "closest CloudWatch proxy for "
-                    "traffic entering the TGW from "
-                    "source attachments"
-                ),
-                "bytes_are_billing_amount": False,
-            },
-        }
-
-    def _build_attachment_traffic_summary(
-        self,
-        attachment_metrics: dict[str, dict[str, dict[str, Any]]],
-    ) -> dict[str, Any]:
-
-        items: list[dict[str, Any]] = []
-
-        for attachment_id, metrics in attachment_metrics.items():
-
-            bytes_in = self._metric_value(
-                metrics,
-                "BytesIn",
-            )
-
-            bytes_out = self._metric_value(
-                metrics,
-                "BytesOut",
-            )
-
-            complete = bytes_in is not None and bytes_out is not None
-
-            items.append(
-                {
-                    "attachment_id": attachment_id,
-                    "bytes_in": bytes_in,
-                    "bytes_out": bytes_out,
-                    "ingress_gib": (
-                        bytes_in / (1024**3) if bytes_in is not None else None
+                "attachments": {
+                    str(resource_id): {
+                        item.get("metric_key"): item
+                        for item in values
+                        if isinstance(
+                            item,
+                            dict,
+                        )
+                        and item.get("metric_key")
+                    }
+                    for resource_id, values in attachment_results.items()
+                },
+                "attachment_collection": {
+                    "requested_count": attachment_count,
+                    "returned_count": len(attachment_results),
+                    "complete": (
+                        attachment_error is None
+                        and len(attachment_results) == attachment_count
                     ),
-                    "complete": complete,
-                    "observed": (bytes_in > 0 or bytes_out > 0) if complete else None,
-                }
-            )
-
-        complete = bool(attachment_metrics) and all(
-            item.get("complete") is True for item in items
-        )
-
-        return {
-            "items": items,
-            "count": len(items),
-            "complete": complete,
-            "semantics": {
-                "purpose": "attachment_level_traffic",
-                "billing_amount": False,
+                    "error": attachment_error,
+                },
             },
         }
 
-    # ==============================================================
-    # TOPOLOGY
-    # ==============================================================
+    # ==================================================================
+    # OPTIMIZATION EVIDENCE
+    # ==================================================================
 
-    def collect_topology(
+    def build_optimization_evidence(
         self,
-        resource: Dict[str, Any],
-        collected_resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        resource: dict,
+        collected_resource: dict,
+    ) -> dict:
 
         relationships = collected_resource.get(
             "relationships",
             {},
         )
 
-        if not isinstance(
-            relationships,
-            dict,
-        ):
-            return {
-                "status": "incomplete",
-                "reason": "Transit Gateway relationships unavailable.",
-            }
-
-        tgw_id = resource.get("id")
-
-        vpc_attachments = relationships.get(
-            "vpc_attachments",
-            [],
-        )
-
-        if not isinstance(
-            vpc_attachments,
-            list,
-        ):
-            vpc_attachments = []
-
-        attachment_status = relationships.get(
-            "collection_status",
-            {},
-        ).get(
-            "vpc_attachments",
+        observations = collected_resource.get(
+            "observations",
             {},
         )
 
-        vpc_topologies: list[dict[str, Any]] = []
-
-        for attachment in vpc_attachments:
-
-            if not isinstance(
-                attachment,
-                dict,
-            ):
-                continue
-
-            vpc_id = attachment.get("vpc_id")
-
-            attachment_id = attachment.get("attachment_id")
-
-            if not vpc_id:
-                continue
-
-            try:
-
-                topology = self.topology_collector.collect(
-                    vpc_id=vpc_id,
-                    resource_type=self.resource_type,
-                    resource_id=tgw_id,
-                )
-
-                if (
-                    not isinstance(
-                        topology,
-                        dict,
-                    )
-                    or topology.get("status") != "ok"
-                ):
-
-                    vpc_topologies.append(
-                        {
-                            "vpc_id": vpc_id,
-                            "attachment_id": attachment_id,
-                            "status": "incomplete",
-                        }
-                    )
-
-                    continue
-
-                resolver = NetworkRelationshipResolver(topology)
-
-                routes = resolver.routes_targeting(
-                    "transit_gateway",
-                    tgw_id,
-                )
-
-                if not isinstance(
-                    routes,
-                    list,
-                ):
-                    routes = []
-
-                active = [route for route in routes if route.get("state") == "active"]
-
-                blackhole = [
-                    route for route in routes if route.get("state") == "blackhole"
-                ]
-
-                vpc_topologies.append(
-                    {
-                        "vpc_id": vpc_id,
-                        "attachment_id": attachment_id,
-                        "attachment_state": attachment.get("state"),
-                        "status": "ok",
-                        "vpc_routes_to_tgw_count": len(routes),
-                        "active_vpc_routes_to_tgw_count": len(active),
-                        "blackhole_vpc_routes_to_tgw_count": len(blackhole),
-                        "vpc_route_table_ids": sorted(
-                            {
-                                route.get("route_table_id")
-                                for route in routes
-                                if route.get("route_table_id")
-                            }
-                        ),
-                        "tgw_subnet_ids": sorted(
-                            {
-                                route.get("subnet_id")
-                                for route in routes
-                                if route.get("subnet_id")
-                            }
-                        ),
-                    }
-                )
-
-            except Exception as exc:
-
-                vpc_topologies.append(
-                    {
-                        "vpc_id": vpc_id,
-                        "attachment_id": attachment_id,
-                        "status": "error",
-                        "error": str(exc),
-                    }
-                )
-
-        valid = [item for item in vpc_topologies if item.get("status") == "ok"]
-
-        return {
+        evidence = {
             "status": "ok",
-            "transit_gateway_id": tgw_id,
-            "vpcs": vpc_topologies,
-            "attached_vpc_ids": sorted(
-                {item.get("vpc_id") for item in valid if item.get("vpc_id")}
-            ),
-            "vpc_route_table_ids": sorted(
-                {
-                    route_table_id
-                    for item in valid
-                    for route_table_id in item.get(
-                        "vpc_route_table_ids",
-                        [],
-                    )
-                }
-            ),
-            "tgw_subnet_ids": sorted(
-                {
-                    subnet_id
-                    for item in valid
-                    for subnet_id in item.get(
-                        "tgw_subnet_ids",
-                        [],
-                    )
-                }
-            ),
-            "vpc_routes_to_tgw_count": sum(
-                item.get(
-                    "vpc_routes_to_tgw_count",
-                    0,
-                )
-                or 0
-                for item in valid
-            ),
-            "active_vpc_routes_to_tgw_count": sum(
-                item.get(
-                    "active_vpc_routes_to_tgw_count",
-                    0,
-                )
-                or 0
-                for item in valid
-            ),
-            "blackhole_vpc_routes_to_tgw_count": sum(
-                item.get(
-                    "blackhole_vpc_routes_to_tgw_count",
-                    0,
-                )
-                or 0
-                for item in valid
-            ),
-            "summary": {
-                "attached_vpc_count": len(
-                    {item.get("vpc_id") for item in valid if item.get("vpc_id")}
-                ),
-                "vpc_route_table_count": len(
-                    {
-                        route_table_id
-                        for item in valid
-                        for route_table_id in item.get(
-                            "vpc_route_table_ids",
-                            [],
-                        )
-                    }
-                ),
-                "tgw_subnet_count": len(
-                    {
-                        subnet_id
-                        for item in valid
-                        for subnet_id in item.get(
-                            "tgw_subnet_ids",
-                            [],
-                        )
-                    }
-                ),
-                "vpc_routes_to_tgw_count": sum(
-                    item.get(
-                        "vpc_routes_to_tgw_count",
-                        0,
-                    )
-                    or 0
-                    for item in valid
-                ),
-                "active_vpc_routes_to_tgw_count": sum(
-                    item.get(
-                        "active_vpc_routes_to_tgw_count",
-                        0,
-                    )
-                    or 0
-                    for item in valid
-                ),
-                "blackhole_vpc_routes_to_tgw_count": sum(
-                    item.get(
-                        "blackhole_vpc_routes_to_tgw_count",
-                        0,
-                    )
-                    or 0
-                    for item in valid
-                ),
-                "topology_complete": len(valid) == len(vpc_attachments),
-            },
-            "collection_status": {
-                "vpc_attachments": attachment_status,
-                "topology_complete": len(valid) == len(vpc_attachments),
-            },
+            "resource_type": self.resource_type,
+            "resource_id": self.get_resource_id(resource),
         }
 
-    # ==============================================================
-    # OPTIMIZATION EVIDENCE
-    # ==============================================================
+        # --------------------------------------------------------------
+        # Attachments
+        # --------------------------------------------------------------
 
-    def build_optimization_evidence(
-        self,
-        resource: Dict[str, Any],
-        collected_resource: Dict[str, Any],
-    ) -> Dict[str, Any]:
+        attachments = relationships.get("attachments")
 
-        identity = self._dict(collected_resource.get("identity"))
-
-        configuration = self._dict(collected_resource.get("configuration"))
-
-        relationships = self._dict(collected_resource.get("relationships"))
-
-        topology = self._dict(collected_resource.get("topology"))
-
-        observations = self._dict(collected_resource.get("observations"))
-
-        cloudwatch = self._dict(observations.get("cloudwatch"))
-
-        relationship_summary = self._dict(relationships.get("summary"))
-
-        topology_summary = self._dict(topology.get("summary"))
-
-        return {
-            "resource": {
-                "resource_id": resource.get("id"),
-                "resource_type": self.resource_type,
-                "name": identity.get("name"),
-                "state": identity.get("state"),
-                "owner_id": identity.get("owner_id"),
-            },
-            "configuration": {
-                key: value for key, value in configuration.items() if key != "tags"
-            },
-            "relationships": {
-                "attachment_count": relationship_summary.get("attachment_count"),
-                "active_attachment_count": relationship_summary.get(
-                    "active_attachment_count"
-                ),
-                "vpc_attachment_count": relationship_summary.get(
-                    "vpc_attachment_count"
-                ),
-                "other_attachment_count": relationship_summary.get(
-                    "other_attachment_count"
-                ),
-                "peering_attachment_count": relationship_summary.get(
-                    "peering_attachment_count"
-                ),
-                "route_table_count": relationship_summary.get("route_table_count"),
-                "route_count": relationship_summary.get("route_count"),
-                "active_route_count": relationship_summary.get("active_route_count"),
-                "blackhole_route_count": relationship_summary.get(
-                    "blackhole_route_count"
-                ),
-                "association_count": relationship_summary.get("association_count"),
-                "propagation_count": relationship_summary.get("propagation_count"),
-                "collection_complete": relationship_summary.get("collection_complete"),
-                "vpc_attachments": relationships.get(
-                    "vpc_attachments",
-                    [],
-                ),
-                "other_attachments": relationships.get(
-                    "other_attachments",
-                    [],
-                ),
-                "peering_attachments": relationships.get(
-                    "peering_attachments",
-                    [],
-                ),
-            },
-            "network": {
-                "attached_vpc_count": topology_summary.get("attached_vpc_count"),
-                "vpc_routes_to_tgw_count": topology_summary.get(
-                    "vpc_routes_to_tgw_count"
-                ),
-                "active_vpc_routes_to_tgw_count": topology_summary.get(
-                    "active_vpc_routes_to_tgw_count"
-                ),
-                "blackhole_vpc_routes_to_tgw_count": topology_summary.get(
-                    "blackhole_vpc_routes_to_tgw_count"
-                ),
-                "vpc_route_table_count": topology_summary.get("vpc_route_table_count"),
-                "tgw_subnet_count": topology_summary.get("tgw_subnet_count"),
-            },
-            "traffic": cloudwatch.get(
-                "traffic",
-                {},
-            ),
-            "attachment_traffic": cloudwatch.get(
-                "attachment_traffic",
-                {},
-            ),
-            "data_quality": {
-                "attachments_complete": relationships.get(
-                    "collection_status",
-                    {},
-                ).get("attachments_complete"),
-                "route_data_complete": relationships.get(
-                    "collection_status",
-                    {},
-                ).get("route_data_complete"),
-                "topology_complete": topology_summary.get("topology_complete"),
-                "cloudwatch_status": cloudwatch.get("status"),
-                "traffic_complete": self._dict(cloudwatch.get("traffic")).get(
-                    "traffic_complete"
-                ),
-                "attachment_traffic_complete": self._dict(
-                    cloudwatch.get("attachment_traffic")
-                ).get("complete"),
-            },
-            "semantics": {
-                "traffic_is_billing_amount": False,
-                "ingress_is_cost_exposure_proxy": True,
-                "attachment_traffic_supports_source_analysis": True,
-            },
-        }
-
-    # ==============================================================
-    # HELPERS
-    # ==============================================================
-
-    @staticmethod
-    def _safe_period(
-        value: Any,
-    ) -> int:
-
-        try:
-            value = int(value)
-        except (
-            TypeError,
-            ValueError,
-        ):
-            value = TransitGatewayCollector.DEFAULT_PERIOD
-
-        return max(
-            value,
-            60,
-        )
-
-    @staticmethod
-    def _normalize_metric_specs(
-        specs: Any,
-    ) -> list[dict[str, Any]]:
-
-        if not isinstance(
-            specs,
+        if isinstance(
+            attachments,
             list,
         ):
-            return []
 
-        result = []
+            evidence["attachment_count"] = len(attachments)
 
-        for spec in specs:
+            evidence["active_attachment_count"] = sum(
+                1
+                for item in attachments
+                if str(item.get("state") or "").strip().lower() == "available"
+            )
 
-            if isinstance(
-                spec,
-                str,
-            ):
-
-                name = spec.strip()
-
-                if name:
-                    result.append(
-                        {
-                            "name": name,
-                            "statistic": "Sum",
-                        }
-                    )
-
-                continue
-
-            if not isinstance(
-                spec,
-                dict,
-            ):
-                continue
-
-            name = str(
-                spec.get(
-                    "name",
-                    "",
-                )
-            ).strip()
-
-            if not name:
-                continue
-
-            normalized = {
-                "name": name,
-                "statistic": spec.get(
-                    "statistic",
-                    "Sum",
-                ),
+            classification_counts = {
+                "vpc": 0,
+                "peering": 0,
+                "other": 0,
             }
 
-            if spec.get("unit"):
-                normalized["unit"] = spec["unit"]
+            for item in attachments:
 
-            if spec.get("key"):
-                normalized["key"] = spec["key"]
+                classification = item.get("classification")
 
-            result.append(normalized)
+                if classification in (classification_counts):
+                    classification_counts[classification] += 1
 
-        return result
+            evidence["attachment_types"] = classification_counts
 
-    @staticmethod
-    def _tags(
-        tags: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
+        else:
 
-        if not isinstance(
-            tags,
-            list,
-        ):
-            return {}
+            evidence["attachment_count"] = None
 
-        return {
-            str(tag["Key"]): tag.get("Value")
-            for tag in tags
-            if (
-                isinstance(
-                    tag,
-                    dict,
-                )
-                and tag.get("Key")
+            evidence["active_attachment_count"] = None
+
+            evidence["attachment_types"] = {}
+
+        # --------------------------------------------------------------
+        # CloudWatch
+        # --------------------------------------------------------------
+
+        cloudwatch = (
+            observations.get(
+                "cloudwatch",
+                {},
             )
-        }
-
-    @staticmethod
-    def _iso(
-        value: Any,
-    ) -> Optional[str]:
-
-        if value is None:
-            return None
-
-        if hasattr(
-            value,
-            "isoformat",
-        ):
-            return value.isoformat()
-
-        return str(value)
-
-    @staticmethod
-    def _dict(
-        value: Any,
-    ) -> dict[str, Any]:
-
-        return (
-            value
             if isinstance(
-                value,
+                observations,
                 dict,
             )
             else {}
         )
+
+        gateway = (
+            cloudwatch.get(
+                "gateway",
+                {},
+            )
+            if isinstance(
+                cloudwatch,
+                dict,
+            )
+            else {}
+        )
+
+        evidence["gateway_metrics"] = self._extract_metric_evidence(
+            gateway.get(
+                "metrics",
+                {},
+            )
+        )
+
+        evidence["attachment_metrics"] = self._extract_attachment_metric_evidence(
+            cloudwatch.get(
+                "attachments",
+                {},
+            )
+        )
+
+        # --------------------------------------------------------------
+        # Collection status
+        # --------------------------------------------------------------
+
+        evidence["collection_status"] = relationships.get(
+            "collection_status",
+            {},
+        )
+
+        return evidence
+
+    # ==================================================================
+    # HELPERS
+    # ==================================================================
+
+    @staticmethod
+    def _attach_metric_roles(
+        results,
+        specs,
+    ):
+
+        roles = {
+            str(item.get("key") or item.get("name")): item.get("role")
+            for item in specs
+            if isinstance(
+                item,
+                dict,
+            )
+        }
+
+        for result in results:
+
+            if not isinstance(
+                result,
+                dict,
+            ):
+                continue
+
+            key = result.get("metric_key")
+
+            if key in roles:
+
+                result["role"] = roles[key]
+
+    @staticmethod
+    def _extract_metric_evidence(
+        metrics,
+    ):
+
+        if not isinstance(
+            metrics,
+            dict,
+        ):
+            return {}
+
+        result = {}
+
+        for key, metric in metrics.items():
+
+            if not isinstance(
+                metric,
+                dict,
+            ):
+                continue
+
+            result[key] = {
+                "status": metric.get("status"),
+                "has_data": metric.get("has_data"),
+                "value": metric.get("value"),
+                "total": metric.get("total"),
+                "sum": metric.get("sum"),
+                "samples": metric.get("samples"),
+                "complete": metric.get("complete"),
+                "role": metric.get("role"),
+                "analysis_start": metric.get("analysis_start"),
+                "analysis_end": metric.get("analysis_end"),
+            }
+
+        return result
+
+    @classmethod
+    def _extract_attachment_metric_evidence(
+        cls,
+        attachments,
+    ):
+
+        if not isinstance(
+            attachments,
+            dict,
+        ):
+            return {}
+
+        return {
+            str(attachment_id): cls._extract_metric_evidence(metrics)
+            for attachment_id, metrics in attachments.items()
+        }
+
+    @staticmethod
+    def _get_nested_value(
+        data,
+        path,
+    ):
+
+        current = data
+
+        for part in path.split("."):
+
+            if not isinstance(
+                current,
+                dict,
+            ):
+                return None
+
+            current = current.get(part)
+
+        return current
+
+    @staticmethod
+    def _paginate(
+        method,
+        *,
+        request_kwargs,
+        result_key,
+    ):
+
+        result = []
+
+        kwargs = dict(request_kwargs)
+
+        while True:
+
+            response = method(**kwargs)
+
+            page = response.get(
+                result_key,
+                [],
+            )
+
+            if isinstance(
+                page,
+                list,
+            ):
+
+                result.extend(
+                    item
+                    for item in page
+                    if isinstance(
+                        item,
+                        dict,
+                    )
+                )
+
+            token = response.get("NextToken")
+
+            if not token:
+                break
+
+            kwargs["NextToken"] = token
+
+        return result

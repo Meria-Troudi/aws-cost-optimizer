@@ -72,6 +72,15 @@ class Finding(Base):
         index=True,
     )
 
+    # Analyzer-authored human-readable title (e.g. "NAT Gateway is
+    # idle"), when the analyzer set one on the Finding dataclass.
+    # Nullable so a finding without one falls back to a titleized
+    # finding_type, same as before this column existed.
+    title: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
     category: Mapped[str] = mapped_column(
         String(50),
         nullable=False,

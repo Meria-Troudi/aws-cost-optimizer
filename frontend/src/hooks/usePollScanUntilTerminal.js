@@ -141,7 +141,6 @@ export function usePollScanUntilTerminal() {
   return {
     pollUntilTerminal,
     stopPolling,
-    mountedRef,
   }
 }
 

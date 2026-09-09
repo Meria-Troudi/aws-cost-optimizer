@@ -187,7 +187,13 @@ class CostCollector:
 
         difference = abs(collected_total - monthly_total)
 
-        matches = difference < 0.01
+        # A fixed $0.01 tolerance is meaningless at scale (a real $5
+        # discrepancy on a $500,000 account would still "PASS"). Use
+        # whichever is larger: a cent of absolute rounding slack, or
+        # 0.1% of the collected total.
+        tolerance = max(0.01, 0.001 * abs(collected_total))
+
+        matches = difference <= tolerance
 
         if scan_start and scan_end:
 
@@ -214,12 +220,15 @@ class CostCollector:
 
         print(f"    Difference:      " f"${difference:.2f}")
 
+        print(f"    Tolerance:       " f"${tolerance:.2f}")
+
         print("    Match:           " f"{'✓' if matches else '✗'}")
 
         return {
             "collected_total": collected_total,
             "monthly_total": monthly_total,
             "difference": difference,
+            "tolerance": tolerance,
             "matches": matches,
             "monthly_breakdown": monthly_breakdown,
             "account_monthly_breakdown": account_breakdown,

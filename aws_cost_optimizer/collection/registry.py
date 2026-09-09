@@ -12,9 +12,6 @@ from aws_cost_optimizer.planner.resource_catalog import ResourceCatalog
 
 COLLECTORS: dict[str, type] = {}
 IMPORT_ERRORS: dict[str, str] = {}
-
-# The collector file name is not always equal to the collector key.
-# For those resources, map the collector key to its module file name.
 _COLLECTOR_FILE_OVERRIDES: Dict[str, str] = {
     "rds": "instance",
     "aurora_cluster": "aurora",
@@ -24,8 +21,23 @@ _COLLECTOR_FILE_OVERRIDES: Dict[str, str] = {
 
 
 def register(cls):
+    key = getattr(cls, "key", None)
 
-    COLLECTORS[cls.key] = cls
+    if not key:
+        raise ValueError(f"Collector {cls.__name__!r} cannot register without a 'key'.")
+
+    existing = COLLECTORS.get(key)
+
+    if existing is not None and existing is not cls:
+        # A silent overwrite would hide one of the two implementations
+        # for the entire scan. Fail loudly instead.
+        raise ValueError(
+            f"Duplicate collector registration for key {key!r}: "
+            f"{existing.__name__!r} is already registered; "
+            f"{cls.__name__!r} attempted to replace it."
+        )
+
+    COLLECTORS[key] = cls
     return cls
 
 
@@ -41,11 +53,6 @@ def _collector_module_path(
     subdomain: str | None,
     collector_key: str,
 ) -> Path:
-    """Resolve a collector module path from its catalog location.
-
-    Path layout: collectors/{domain}/{subdomain}/{file}.py when a
-    subdomain exists, otherwise collectors/{domain}/{file}.py.
-    """
     file_name = _collector_file_name(collector_key)
     parts = ["collectors", domain]
 
@@ -55,18 +62,6 @@ def _collector_module_path(
     parts.append(f"{file_name}.py")
 
     return Path(__file__).parent / Path(*parts)
-
-
-def _catalog_collector_entry(
-    item: Dict[str, Any],
-    catalog_key: str,
-) -> Dict[str, Any]:
-    """Return (domain, subdomain, collector_key) for a catalog entry."""
-    domain = item.get("domain")
-    subdomain = item.get("subdomain")
-    collector_config = item.get("collector", {})
-    collector_key = collector_config.get("key", catalog_key)
-    return domain, subdomain, collector_key
 
 
 def load_collectors() -> None:
@@ -97,16 +92,17 @@ def load_collectors() -> None:
                 .replace("/", ".")
             )
             importlib.import_module(f"collection.{relative}")
-        except ImportError as exc:
-            IMPORT_ERRORS[collector_key] = str(exc)
+        except Exception as exc:
+            # Import failures (ImportError, SyntaxError, AttributeError,
+            # ...) become registry diagnostics via missing_collectors()/
+            # validate_collector_registry() -- a broken collector module
+            # must never silently disappear from validation, but it also
+            # must not abort loading of every other collector.
+            IMPORT_ERRORS[collector_key] = f"{type(exc).__name__}: {exc}"
 
 
 def get_collector(name: str):
     return COLLECTORS.get(name)
-
-
-def registered_collector_keys() -> list[str]:
-    return sorted(COLLECTORS.keys())
 
 
 def catalog_collector_keys() -> list[str]:
@@ -164,3 +160,7 @@ def validate_collector_registry(*, strict: bool = False) -> list[str]:
             )
 
     return missing
+
+
+# Removed: _catalog_collector_entry() declared a Dict return type but
+# returned a tuple, and had no callers.

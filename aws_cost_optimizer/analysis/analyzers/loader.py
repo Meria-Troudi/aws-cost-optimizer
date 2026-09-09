@@ -42,11 +42,6 @@ from typing import Any, Dict, Iterator
 
 from aws_cost_optimizer.planner.resource_catalog import ResourceCatalog
 
-# Analyzer module file names that differ from the collector key.
-# Mirrors _COLLECTOR_FILE_OVERRIDES in collection/registry.py; kept
-# separate because the two trees are permitted to diverge (they
-# already do for QuickSight) and cross-importing would couple the
-# analysis layer to the collection layer for no benefit.
 _ANALYZER_FILE_OVERRIDES: Dict[str, str] = {
     "rds": "instance",
     "aurora_cluster": "aurora",

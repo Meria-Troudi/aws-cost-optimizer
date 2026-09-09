@@ -667,6 +667,7 @@ class QuickSightAnalyzer(Analyzer):
                 "region": context.region,
             },
             recommendation_eligible=True,
+            cost_optimization_type="elimination",
         )
 
     def _check_unused_spice_dataset(
@@ -898,6 +899,7 @@ class QuickSightAnalyzer(Analyzer):
         statements: list[EvidenceStatement],
         metadata: dict[str, Any],
         recommendation_eligible: bool,
+        cost_optimization_type: str = "review",
     ) -> Finding:
 
         return Finding(
@@ -916,21 +918,9 @@ class QuickSightAnalyzer(Analyzer):
                 metadata,
             ),
             observation_period=(_observation_period(context)),
-            limitations=[
-                (
-                    "QuickSight CloudTrail activity is evidence of "
-                    "observed API or service activity, but absence "
-                    "of an event does not prove that an asset is "
-                    "unused."
-                ),
-                (
-                    "Business, compliance, disaster-recovery and "
-                    "reporting requirements are not inferred by "
-                    "this analyzer."
-                ),
-            ],
             metadata=dict(metadata),
             recommendation_eligible=(recommendation_eligible),
+            cost_optimization_type=cost_optimization_type,
         )
 
     def _build_evidence(

@@ -144,8 +144,6 @@ export function useScan() {
     lastScanTime,
 
     runScan,
-
-    stopPolling,
   }
 }
 

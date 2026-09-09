@@ -63,7 +63,6 @@ def test_payload_never_includes_raw_topology_or_cloudwatch():
         "severity": "medium",
         "confidence": "medium",
         "reason": "No traffic observed.",
-        "limitations": ["Shared billing evidence."],
         "impact": {},
         "evidence": {
             "derived": {

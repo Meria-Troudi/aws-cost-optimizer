@@ -155,9 +155,6 @@ class EksCollector(BaseCollector):
     key = "eks"
     resource_type = "eks_cluster"
 
-    DEFAULT_NAMESPACE = "ContainerInsights"
-    DEFAULT_PERIOD_SECONDS = 3600
-
     # CloudWatch ListMetrics is used to discover actual metric
     # dimension combinations.
     #
@@ -289,26 +286,12 @@ class EksCollector(BaseCollector):
     def _namespace(self) -> str:
 
         return str(
-            self._cloudwatch_profile().get(
-                "namespace",
-                self.DEFAULT_NAMESPACE,
-            )
+            self._cloudwatch_profile().get("namespace") or self.cloudwatch_namespace()
         ).strip()
 
     def _requested_period(self) -> int:
 
-        try:
-            return int(
-                self._cloudwatch_profile().get(
-                    "period",
-                    self.DEFAULT_PERIOD_SECONDS,
-                )
-            )
-        except (
-            TypeError,
-            ValueError,
-        ):
-            return self.DEFAULT_PERIOD_SECONDS
+        return self.cloudwatch_period()
 
     # ==================================================================
     # DISCOVERY

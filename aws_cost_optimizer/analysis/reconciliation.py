@@ -1,10 +1,5 @@
 """
 Generic billing/resource reconciliation.
-
-Billing identity is evidence.
-
-It is never assumed to be resource identity unless the billing
-dimensions provide a reliable comparison.
 """
 
 from __future__ import annotations
@@ -21,7 +16,6 @@ from .billing import (
     normalize_billing_context,
 )
 
-MATCHED = "matched"
 CURRENT = "current"
 CURRENT_MISMATCH = "current_mismatch"
 HISTORICAL_ONLY = HISTORICAL
@@ -29,6 +23,67 @@ NO_COST = "no_cost"
 UNKNOWN_STATUS = "unknown"
 
 _INSTANCE_USAGE_RE = re.compile(r"InstanceUsage:(?P<instance_class>[A-Za-z0-9._-]+)$")
+
+_VPC_ENDPOINT_HOURS_RE = re.compile(r"VpcEndpoint-Hours$", re.IGNORECASE)
+
+
+def _configuration_and_identity(
+    resource: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return resource configuration and identity dictionaries."""
+
+    configuration = resource.get("configuration", {})
+    if not isinstance(configuration, dict):
+        configuration = {}
+
+    identity = resource.get("identity", {})
+    if not isinstance(identity, dict):
+        identity = {}
+
+    return configuration, identity
+
+
+def _build_result(
+    base: dict[str, Any],
+    *,
+    normalized_billing: dict[str, Any],
+    cost: float,
+    attribution_scope: str,
+    resource_cost_attributed: bool,
+    claimable_resource_cost: float | None,
+    status: str,
+    reason: str,
+    resources_for_analysis: list[dict[str, Any]],
+    matched_resources: list[dict[str, Any]],
+    related_resources: list[dict[str, Any]],
+    resource_ids: list[str],
+    matched_resource_ids: list[str],
+    historical_evidence: list[dict[str, Any]],
+    analysis_status: str,
+    recommendation_allowed: bool,
+    confidence: str,
+) -> dict[str, Any]:
+    """Build a normalized reconciliation result."""
+
+    return {
+        **base,
+        "billing": normalized_billing,
+        "cost": cost,
+        "cost_attribution": attribution_scope,
+        "resource_cost_attributed": resource_cost_attributed,
+        "claimable_resource_cost": claimable_resource_cost,
+        "status": status,
+        "reason": reason,
+        "resources_for_analysis": resources_for_analysis,
+        "matched_resources": matched_resources,
+        "related_resources": related_resources,
+        "resource_ids": resource_ids,
+        "matched_resource_ids": matched_resource_ids,
+        "historical_evidence": historical_evidence,
+        "analysis_status": analysis_status,
+        "recommendation_allowed": recommendation_allowed,
+        "confidence": confidence,
+    }
 
 
 def _resource_scope_attribution(
@@ -38,14 +93,7 @@ def _resource_scope_attribution(
     matched_ids: list[str],
     collection_complete: bool,
 ) -> tuple[dict[str, Any], str, bool, float | None]:
-    """Decide attribution from match count + collection completeness.
-
-    resource iff exactly one resource matched this billing line AND
-    collection for it was not partial (a partial run could be hiding
-    an undiscovered sibling that shares the same bill). Otherwise the
-    amount is collection-plan (shared) or unknown evidence -- never a
-    single resource's claimed cost.
-    """
+    """Determine whether billing can be attributed to a specific resource."""
 
     if len(matched_ids) == 1 and collection_complete:
         attribution_scope = RESOURCE
@@ -83,13 +131,7 @@ def _fixed_scope_attribution(
     billing: dict[str, Any],
     scope: str,
 ) -> tuple[dict[str, Any], str, bool, float | None]:
-    """Force a scope that is never eligible for resource attribution.
-
-    Used for historical/mismatched billing: no matter how many
-    resources exist today, this amount describes a configuration
-    that is not the current resource, so it may never be claimed as
-    that resource's cost.
-    """
+    """Set a non-resource billing attribution scope."""
 
     normalized_billing = dict(billing)
 
@@ -155,14 +197,6 @@ def reconcile_collection_plan(
         if resource_id(resource) != "unknown"
     ]
 
-    # NOTE: usage-type reliability no longer gates attribution --
-    # that decision now belongs entirely to _resource_scope_attribution's
-    # match-count + collection-completeness check, computed per branch
-    # below, after matching. Deciding it here (before any matching had
-    # even happened) was the bug: every branch inherited whatever
-    # scope this produced, including CURRENT_MISMATCH and HISTORICAL,
-    # which must never be resource-scoped regardless of match count.
-
     billing_identity = {
         key: value
         for key, value in billing.items()
@@ -194,30 +228,27 @@ def reconcile_collection_plan(
             attribution_scope,
             resource_cost_attributed,
             claimable_resource_cost,
-        ) = _fixed_scope_attribution(
-            billing=billing,
-            scope=UNKNOWN,
-        )
+        ) = _fixed_scope_attribution(billing=billing, scope=UNKNOWN)
 
-        return {
-            **base,
-            "billing": normalized_billing,
-            "cost": cost,
-            "cost_attribution": attribution_scope,
-            "resource_cost_attributed": resource_cost_attributed,
-            "claimable_resource_cost": claimable_resource_cost,
-            "status": NO_COST,
-            "reason": "No positive billing amount was supplied.",
-            "resources_for_analysis": resources,
-            "matched_resources": resources,
-            "related_resources": [],
-            "resource_ids": resource_ids,
-            "matched_resource_ids": resource_ids,
-            "historical_evidence": [],
-            "analysis_status": ("ready" if resources else "skipped"),
-            "recommendation_allowed": bool(resources),
-            "confidence": "high",
-        }
+        return _build_result(
+            base,
+            normalized_billing=normalized_billing,
+            cost=cost,
+            attribution_scope=attribution_scope,
+            resource_cost_attributed=resource_cost_attributed,
+            claimable_resource_cost=claimable_resource_cost,
+            status=NO_COST,
+            reason="No positive billing cost was supplied.",
+            resources_for_analysis=resources,
+            matched_resources=resources,
+            related_resources=[],
+            resource_ids=resource_ids,
+            matched_resource_ids=resource_ids,
+            historical_evidence=[],
+            analysis_status="ready" if resources else "skipped",
+            recommendation_allowed=bool(resources),
+            confidence="high",
+        )
 
     if resources:
 
@@ -245,37 +276,27 @@ def reconcile_collection_plan(
                     attribution_scope,
                     resource_cost_attributed,
                     claimable_resource_cost,
-                ) = _fixed_scope_attribution(
-                    billing=billing,
-                    # This billing amount describes a resource
-                    # configuration that does not match anything
-                    # discovered today -- it must never be read as
-                    # the current resource's cost, no matter how
-                    # many (or how few) current resources exist.
-                    scope=HISTORICAL,
-                )
+                ) = _fixed_scope_attribution(billing=billing, scope=HISTORICAL)
 
-                return {
-                    **base,
-                    "billing": normalized_billing,
-                    "cost": cost,
-                    "cost_attribution": attribution_scope,
-                    "resource_cost_attributed": resource_cost_attributed,
-                    "claimable_resource_cost": claimable_resource_cost,
-                    "status": CURRENT_MISMATCH,
-                    "reason": (
-                        "Historical billing identifies a "
-                        "resource configuration that does "
-                        "not match the current discovered "
-                        "resource. Billing is retained as "
-                        "historical evidence only."
+                return _build_result(
+                    base,
+                    normalized_billing=normalized_billing,
+                    cost=cost,
+                    attribution_scope=attribution_scope,
+                    resource_cost_attributed=resource_cost_attributed,
+                    claimable_resource_cost=claimable_resource_cost,
+                    status=CURRENT_MISMATCH,
+                    # Usage types identify billed configuration, not a resource ID.
+                    reason=(
+                        "Historical billing exists, but no current "
+                        "resource matches the billed configuration."
                     ),
-                    "resources_for_analysis": resources,
-                    "matched_resources": [],
-                    "related_resources": resources,
-                    "resource_ids": resource_ids,
-                    "matched_resource_ids": [],
-                    "historical_evidence": [
+                    resources_for_analysis=resources,
+                    matched_resources=[],
+                    related_resources=resources,
+                    resource_ids=resource_ids,
+                    matched_resource_ids=[],
+                    historical_evidence=[
                         {
                             "billing_identity": expected_identity,
                             "usage_type": usage_type,
@@ -283,10 +304,10 @@ def reconcile_collection_plan(
                             "region": region,
                         }
                     ],
-                    "analysis_status": "ready",
-                    "recommendation_allowed": True,
-                    "confidence": "medium",
-                }
+                    analysis_status="ready",
+                    recommendation_allowed=True,
+                    confidence="medium",
+                )
 
             (
                 normalized_billing,
@@ -300,39 +321,33 @@ def reconcile_collection_plan(
                 collection_complete=collection_complete,
             )
 
-            return {
-                **base,
-                "billing": normalized_billing,
-                "cost": cost,
-                "cost_attribution": attribution_scope,
-                "resource_cost_attributed": resource_cost_attributed,
-                "claimable_resource_cost": claimable_resource_cost,
-                "status": CURRENT,
-                "reason": (
-                    "Current resources were discovered and "
-                    "the billing identity is compatible with "
-                    "at least one current resource."
+            return _build_result(
+                base,
+                normalized_billing=normalized_billing,
+                cost=cost,
+                attribution_scope=attribution_scope,
+                resource_cost_attributed=resource_cost_attributed,
+                claimable_resource_cost=claimable_resource_cost,
+                status=CURRENT,
+                reason=(
+                    "Current resources were discovered and a "
+                    "billing-compatible resource was found."
                 ),
-                "resources_for_analysis": resources,
-                "matched_resources": matched_resources,
-                "related_resources": [
+                resources_for_analysis=resources,
+                matched_resources=matched_resources,
+                related_resources=[
                     resource
                     for resource in resources
                     if resource not in matched_resources
                 ],
-                "resource_ids": resource_ids,
-                "matched_resource_ids": matched_ids,
-                "historical_evidence": [],
-                "analysis_status": "ready",
-                "recommendation_allowed": True,
-                "confidence": "high",
-            }
+                resource_ids=resource_ids,
+                matched_resource_ids=matched_ids,
+                historical_evidence=[],
+                analysis_status="ready",
+                recommendation_allowed=True,
+                confidence="high",
+            )
 
-        # No inferable billing identity to filter by, so every
-        # discovered resource is a candidate match for this plan --
-        # if that's exactly one resource (and collection was not
-        # partial), it genuinely is that resource's cost; if several
-        # share this collector run, none may individually claim it.
         (
             normalized_billing,
             attribution_scope,
@@ -345,148 +360,63 @@ def reconcile_collection_plan(
             collection_complete=collection_complete,
         )
 
-        return {
-            **base,
-            "billing": normalized_billing,
-            "cost": cost,
-            "cost_attribution": attribution_scope,
-            "resource_cost_attributed": resource_cost_attributed,
-            "claimable_resource_cost": claimable_resource_cost,
-            "status": CURRENT,
-            "reason": (
-                "Current resources were discovered. "
-                "The billing usage type does not provide "
-                "a reliable resource identity, so billing "
-                "remains collection-plan evidence."
+        return _build_result(
+            base,
+            normalized_billing=normalized_billing,
+            cost=cost,
+            attribution_scope=attribution_scope,
+            resource_cost_attributed=resource_cost_attributed,
+            claimable_resource_cost=claimable_resource_cost,
+            status=CURRENT,
+            reason=(
+                "Current resources were discovered, but the billing "
+                "usage type cannot identify a specific resource."
             ),
-            "resources_for_analysis": resources,
-            "matched_resources": resources,
-            "related_resources": [],
-            "resource_ids": resource_ids,
-            "matched_resource_ids": resource_ids,
-            "historical_evidence": [],
-            "analysis_status": "ready",
-            "recommendation_allowed": True,
-            "confidence": "high",
-        }
+            resources_for_analysis=resources,
+            matched_resources=resources,
+            related_resources=[],
+            resource_ids=resource_ids,
+            matched_resource_ids=resource_ids,
+            historical_evidence=[],
+            analysis_status="ready",
+            recommendation_allowed=True,
+            confidence="high",
+        )
 
     (
         normalized_billing,
         attribution_scope,
         resource_cost_attributed,
         claimable_resource_cost,
-    ) = _fixed_scope_attribution(
-        billing=billing,
-        scope=HISTORICAL,
+    ) = _fixed_scope_attribution(billing=billing, scope=HISTORICAL)
+
+    return _build_result(
+        base,
+        normalized_billing=normalized_billing,
+        cost=cost,
+        attribution_scope=attribution_scope,
+        resource_cost_attributed=resource_cost_attributed,
+        claimable_resource_cost=claimable_resource_cost,
+        status=HISTORICAL,
+        reason="Historical billing exists, but no current resource was discovered.",
+        resources_for_analysis=[],
+        matched_resources=[],
+        related_resources=[],
+        resource_ids=[],
+        matched_resource_ids=[],
+        historical_evidence=[],
+        analysis_status="skipped",
+        recommendation_allowed=False,
+        confidence="high",
     )
-
-    return {
-        **base,
-        "billing": normalized_billing,
-        "cost": cost,
-        "cost_attribution": attribution_scope,
-        "resource_cost_attributed": resource_cost_attributed,
-        "claimable_resource_cost": claimable_resource_cost,
-        "status": HISTORICAL,
-        "reason": (
-            "Historical billing exists without a current " "discovered resource."
-        ),
-        "resources_for_analysis": [],
-        "matched_resources": [],
-        "related_resources": [],
-        "resource_ids": [],
-        "matched_resource_ids": [],
-        "historical_evidence": [],
-        "analysis_status": "skipped",
-        "recommendation_allowed": False,
-        "confidence": "high",
-    }
-
-
-def reconcile_billing(
-    billing: dict[str, Any] | None,
-    resources: list[dict[str, Any]],
-) -> dict[str, Any]:
-
-    return reconcile_collection_plan(
-        {
-            "cost_context": billing or {},
-            "service": (billing or {}).get("service"),
-            "usage_type": (billing or {}).get("usage_type"),
-            "region": (billing or {}).get("region"),
-        },
-        resources,
-    )
-
-
-def reconcile_billing_plan(
-    plan: dict[str, Any] | None,
-    resources: list[dict[str, Any]],
-) -> dict[str, Any]:
-
-    return reconcile_collection_plan(
-        plan,
-        resources,
-    )
-
-
-def reconcile_collection_plans(
-    collection_plans: list[dict[str, Any]],
-    resources: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-
-    results = []
-
-    for plan in collection_plans or []:
-
-        if not isinstance(
-            plan,
-            dict,
-        ):
-            continue
-
-        result = reconcile_collection_plan(
-            plan,
-            resources,
-        )
-
-        result["plan"] = {
-            "service": plan.get("service"),
-            "usage_type": plan.get("usage_type"),
-            "region": plan.get("region"),
-            "resource_type": plan.get("resource_type"),
-        }
-
-        results.append(result)
-
-    return results
 
 
 def resource_id(
     resource: dict[str, Any],
 ) -> str:
+    """Return the best available resource identifier."""
 
-    configuration = resource.get(
-        "configuration",
-        {},
-    )
-
-    if not isinstance(
-        configuration,
-        dict,
-    ):
-        configuration = {}
-
-    identity = resource.get(
-        "identity",
-        {},
-    )
-
-    if not isinstance(
-        identity,
-        dict,
-    ):
-        identity = {}
+    configuration, identity = _configuration_and_identity(resource)
 
     value = (
         resource.get("resource_id")
@@ -508,6 +438,7 @@ def _infer_billing_identity(
     usage_type: str | None,
     billing: dict[str, Any],
 ) -> dict[str, Any]:
+    """Infer resource identity from the billing usage type."""
 
     usage = str(usage_type or billing.get("usage_type") or "")
 
@@ -516,6 +447,9 @@ def _infer_billing_identity(
     if match:
         return {"instance_class": match.group("instance_class")}
 
+    if _VPC_ENDPOINT_HOURS_RE.search(usage):
+        return {"endpoint_type": "Interface"}
+
     return {}
 
 
@@ -523,28 +457,9 @@ def _resource_matches_identity(
     resource: dict[str, Any],
     expected_identity: dict[str, Any],
 ) -> bool:
+    """Check whether a resource matches the expected billing identity."""
 
-    configuration = resource.get(
-        "configuration",
-        {},
-    )
-
-    if not isinstance(
-        configuration,
-        dict,
-    ):
-        configuration = {}
-
-    identity = resource.get(
-        "identity",
-        {},
-    )
-
-    if not isinstance(
-        identity,
-        dict,
-    ):
-        identity = {}
+    configuration, identity = _configuration_and_identity(resource)
 
     for key, expected in expected_identity.items():
 
@@ -559,10 +474,18 @@ def _resource_matches_identity(
     return True
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value or default)
+    except (TypeError, ValueError):
+        return default
+
+
 def _plan_amount(
     plan: dict[str, Any],
     billing: dict[str, Any],
 ) -> float:
+    """Return the billing amount from the collection plan."""
 
     amount = billing.get("amount")
 
@@ -570,53 +493,21 @@ def _plan_amount(
 
         try:
             return float(amount)
-
-        except (
-            TypeError,
-            ValueError,
-        ):
+        except (TypeError, ValueError):
             pass
 
     cost_context = plan.get("cost_context")
 
-    if isinstance(
-        cost_context,
-        dict,
-    ):
+    if isinstance(cost_context, dict):
 
         nested = cost_context.get("cost")
 
-        if isinstance(
-            nested,
-            dict,
-        ):
+        if isinstance(nested, dict):
+            return _as_float(nested.get("value"))
 
-            try:
-                return float(nested.get("value") or 0)
+        return _as_float(cost_context.get("value"))
 
-            except (
-                TypeError,
-                ValueError,
-            ):
-                return 0.0
-
-        try:
-            return float(cost_context.get("value") or 0)
-
-        except (
-            TypeError,
-            ValueError,
-        ):
-            return 0.0
-
-    try:
-        return float(cost_context or 0)
-
-    except (
-        TypeError,
-        ValueError,
-    ):
-        return 0.0
+    return _as_float(cost_context)
 
 
 def _empty_result(
@@ -624,6 +515,7 @@ def _empty_result(
     status: str,
     reason: str,
 ) -> dict[str, Any]:
+    """Return an empty reconciliation result."""
 
     return {
         "status": status,

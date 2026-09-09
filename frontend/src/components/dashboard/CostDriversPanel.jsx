@@ -49,18 +49,12 @@ const DATE_OPTIONS = [
     label: 'Specific month',
   },
   {
-    value: 'three_months',
-    label: '3 months ago',
-  },
-  {
-    value: 'six_months',
-    label: '6 months ago',
-  },
-  {
     value: 'custom',
     label: 'Custom range',
   },
 ]
+
+const PAGE_SIZE = 5
 
 function safeCost(row) {
   return Number(
@@ -400,6 +394,9 @@ export default function CostDriversPanel() {
     null,
   )
 
+  const [page, setPage] =
+    useState(1)
+
   useEffect(() => {
 
     let active = true
@@ -655,6 +652,44 @@ export default function CostDriversPanel() {
         )
       : []
 
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        rows.length /
+          PAGE_SIZE,
+      ),
+    )
+
+  const safePage =
+    Math.min(
+      page,
+      totalPages,
+    )
+
+  const pagedRows = rows.slice(
+    (safePage - 1) *
+      PAGE_SIZE,
+    safePage * PAGE_SIZE,
+  )
+
+  useEffect(() => {
+
+    setPage(1)
+
+  }, [query])
+
+  function goPage(next) {
+
+    setPage(
+      Math.min(
+        Math.max(1, next),
+        totalPages,
+      ),
+    )
+
+  }
+
   return (
     <section className="panel cost-explorer-panel section-gap">
 
@@ -832,37 +867,37 @@ export default function CostDriversPanel() {
           </>
         )}
 
-      </div>
+        <div className="cost-explorer-control cost-explorer-control-breakdown">
 
-      <div className="cost-explorer-dimensions">
+          <span>
+            Breakdown
+          </span>
 
-        <span className="cost-explorer-dimension-label">
-          Breakdown
-        </span>
+          <div className="cost-explorer-segmented">
 
-        <div className="cost-explorer-segmented">
+            {DIMENSIONS.map(
+              option => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={
+                    dimension ===
+                    option.value
+                      ? 'active'
+                      : ''
+                  }
+                  onClick={() =>
+                    selectDimension(
+                      option.value,
+                    )
+                  }
+                >
+                  {option.label}
+                </button>
+              ),
+            )}
 
-          {DIMENSIONS.map(
-            option => (
-              <button
-                type="button"
-                key={option.value}
-                className={
-                  dimension ===
-                  option.value
-                    ? 'active'
-                    : ''
-                }
-                onClick={() =>
-                  selectDimension(
-                    option.value,
-                  )
-                }
-              >
-                {option.label}
-              </button>
-            ),
-          )}
+          </div>
 
         </div>
 
@@ -923,7 +958,7 @@ export default function CostDriversPanel() {
           ) : (
             <div className="cost-explorer-list">
 
-              {rows.map(
+              {pagedRows.map(
                 (row, index) => {
 
                   const key =
@@ -1046,6 +1081,55 @@ export default function CostDriversPanel() {
 
             </div>
           )}
+
+          {!loading &&
+            rows.length >
+            0 && (
+              <div className="cost-explorer-pager">
+                <button
+                  type="button"
+                  className="small-btn"
+                  onClick={() =>
+                    goPage(
+                      safePage -
+                        1,
+                    )
+                  }
+                  disabled={
+                    safePage <=
+                    1
+                  }
+                >
+                  ← 
+                </button>
+
+                <span className="cost-explorer-pager-info mono">
+                  Page {safePage} of{' '}
+                  {totalPages} ·{' '}
+                  {rows.length}{' '}
+                  {rows.length === 1
+                    ? 'entry'
+                    : 'entries'}
+                </span>
+
+                <button
+                  type="button"
+                  className="small-btn"
+                  onClick={() =>
+                    goPage(
+                      safePage +
+                        1,
+                    )
+                  }
+                  disabled={
+                    safePage >=
+                    totalPages
+                  }
+                >
+                   →
+                </button>
+              </div>
+            )}
 
         </>
       )}

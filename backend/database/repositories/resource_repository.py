@@ -92,6 +92,10 @@ def save_resource_snapshot(
     optimization_evidence: Any = None,
     state: str | None = None,
     availability_zone: str | None = None,
+    observations: Any = None,
+    data_quality: Any = None,
+    collection_errors: Any = None,
+    collection_status: str | None = None,
 ) -> ResourceSnapshot:
 
     snapshot = ResourceSnapshot(
@@ -107,42 +111,15 @@ def save_resource_snapshot(
         optimization_evidence=json_dumps(
             optimization_evidence if optimization_evidence is not None else {}
         ),
+        observations=json_dumps(observations if observations is not None else {}),
+        data_quality=json_dumps(data_quality if data_quality is not None else {}),
+        collection_errors=json_dumps(
+            collection_errors if collection_errors is not None else {}
+        ),
+        collection_status=collection_status,
     )
 
     db.add(snapshot)
     db.flush()
 
     return snapshot
-
-
-def get_resource(
-    db: Session,
-    resource_id: int,
-) -> Resource | None:
-
-    return db.get(Resource, resource_id)
-
-
-def get_resources_for_scan(
-    db: Session,
-    scan_id: int,
-) -> list[Resource]:
-
-    resource_ids = (
-        db.query(ResourceSnapshot.resource_id)
-        .filter(ResourceSnapshot.scan_run_id == scan_id)
-        .distinct()
-        .all()
-    )
-
-    ids = [row[0] for row in resource_ids if row[0] is not None]
-
-    if not ids:
-        return []
-
-    return (
-        db.query(Resource)
-        .filter(Resource.id.in_(ids))
-        .order_by(Resource.resource_type, Resource.id)
-        .all()
-    )

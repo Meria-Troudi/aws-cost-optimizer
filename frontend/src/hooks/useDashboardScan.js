@@ -145,7 +145,6 @@ export function useDashboardScan({
     scanData,
     error,
     scanCurrentMonth,
-    stopPolling,
   }
 }
 

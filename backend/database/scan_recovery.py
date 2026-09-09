@@ -87,34 +87,3 @@ def recover_stuck_scans(db: Session) -> int:
     )
 
     return len(stuck_scans)
-
-
-def latest_scan_with_costs(db: Session) -> ScanRun | None:
-    """
-    Best scan for the cost overview dashboard.
-
-    Prefers the newest completed all-regions cost refresh (cost_threshold=0),
-    then any newest completed scan that has cost records.
-    """
-    completed = ("completed", "completed_with_errors")
-    cost_scan_ids = db.query(CostRecord.scan_run_id).distinct()
-
-    overview = (
-        db.query(ScanRun)
-        .filter(ScanRun.id.in_(cost_scan_ids))
-        .filter(ScanRun.status.in_(completed))
-        .filter(ScanRun.cost_threshold == 0)
-        .filter(ScanRun.region.is_(None))
-        .order_by(ScanRun.id.desc())
-        .first()
-    )
-    if overview:
-        return overview
-
-    return (
-        db.query(ScanRun)
-        .filter(ScanRun.id.in_(cost_scan_ids))
-        .filter(ScanRun.status.in_(completed))
-        .order_by(ScanRun.id.desc())
-        .first()
-    )

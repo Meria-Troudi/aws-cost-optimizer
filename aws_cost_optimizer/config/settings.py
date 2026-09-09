@@ -17,7 +17,7 @@ CE_REGION = os.getenv("AWS_CE_REGION", "us-east-1")
 # The end date is yesterday rather than today because the current day
 # is always partial in Cost Explorer, and a partial final day makes
 # per-day figures look like a sudden drop in spend.
-DEFAULT_ANALYSIS_WINDOW_DAYS = int(os.getenv("DEFAULT_ANALYSIS_WINDOW_DAYS", "60"))
+DEFAULT_ANALYSIS_WINDOW_DAYS = int(os.getenv("DEFAULT_ANALYSIS_WINDOW_DAYS", "30"))
 
 _today = date.today()
 _default_end = _today - timedelta(days=1)
@@ -25,7 +25,7 @@ _default_start = _default_end - timedelta(days=DEFAULT_ANALYSIS_WINDOW_DAYS)
 
 # Explicit overrides still win, so a specific window can be pinned for
 # reproducing a past scan.
-DEFAULT_START_DATE = os.getenv("DEFAULT_START_DATE", _default_start.isoformat())
-DEFAULT_END_DATE = os.getenv("DEFAULT_END_DATE", _default_end.isoformat())
+DEFAULT_START_DATE = os.getenv("DEFAULT_START_DATE", "2026-07-31")
+DEFAULT_END_DATE = os.getenv("DEFAULT_END_DATE", "2026-08-30")
 
 DEFAULT_COST_THRESHOLD = float(os.getenv("DEFAULT_COST_THRESHOLD", "0.0"))

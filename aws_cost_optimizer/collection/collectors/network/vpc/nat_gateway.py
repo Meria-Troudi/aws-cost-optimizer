@@ -3,57 +3,27 @@ AWS NAT Gateway collector.
 
 Purpose
 -------
-Collect stable NAT Gateway evidence for cost optimization:
+Collect only evidence required to explain NAT Gateway cost and determine
+whether the NAT Gateway is operationally justified.
 
-    identity
-    configuration
-    CloudWatch activity
-    route dependency
-    Availability Zone relationships
-    NAT fleet architecture
-    endpoint coverage
-    optimization evidence
-
-AWS APIs called
----------------
-EC2         describe_nat_gateways (paginated, discovery)
-            describe_subnets (Availability Zone resolution)
-CloudWatch  GetMetricData, via collection.metrics.cloudwatch --
-            AWS/NATGateway namespace, batched across the whole fleet
-            in discover() rather than per resource
-Shared      collection.shared.topology (VPC route tables, subnets,
-            VPC endpoints) and collection.shared.relationships
-            (route -> target resolution)
-
-Handed to the analyzer
-----------------------
-Consumed by analysis/analyzers/network/vpc/nat_gateway.py
-(analyzer name "nat_gateway") as:
-
-    observations.cloudwatch.metrics   raw per-metric results
-    observations.derived              traffic / connections /
-                                      performance / errors summaries,
-                                      each carrying explicit
-                                      available / complete / observed
-                                      / zero flags
-    topology                          route dependency, same- and
-                                      cross-AZ subnets, endpoint
-                                      coverage, NAT fleet context
-    optimization_evidence             the flattened view the analyzer
-                                      rules read
-
-Important
----------
-This collector does NOT attribute Cost Explorer spend to an individual
-NAT Gateway.
-
-CloudWatch traffic is operational evidence.
-
-Billing attribution must come from the billing/reconciliation layer.
-
-Missing telemetry is never reported as zero: every derived block
-distinguishes "not collected" from "collected and genuinely zero", so
-the analyzer can refuse to claim evidence it does not have.
+Evidence domains
+----------------
+1. NAT identity and lifecycle state
+2. NAT configuration
+3. NAT addresses / connectivity
+4. CloudWatch traffic evidence
+5. CloudWatch connection evidence
+6. CloudWatch diagnostic evidence
+7. Packet / peak-rate evidence
+8. NAT-dependent route topology
+9. Dependent subnet and Availability Zone topology
+10. Cross-AZ dependency evidence
+11. NAT fleet / alternative NAT evidence
+12. Gateway endpoint evidence
+13. Interface endpoint evidence
+14. Endpoint coverage against NAT-dependent subnets/AZs
+15. Route-table endpoint evidence
+16. Data-quality / completeness evidence
 """
 
 from __future__ import annotations
@@ -61,19 +31,26 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from aws_cost_optimizer.config.client import get_client
-
-from collection.base import BaseCollector
-from collection.metrics.cloudwatch import CloudWatchMetricCollector
-from collection.registry import register
-from collection.shared.relationships import NetworkRelationshipResolver
-from collection.shared.topology import NetworkTopologyCollector
-
 from aws_cost_optimizer.analysis.metrics import (
     metric_has_observed_data,
     metric_is_sum,
     metric_numeric_value,
     metric_sum_value,
+)
+from aws_cost_optimizer.config.client import get_client
+
+from collection.base import BaseCollector
+from collection.metrics.cloudwatch import (
+    DEFAULT_CLOUDWATCH_PERIOD,
+    CloudWatchMetricCollector,
+)
+from collection.registry import register
+
+from collection.shared.relationships import (
+    NetworkRelationshipResolver,
+)
+from collection.shared.topology import (
+    NetworkTopologyCollector,
 )
 
 
@@ -83,13 +60,6 @@ class NatGatewayCollector(BaseCollector):
     key = "nat_gateway"
     resource_type = "nat_gateway"
 
-    DEFAULT_NAMESPACE = "AWS/NATGateway"
-    DEFAULT_PERIOD = 3600
-
-    TRAFFIC_GROUP = "traffic"
-    CONNECTION_GROUP = "connection"
-    ERROR_GROUP = "error"
-    ACTIVITY_GROUP = "activity"
 
     def __init__(
         self,
@@ -106,6 +76,15 @@ class NatGatewayCollector(BaseCollector):
 
         if not self.region:
             raise ValueError("NAT Gateway collector requires a region.")
+
+        self.core_traffic_metrics = self._metric_role("core_traffic")
+        self.core_connection_metrics = self._metric_role("core_connection")
+        self.diagnostic_connection_metrics = self._metric_role("diagnostic")
+        self.packet_metrics = self._metric_role("packet")
+        self.peak_metrics = self._metric_role("peak")
+
+        self.active_route_states = self._profile_states("active_route_states")
+        self.operational_states = self._profile_states("operational_states")
 
         self.ec2 = get_client(
             "ec2",
@@ -131,14 +110,6 @@ class NatGatewayCollector(BaseCollector):
             List[Dict[str, Any]],
         ] = {}
 
-        # Complete NAT inventory for the current region.
-        #
-        # Used to understand:
-        #
-        #   VPC → NAT count
-        #   VPC → NATs per AZ
-        #   regional vs zonal NAT
-        #   same-AZ alternatives
         self._nat_fleet: List[Dict[str, Any]] = []
 
         self._nat_fleet_by_vpc: dict[
@@ -151,9 +122,7 @@ class NatGatewayCollector(BaseCollector):
             Dict[str, Any],
         ] = {}
 
-    # ==============================================================
     # PROFILE
-    # ==============================================================
 
     def _profile_section(
         self,
@@ -180,32 +149,36 @@ class NatGatewayCollector(BaseCollector):
 
         return value if isinstance(value, dict) else {}
 
+    def _profile_metric_specs(
+        self,
+    ) -> list[dict[str, Any]]:
+
+        specs = self._cloudwatch_profile().get(
+            "metrics",
+            [],
+        )
+
+        if not isinstance(specs, list):
+            return []
+
+        return [item for item in specs if isinstance(item, dict)]
+
     def _metric_group(
         self,
         name: str,
     ) -> tuple[str, ...]:
 
-        groups = self._profile_section("metric_groups")
-
-        values = groups.get(
-            name,
-            [],
-        )
-
-        if not isinstance(
-            values,
-            list,
-        ):
-            return ()
-
         result: list[str] = []
 
-        for value in values:
+        for spec in self._profile_metric_specs():
 
-            text = str(value).strip()
+            if str(spec.get("group") or "").strip() != name:
+                continue
 
-            if text and text not in result:
-                result.append(text)
+            metric_name = str(spec.get("name") or "").strip()
+
+            if metric_name and metric_name not in result:
+                result.append(metric_name)
 
         return tuple(result)
 
@@ -213,33 +186,258 @@ class NatGatewayCollector(BaseCollector):
         self,
     ) -> tuple[str, ...]:
 
-        return self._metric_group(self.TRAFFIC_GROUP)
+        configured = self._metric_group("traffic")
+
+        return configured or self.core_traffic_metrics
 
     def _connection_metrics(
         self,
     ) -> tuple[str, ...]:
 
-        return self._metric_group(self.CONNECTION_GROUP)
+        configured = self._metric_group("connection")
 
-    def _error_metrics(
+        return configured or (
+            self.core_connection_metrics + self.diagnostic_connection_metrics
+        )
+
+    def _metric_role(
         self,
+        role: str,
     ) -> tuple[str, ...]:
 
-        return self._metric_group(self.ERROR_GROUP)
 
-    def _activity_metrics(
+        result: list[str] = []
+
+        for spec in self._profile_metric_specs():
+
+            if str(spec.get("role") or "").strip() != role:
+                continue
+
+            metric_name = str(spec.get("name") or "").strip()
+
+            if metric_name and metric_name not in result:
+                result.append(metric_name)
+
+        if not result:
+            raise ValueError(
+                f"{self.__class__.__name__} profile has no "
+                f"observations.cloudwatch.metrics entries tagged "
+                f"role: {role!r}."
+            )
+
+        return tuple(result)
+
+    def _profile_states(
         self,
-    ) -> tuple[str, ...]:
+        key: str,
+    ) -> frozenset[str]:
+        """
+        Reads a named state vocabulary (e.g. "active_route_states")
+        from the profile's top-level `states` section.
+        """
 
-        return self._metric_group(self.ACTIVITY_GROUP)
+        states = self.profile.get("states")
 
-    # ==============================================================
+        values = states.get(key) if isinstance(states, dict) else None
+
+        if not isinstance(values, list) or not values:
+            raise ValueError(
+                f"{self.__class__.__name__} profile must define "
+                f"states.{key} as a non-empty list."
+            )
+
+        return frozenset(str(value).strip().lower() for value in values)
+
+    # GENERAL HELPERS
+
+    @staticmethod
+    def _dict(value: Any) -> Dict[str, Any]:
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _tags(tags: Any) -> Dict[str, Any]:
+
+        if not isinstance(tags, list):
+            return {}
+
+        result: Dict[str, Any] = {}
+
+        for tag in tags:
+
+            if not isinstance(tag, dict):
+                continue
+
+            key = tag.get("Key")
+
+            if key is None:
+                continue
+
+            key = str(key).strip()
+
+            if not key:
+                continue
+
+            result[key] = tag.get("Value")
+
+        return result
+
+    @staticmethod
+    def _safe_period(value: Any) -> int:
+
+        if value is None:
+            return DEFAULT_CLOUDWATCH_PERIOD
+
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return DEFAULT_CLOUDWATCH_PERIOD
+
+        return max(value, 60)
+
+    def _state_category(self, state: Any) -> str:
+ 
+
+        normalized = str(state or "").strip().lower()
+
+        if normalized in self.operational_states:
+            return "operational"
+
+        return normalized or "unknown"
+
+    def _get_subnet_az(self, subnet_id: Any) -> Optional[str]:
+
+
+        if not subnet_id:
+            return None
+
+        subnet_id = str(subnet_id)
+
+        if subnet_id in self._subnet_az_cache:
+            return self._subnet_az_cache[subnet_id]
+
+        az: Optional[str] = None
+
+        try:
+            response = self.ec2.describe_subnets(SubnetIds=[subnet_id])
+            subnets = response.get("Subnets", [])
+
+            if subnets and isinstance(subnets[0], dict):
+                az = subnets[0].get("AvailabilityZone")
+
+        except Exception:
+            az = None
+
+        self._subnet_az_cache[subnet_id] = az
+
+        return az
+
+    def _get_nat_primary_az(self, raw: Dict[str, Any]) -> Optional[str]:
+
+
+        raw = self._dict(raw)
+
+        return self._get_subnet_az(raw.get("SubnetId"))
+
+    def _get_nat_coverage_azs(self, raw: Dict[str, Any]) -> List[str]:
+
+
+        raw = self._dict(raw)
+
+        zones = raw.get("AutoProvisionZones")
+
+        result: List[str] = []
+
+        if isinstance(zones, list):
+
+            for entry in zones:
+
+                if isinstance(entry, dict):
+                    zone = (
+                        entry.get("Zone")
+                        or entry.get("AvailabilityZone")
+                        or entry.get("ZoneName")
+                    )
+                else:
+                    zone = entry
+
+                if zone and str(zone) not in result:
+                    result.append(str(zone))
+
+        if result:
+            return sorted(result)
+
+        primary = self._get_nat_primary_az(raw)
+
+        return [primary] if primary else []
+
+    def _build_nat_route_summary(
+        self,
+        routes: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+
+        routes = [route for route in routes if isinstance(route, dict)]
+
+        by_state: Dict[str, int] = defaultdict(int)
+
+        for route in routes:
+            state = str(route.get("state") or "unknown").strip().lower()
+            by_state[state] += 1
+
+        return {
+            "route_count": len(routes),
+            "routes_by_state": dict(sorted(by_state.items())),
+            "route_table_ids": sorted(
+                {
+                    str(route.get("route_table_id"))
+                    for route in routes
+                    if route.get("route_table_id")
+                }
+            ),
+            "subnet_ids": sorted(
+                {
+                    str(route.get("subnet_id"))
+                    for route in routes
+                    if route.get("subnet_id")
+                }
+            ),
+        }
+
+    def _normalize_nat_for_fleet(
+        self,
+        nat: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+
+        nat = self._dict(nat)
+
+        nat_id = nat.get("NatGatewayId")
+
+        if not nat_id:
+            return None
+
+        state = nat.get("State")
+
+        mode = str(nat.get("AvailabilityMode") or "zonal").lower()
+
+        return {
+            "nat_gateway_id": str(nat_id),
+            "vpc_id": nat.get("VpcId"),
+            "state": state,
+            "state_category": self._state_category(state),
+            "availability_mode": mode,
+            "availability_zone": self._get_nat_primary_az(nat),
+        }
+
     # DISCOVERY
-    # ==============================================================
 
     def discover(
         self,
     ) -> List[Dict[str, Any]]:
+
+        self._metrics_batch_cache = {}
+        self._nat_fleet = []
+        self._nat_fleet_by_vpc = {}
+        self._nat_by_id = {}
 
         paginator = self.ec2.get_paginator("describe_nat_gateways")
 
@@ -249,10 +447,24 @@ class NatGatewayCollector(BaseCollector):
 
         for page in paginator.paginate():
 
-            for nat in page.get(
+            nat_gateways = page.get(
                 "NatGateways",
                 [],
+            )
+
+            if not isinstance(
+                nat_gateways,
+                list,
             ):
+                continue
+
+            for nat in nat_gateways:
+
+                if not isinstance(
+                    nat,
+                    dict,
+                ):
+                    continue
 
                 nat_id = nat.get("NatGatewayId")
 
@@ -261,12 +473,12 @@ class NatGatewayCollector(BaseCollector):
 
                 nat_id = str(nat_id)
 
-                resource = {
-                    "id": nat_id,
-                    "raw": nat,
-                }
-
-                resources.append(resource)
+                resources.append(
+                    {
+                        "id": nat_id,
+                        "raw": nat,
+                    }
+                )
 
                 normalized = self._normalize_nat_for_fleet(nat)
 
@@ -288,8 +500,10 @@ class NatGatewayCollector(BaseCollector):
 
             vpc_id = item.get("vpc_id")
 
-            if vpc_id:
-                by_vpc[str(vpc_id)].append(item)
+            if not vpc_id:
+                continue
+
+            by_vpc[str(vpc_id)].append(item)
 
         self._nat_fleet_by_vpc = dict(by_vpc)
 
@@ -297,9 +511,7 @@ class NatGatewayCollector(BaseCollector):
 
         return resources
 
-    # ==============================================================
     # CLOUDWATCH
-    # ==============================================================
 
     def _prefetch_metrics_batch(
         self,
@@ -320,35 +532,18 @@ class NatGatewayCollector(BaseCollector):
         ):
             return
 
-        metric_specs = profile.get(
-            "metrics",
-            [],
-        )
-
-        if not isinstance(
-            metric_specs,
-            list,
-        ):
-            return
+        metric_specs = self._profile_metric_specs()
 
         if not metric_specs:
             return
 
-        namespace = str(profile.get("namespace") or self.DEFAULT_NAMESPACE).strip()
+        namespace = str(profile.get("namespace") or self.cloudwatch_namespace())
 
-        requested_period = self._safe_period(
-            profile.get(
-                "period",
-                self.DEFAULT_PERIOD,
-            )
-        )
+        requested_period = self._safe_period(profile.get("period"))
 
         try:
-
             start, end = self.get_analysis_period()
-
         except ValueError:
-
             return
 
         requests: list[Dict[str, Any]] = []
@@ -369,13 +564,11 @@ class NatGatewayCollector(BaseCollector):
 
             raw = raw if isinstance(raw, dict) else {}
 
-            availability_mode = str(raw.get("AvailabilityMode") or "zonal").lower()
+            mode = str(raw.get("AvailabilityMode") or "zonal").lower()
 
-            # ------------------------------------------------------
             # Zonal NAT
-            # ------------------------------------------------------
 
-            if availability_mode != "regional":
+            if mode != "regional":
 
                 query_key = str(nat_id)
 
@@ -395,36 +588,22 @@ class NatGatewayCollector(BaseCollector):
 
                 request_metadata[query_key] = {
                     "nat_gateway_id": str(nat_id),
-                    "availability_zone": self._get_nat_primary_az(raw),
+                    "availability_zone": (self._get_nat_primary_az(raw)),
                     "regional": False,
                 }
 
                 continue
 
-            # ------------------------------------------------------
             # Regional NAT
             #
-            # AWS requires:
-            #
-            #   NatGatewayId
-            #   AvailabilityZone
-            #
-            # Regional NAT can cover multiple AZs.
-            # ------------------------------------------------------
+            # AWS requires AvailabilityZone together with NatGatewayId
+            # for regional NAT metrics.
 
             availability_zones = self._get_nat_coverage_azs(raw)
 
-            # If AWS does not expose the covered AZs yet, do not
-            # silently invent them. Fall back to the subnet AZ only
-            # for discovery context, but do not fabricate a metric
-            # query for a missing AZ.
-            if not availability_zones:
+            for az in availability_zones:
 
-                continue
-
-            for availability_zone in availability_zones:
-
-                query_key = f"{nat_id}@@{availability_zone}"
+                query_key = f"{nat_id}@@{az}"
 
                 requests.append(
                     {
@@ -437,7 +616,7 @@ class NatGatewayCollector(BaseCollector):
                             },
                             {
                                 "Name": "AvailabilityZone",
-                                "Value": str(availability_zone),
+                                "Value": str(az),
                             },
                         ],
                         "metric_specs": metric_specs,
@@ -446,7 +625,7 @@ class NatGatewayCollector(BaseCollector):
 
                 request_metadata[query_key] = {
                     "nat_gateway_id": str(nat_id),
-                    "availability_zone": str(availability_zone),
+                    "availability_zone": str(az),
                     "regional": True,
                 }
 
@@ -492,12 +671,12 @@ class NatGatewayCollector(BaseCollector):
 
         for query_key, results in (raw_results or {}).items():
 
-            meta = request_metadata.get(query_key)
+            metadata = request_metadata.get(query_key)
 
-            if not meta:
+            if not metadata:
                 continue
 
-            nat_id = meta.get("nat_gateway_id")
+            nat_id = metadata.get("nat_gateway_id")
 
             if not nat_id:
                 continue
@@ -513,7 +692,7 @@ class NatGatewayCollector(BaseCollector):
                 grouped[str(nat_id)].append(
                     (
                         str(query_key),
-                        result,
+                        dict(result),
                     )
                 )
 
@@ -522,15 +701,25 @@ class NatGatewayCollector(BaseCollector):
             list[Dict[str, Any]],
         ] = {}
 
+        for metadata in request_metadata.values():
+
+            nat_id = metadata.get("nat_gateway_id")
+
+            if nat_id:
+                final.setdefault(
+                    str(nat_id),
+                    [],
+                )
+
         for nat_id, entries in grouped.items():
 
             regional = any(
                 request_metadata.get(
-                    key,
+                    query_key,
                     {},
                 ).get("regional")
                 is True
-                for key, _ in entries
+                for query_key, _ in entries
             )
 
             if not regional:
@@ -541,29 +730,42 @@ class NatGatewayCollector(BaseCollector):
 
             by_metric: dict[
                 str,
-                list[Dict[str, Any]],
+                list[
+                    tuple[
+                        str,
+                        Dict[str, Any],
+                    ]
+                ],
             ] = defaultdict(list)
 
-            for _, result in entries:
+            for query_key, result in entries:
 
                 metric_name = result.get("metric_name")
 
-                if not metric_name:
-                    continue
-
-                by_metric[str(metric_name)].append(result)
+                if metric_name:
+                    by_metric[str(metric_name)].append(
+                        (
+                            query_key,
+                            result,
+                        )
+                    )
 
             merged: list[Dict[str, Any]] = []
 
-            for metric_name, metric_results in by_metric.items():
+            for (
+                metric_name,
+                metric_results,
+            ) in by_metric.items():
 
-                merged.append(
-                    self._merge_regional_metric_results(
-                        nat_id=nat_id,
-                        metric_name=metric_name,
-                        results=metric_results,
-                    )
+                result = self._merge_regional_metric_results(
+                    nat_id=nat_id,
+                    metric_name=metric_name,
+                    results=metric_results,
+                    request_metadata=request_metadata,
                 )
+
+                if result:
+                    merged.append(result)
 
             final[nat_id] = merged
 
@@ -574,93 +776,101 @@ class NatGatewayCollector(BaseCollector):
         *,
         nat_id: str,
         metric_name: str,
-        results: List[Dict[str, Any]],
+        results: List[
+            tuple[
+                str,
+                Dict[str, Any],
+            ]
+        ],
+        request_metadata: Dict[
+            str,
+            Dict[str, Any],
+        ],
     ) -> Dict[str, Any]:
 
         if not results:
             return {}
 
-        first = results[0]
+        first = results[0][1]
 
-        statistic = str(first.get("statistic") or "Average")
-
-        unit = first.get("unit")
+        statistic = str(first.get("statistic") or "Average").strip()
 
         observed_results = [
             result
-            for result in results
-            if result.get("status") == "ok" and result.get("has_data") is True
+            for _, result in results
+            if (result.get("status") == "ok" and result.get("has_data") is True)
         ]
 
-        # ----------------------------------------------------------
-        # Aggregate the summary values without pretending that the
-        # CloudWatch result is a directly billable resource amount.
-        # ----------------------------------------------------------
-
-        values = [
+        numeric_values = [
             float(result["value"])
-            for result in observed_results
-            if isinstance(
-                result.get("value"),
-                (int, float),
+            for _, result in results
+            if (
+                result.get("status") == "ok"
+                and result.get("has_data") is True
+                and isinstance(
+                    result.get("value"),
+                    (int, float),
+                )
             )
         ]
 
         totals = [
             float(result["total"])
-            for result in observed_results
-            if isinstance(
-                result.get("total"),
-                (int, float),
-            )
-        ]
-
-        averages = [
-            float(result["average"])
-            for result in observed_results
-            if isinstance(
-                result.get("average"),
-                (int, float),
+            for _, result in results
+            if (
+                result.get("status") == "ok"
+                and result.get("has_data") is True
+                and isinstance(
+                    result.get("total"),
+                    (int, float),
+                )
             )
         ]
 
         maximums = [
             float(result["maximum"])
-            for result in observed_results
-            if isinstance(
-                result.get("maximum"),
-                (int, float),
+            for _, result in results
+            if (
+                result.get("status") == "ok"
+                and result.get("has_data") is True
+                and isinstance(
+                    result.get("maximum"),
+                    (int, float),
+                )
             )
         ]
 
         minimums = [
             float(result["minimum"])
-            for result in observed_results
-            if isinstance(
-                result.get("minimum"),
-                (int, float),
+            for _, result in results
+            if (
+                result.get("status") == "ok"
+                and result.get("has_data") is True
+                and isinstance(
+                    result.get("minimum"),
+                    (int, float),
+                )
             )
         ]
 
         if statistic == "Sum":
 
-            value = sum(values) if values else None
+            value = sum(numeric_values) if numeric_values else None
 
             total = sum(totals) if totals else value
 
-            average = sum(averages) / len(averages) if averages else None
+            average = None
 
-            maximum = max(maximums) if maximums else value
+            maximum = max(maximums) if maximums else None
 
-            minimum = min(minimums) if minimums else value
+            minimum = min(minimums) if minimums else None
 
         elif statistic == "Maximum":
 
-            value = max(values) if values else None
+            value = max(numeric_values) if numeric_values else None
 
             total = value
-
-            average = sum(averages) / len(averages) if averages else value
+            average = None
 
             maximum = max(maximums) if maximums else value
 
@@ -668,11 +878,10 @@ class NatGatewayCollector(BaseCollector):
 
         elif statistic == "Minimum":
 
-            value = min(values) if values else None
+            value = min(numeric_values) if numeric_values else None
 
             total = value
-
-            average = sum(averages) / len(averages) if averages else value
+            average = None
 
             maximum = max(maximums) if maximums else value
 
@@ -680,12 +889,13 @@ class NatGatewayCollector(BaseCollector):
 
         else:
 
-            # For Average metrics, equal-period values are averaged.
-            value = sum(values) / len(values) if values else None
+            value = (
+                sum(numeric_values) / len(numeric_values) if numeric_values else None
+            )
 
             total = sum(totals) if totals else value
 
-            average = sum(averages) / len(averages) if averages else value
+            average = value
 
             maximum = max(maximums) if maximums else value
 
@@ -693,7 +903,7 @@ class NatGatewayCollector(BaseCollector):
 
         coverage_values = [
             float(result["coverage_ratio"])
-            for result in results
+            for _, result in results
             if isinstance(
                 result.get("coverage_ratio"),
                 (int, float),
@@ -702,34 +912,65 @@ class NatGatewayCollector(BaseCollector):
 
         coverage_ratio = min(coverage_values) if coverage_values else 0.0
 
-        coverage_percent = coverage_ratio * 100.0
-
-        data_quality = (
-            "complete"
-            if coverage_ratio >= 0.95
-            else (
-                "good"
-                if coverage_ratio >= 0.80
-                else (
-                    "partial"
-                    if coverage_ratio >= 0.50
-                    else "poor" if coverage_ratio > 0 else "no_data"
-                )
-            )
-        )
+        if coverage_ratio >= 0.95:
+            data_quality = "complete"
+        elif coverage_ratio >= 0.80:
+            data_quality = "good"
+        elif coverage_ratio >= 0.50:
+            data_quality = "partial"
+        elif coverage_ratio > 0:
+            data_quality = "poor"
+        else:
+            data_quality = "no_data"
 
         successful = bool(observed_results)
 
+        availability_zones = sorted(
+            {
+                str(
+                    request_metadata.get(
+                        query_key,
+                        {},
+                    ).get("availability_zone")
+                )
+                for query_key, _ in results
+                if request_metadata.get(
+                    query_key,
+                    {},
+                ).get("availability_zone")
+            }
+        )
+
+        regional_by_az: dict[
+            str,
+            Dict[str, Any],
+        ] = {}
+
+        for query_key, result in results:
+
+            az = request_metadata.get(
+                query_key,
+                {},
+            ).get("availability_zone")
+
+            if az:
+                regional_by_az[str(az)] = result
+
+        error = next(
+            (result.get("error") for _, result in results if result.get("error")),
+            None,
+        )
+
         return {
             **first,
-            "metric_key": first.get("metric_key") or metric_name,
+            "metric_key": (first.get("metric_key") or metric_name),
             "metric_name": metric_name,
             "status": (
                 "ok"
                 if successful
                 else (
                     "error"
-                    if any(result.get("status") == "error" for result in results)
+                    if any(result.get("status") == "error" for _, result in results)
                     else "no_data"
                 )
             ),
@@ -744,7 +985,7 @@ class NatGatewayCollector(BaseCollector):
                         )
                         or 0
                     )
-                    for result in results
+                    for _, result in results
                 ),
                 default=0,
             ),
@@ -757,54 +998,51 @@ class NatGatewayCollector(BaseCollector):
                         )
                         or 0
                     )
-                    for result in results
+                    for _, result in results
                 ),
                 default=0,
             ),
-            "value": round(value, 6) if value is not None else None,
-            "total": round(total, 6) if total is not None else None,
-            "average": round(average, 6) if average is not None else None,
-            "maximum": round(maximum, 6) if maximum is not None else None,
-            "minimum": round(minimum, 6) if minimum is not None else None,
+            "value": (round(value, 6) if value is not None else None),
+            "total": (round(total, 6) if total is not None else None),
+            "average": (round(average, 6) if average is not None else None),
+            "maximum": (round(maximum, 6) if maximum is not None else None),
+            "minimum": (round(minimum, 6) if minimum is not None else None),
             "coverage_ratio": round(
                 coverage_ratio,
                 4,
             ),
             "coverage_percent": round(
-                coverage_percent,
+                coverage_ratio * 100.0,
                 2,
             ),
-            "complete": coverage_ratio >= 0.95,
+            "complete": (coverage_ratio >= 0.95),
             "data_quality": data_quality,
-            "unit": unit,
             "regional_aggregation": True,
-            "availability_zones": sorted(
-                {
-                    str(result.get("dimensions", [])[-1].get("Value"))
-                    for result in results
-                    if isinstance(
-                        result.get("dimensions"),
-                        list,
+            "nat_gateway_id": nat_id,
+            "availability_zones": (availability_zones),
+            "regional_by_az": (regional_by_az),
+            "regional_dimension_complete": (
+                bool(availability_zones) and len(availability_zones) == len(results)
+            ),
+            "raw_datapoints": [
+                datapoint
+                for _, result in results
+                for datapoint in (
+                    result.get(
+                        "raw_datapoints",
+                        [],
                     )
-                    and result.get("dimensions")
-                }
-            ),
-            # The underlying CloudWatch results remain the source;
-            # raw datapoint merging is intentionally not fabricated.
-            "raw_datapoints": [],
-            "error": (
-                next(
-                    (result.get("error") for result in results if result.get("error")),
-                    None,
+                    or []
                 )
-                if not successful
-                else None
-            ),
+                if isinstance(
+                    datapoint,
+                    dict,
+                )
+            ],
+            "error": (error if not successful else None),
         }
 
-    # ==============================================================
     # RESOURCE ID
-    # ==============================================================
 
     def get_resource_id(
         self,
@@ -813,16 +1051,14 @@ class NatGatewayCollector(BaseCollector):
 
         return str(resource["id"])
 
-    # ==============================================================
     # IDENTITY
-    # ==============================================================
 
     def collect_identity(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        nat = resource["raw"]
+        nat = self._dict(resource.get("raw"))
 
         state = nat.get("State")
 
@@ -833,29 +1069,29 @@ class NatGatewayCollector(BaseCollector):
             )
         )
 
-        availability_mode = str(nat.get("AvailabilityMode") or "zonal").lower()
+        mode = str(nat.get("AvailabilityMode") or "zonal").lower()
 
         return {
-            "name": tags.get("Name") or resource["id"],
-            "nat_gateway_id": resource["id"],
+            "name": (tags.get("Name") or resource["id"]),
+            "nat_gateway_id": (resource["id"]),
             "state": state,
-            "state_category": self._state_category(state),
-            "availability_mode": availability_mode,
-            "regional": availability_mode == "regional",
-            "connectivity_type": nat.get("ConnectivityType"),
+            "state_category": (self._state_category(state)),
+            "vpc_id": nat.get("VpcId"),
+            "subnet_id": nat.get("SubnetId"),
+            "availability_mode": mode,
+            "regional": (mode == "regional"),
+            "connectivity_type": (nat.get("ConnectivityType")),
             "tags": tags,
         }
 
-    # ==============================================================
     # CONFIGURATION
-    # ==============================================================
 
     def collect_configuration(
         self,
         resource: Dict[str, Any],
     ) -> Dict[str, Any]:
 
-        nat = resource["raw"]
+        nat = self._dict(resource.get("raw"))
 
         addresses = (
             nat.get(
@@ -871,54 +1107,93 @@ class NatGatewayCollector(BaseCollector):
         ):
             addresses = []
 
-        address = (
-            addresses[0]
-            if addresses
+        primary: Dict[str, Any] = {}
+
+        for address in addresses:
+
+            if not isinstance(
+                address,
+                dict,
+            ):
+                continue
+
+            if address.get("IsPrimary"):
+                primary = address
+                break
+
+        if (
+            not primary
+            and addresses
             and isinstance(
                 addresses[0],
                 dict,
             )
-            else {}
-        )
+        ):
+            primary = addresses[0]
 
-        subnet_id = nat.get("SubnetId")
-
-        availability_mode = str(nat.get("AvailabilityMode") or "zonal").lower()
+        mode = str(nat.get("AvailabilityMode") or "zonal").lower()
 
         covered_azs = self._get_nat_coverage_azs(nat)
+
+        create_time = nat.get("CreateTime")
+
+        delete_time = nat.get("DeleteTime")
+
+        connectivity_type = nat.get("ConnectivityType")
 
         return {
             "nat_gateway_id": nat.get("NatGatewayId"),
             "vpc_id": nat.get("VpcId"),
-            "subnet_id": subnet_id,
-            "availability_zone": self._get_nat_primary_az(nat),
-            "availability_zones": covered_azs,
-            "availability_mode": availability_mode,
-            "regional": availability_mode == "regional",
-            "auto_provision_zones": nat.get("AutoProvisionZones"),
-            "auto_scaling_ips": nat.get("AutoScalingIps"),
-            "connectivity_type": nat.get("ConnectivityType"),
+            "subnet_id": nat.get("SubnetId"),
+            "availability_zone": (self._get_nat_primary_az(nat)),
+            "availability_zones": (covered_azs),
+            "availability_mode": mode,
+            "regional": (mode == "regional"),
+            "connectivity_type": (connectivity_type),
             "state": nat.get("State"),
             "create_time": (
-                nat["CreateTime"].isoformat() if nat.get("CreateTime") else None
+                create_time.isoformat()
+                if hasattr(
+                    create_time,
+                    "isoformat",
+                )
+                else (str(create_time) if create_time else None)
             ),
             "delete_time": (
-                nat["DeleteTime"].isoformat() if nat.get("DeleteTime") else None
+                delete_time.isoformat()
+                if hasattr(
+                    delete_time,
+                    "isoformat",
+                )
+                else (str(delete_time) if delete_time else None)
             ),
-            "public_ip": address.get("PublicIp"),
-            "private_ip": address.get("PrivateIp"),
-            "elastic_ip_allocation_id": address.get("AllocationId"),
-            "network_interface_id": address.get("NetworkInterfaceId"),
-            "failure_code": nat.get("FailureCode"),
-            "failure_message": nat.get("FailureMessage"),
+            "nat_gateway_addresses": (addresses),
+            "public_ip": primary.get("PublicIp"),
+            "private_ip": primary.get("PrivateIp"),
+            "elastic_ip_allocation_id": (primary.get("AllocationId")),
+            "network_interface_id": (primary.get("NetworkInterfaceId")),
+            "auto_provision_zones": (nat.get("AutoProvisionZones")),
+            "auto_scaling_ips": (nat.get("AutoScalingIps")),
+            "attached_appliances": (
+                nat.get(
+                    "AttachedAppliances",
+                    [],
+                )
+            ),
+            "failure_code": (nat.get("FailureCode")),
+            "failure_message": (nat.get("FailureMessage")),
             "address_count": len(addresses),
-            "public": nat.get("ConnectivityType") == "public",
-            "private": nat.get("ConnectivityType") == "private",
+            "public": (connectivity_type == "public"),
+            "private": (connectivity_type == "private"),
+            "tags": self._tags(
+                nat.get(
+                    "Tags",
+                    [],
+                )
+            ),
         }
 
-    # ==============================================================
     # OBSERVATIONS
-    # ==============================================================
 
     def collect_observations(
         self,
@@ -928,10 +1203,14 @@ class NatGatewayCollector(BaseCollector):
         profile = self._cloudwatch_profile()
 
         if not profile:
-
-            raise ValueError(
-                "NAT Gateway profile must define " "observations.cloudwatch."
-            )
+            return {
+                "status": "incomplete",
+                "cloudwatch": {"metrics": {}},
+                "derived": {},
+                "error": (
+                    "NAT Gateway profile must define " "observations.cloudwatch."
+                ),
+            }
 
         if (
             profile.get(
@@ -940,38 +1219,35 @@ class NatGatewayCollector(BaseCollector):
             )
             is False
         ):
-
             return {
                 "status": "disabled",
                 "cloudwatch": {},
                 "derived": {},
             }
 
-        metric_specs = profile.get(
-            "metrics",
-            [],
-        )
+        metric_specs = self._profile_metric_specs()
 
-        if (
-            not isinstance(
-                metric_specs,
-                list,
-            )
-            or not metric_specs
-        ):
+        if not metric_specs:
+            return {
+                "status": "incomplete",
+                "cloudwatch": {"metrics": {}},
+                "derived": {},
+                "error": ("NAT Gateway profile must define " "CloudWatch metrics."),
+            }
 
-            raise ValueError("NAT Gateway profile must define " "CloudWatch metrics.")
+        namespace = str(profile.get("namespace") or self.cloudwatch_namespace())
 
-        namespace = str(profile.get("namespace") or self.DEFAULT_NAMESPACE).strip()
+        requested_period = self._safe_period(profile.get("period"))
 
-        requested_period = self._safe_period(
-            profile.get(
-                "period",
-                self.DEFAULT_PERIOD,
-            )
-        )
-
-        start, end = self.get_analysis_period()
+        try:
+            start, end = self.get_analysis_period()
+        except ValueError as exc:
+            return {
+                "status": "incomplete",
+                "cloudwatch": {"metrics": {}},
+                "derived": {},
+                "error": str(exc),
+            }
 
         resource_id = str(resource["id"])
 
@@ -987,16 +1263,78 @@ class NatGatewayCollector(BaseCollector):
 
         for result in results:
 
+            if not isinstance(
+                result,
+                dict,
+            ):
+                continue
+
             metric_name = result.get("metric_name")
 
             if metric_name:
                 metrics[str(metric_name)] = result
 
+        expected_metric_names = sorted(
+            {
+                str(spec.get("name") or "").strip()
+                for spec in metric_specs
+                if str(spec.get("name") or "").strip()
+            }
+        )
+
+        observed_metric_names = sorted(
+            {
+                name
+                for name, metric in metrics.items()
+                if metric_has_observed_data(metric)
+            }
+        )
+
+        no_data_metric_names = sorted(
+            {
+                name
+                for name, metric in metrics.items()
+                if (
+                    metric.get("status")
+                    in {
+                        "no_data",
+                        "missing",
+                    }
+                    or not metric_has_observed_data(metric)
+                )
+            }
+        )
+
+        missing_metric_names = sorted(set(expected_metric_names) - set(metrics.keys()))
+
+        metric_errors = sorted(
+            {
+                str(result.get("error"))
+                for result in metrics.values()
+                if (result.get("status") == "error" and result.get("error"))
+            }
+        )
+
+        if metric_errors:
+            observation_status = "error"
+
+        elif missing_metric_names:
+            observation_status = "partial"
+
+        elif no_data_metric_names:
+            observation_status = "partial" if observed_metric_names else "no_data"
+
+        elif results:
+            observation_status = "ok"
+
+        else:
+            observation_status = "no_data"
+
         effective_periods = sorted(
             {
                 result.get("effective_period")
                 for result in results
-                if result.get("effective_period") is not None
+                if (result.get("effective_period") is not None)
             }
         )
 
@@ -1005,49 +1343,46 @@ class NatGatewayCollector(BaseCollector):
         derived = self._build_derived_data(metrics)
 
         return {
-            "status": "ok",
+            "status": observation_status,
             "cloudwatch": {
                 "namespace": namespace,
-                "requested_period": requested_period,
-                "effective_period": effective_period,
-                "effective_periods": effective_periods,
+                "requested_period": (requested_period),
+                "effective_period": (effective_period),
+                "effective_periods": (effective_periods),
                 "start": start.isoformat(),
                 "end": end.isoformat(),
-                "dimensions": [
-                    {
-                        "Name": "NatGatewayId",
-                        "Value": resource_id,
-                    }
-                ],
                 "metrics": metrics,
+                "expected_metric_names": (expected_metric_names),
+                "observed_metric_names": (observed_metric_names),
+                "no_data_metric_names": (no_data_metric_names),
+                "missing_metric_names": (missing_metric_names),
+                "metric_errors": (metric_errors),
+                "metric_count": len(expected_metric_names),
+                "observed_metric_count": len(observed_metric_names),
+                "no_data_metric_count": len(no_data_metric_names),
+                "missing_metric_count": len(missing_metric_names),
+                "error_metric_count": len(metric_errors),
             },
             "derived": derived,
         }
 
-    # ==============================================================
     # DERIVED ACTIVITY
-    # ==============================================================
 
     def _build_derived_data(
         self,
-        metrics_dict: Dict[str, Any],
+        metrics_dict: Dict[
+            str,
+            Any,
+        ],
     ) -> Dict[str, Any]:
 
         traffic_metrics = self._traffic_metrics()
 
         connection_metrics = self._connection_metrics()
 
-        error_metrics = self._error_metrics()
-
-        activity_metrics = self._activity_metrics()
-
-        if not traffic_metrics:
-
-            raise ValueError("NAT profile must define " "metric_groups.traffic.")
-
-        # ----------------------------------------------------------
+        # --------------------------------------------------------------
         # Traffic
-        # ----------------------------------------------------------
+        # --------------------------------------------------------------
 
         traffic_values = {
             name: metric_sum_value(metrics_dict.get(name)) for name in traffic_metrics
@@ -1060,193 +1395,337 @@ class NatGatewayCollector(BaseCollector):
 
         traffic_available = any(traffic_observed.values())
 
-        traffic_complete = bool(traffic_metrics) and all(traffic_observed.values())
+        core_traffic_values = {
+            name: metric_sum_value(metrics_dict.get(name))
+            for name in self.core_traffic_metrics
+        }
 
-        traffic_semantics_valid = all(
-            not traffic_observed[name] or metric_is_sum(metrics_dict.get(name))
-            for name in traffic_metrics
+        core_traffic_observation = {
+            name: metric_has_observed_data(metrics_dict.get(name))
+            for name in self.core_traffic_metrics
+        }
+
+        core_traffic_complete = all(core_traffic_observation.values())
+
+        core_traffic_semantics_valid = all(
+            (
+                not core_traffic_observation[name]
+                or metric_is_sum(metrics_dict.get(name))
+            )
+            for name in self.core_traffic_metrics
         )
 
-        observed_traffic_values = [
-            float(value) for value in traffic_values.values() if value is not None
+        source_bytes = core_traffic_values.get("BytesInFromSource")
+
+        destination_bytes = core_traffic_values.get("BytesOutToDestination")
+
+        reverse_destination_bytes = core_traffic_values.get("BytesInFromDestination")
+
+        reverse_source_bytes = core_traffic_values.get("BytesOutToSource")
+
+        primary_path_values = [
+            value
+            for value in (
+                source_bytes,
+                destination_bytes,
+            )
+            if value is not None
         ]
 
-        # IMPORTANT:
-        #
-        # This remains a traffic indicator.
-        # It is not a billing amount.
-        directional_traffic_bytes = (
-            max(observed_traffic_values) if observed_traffic_values else None
+        reverse_path_values = [
+            value
+            for value in (
+                reverse_destination_bytes,
+                reverse_source_bytes,
+            )
+            if value is not None
+        ]
+
+        primary_path_bytes = max(primary_path_values) if primary_path_values else None
+
+        reverse_path_bytes = max(reverse_path_values) if reverse_path_values else None
+
+        directional_bytes = [
+            value
+            for value in (
+                primary_path_bytes,
+                reverse_path_bytes,
+            )
+            if value is not None
+        ]
+
+        traffic_bytes = max(directional_bytes) if directional_bytes else None
+
+        traffic_gib = traffic_bytes / (1024.0**3) if traffic_bytes is not None else None
+
+        traffic_values_present = all(
+            value is not None for value in core_traffic_values.values()
         )
 
-        directional_traffic_gib = (
-            directional_traffic_bytes / (1024**3)
-            if directional_traffic_bytes is not None
-            else None
+        core_traffic_zero = (
+            core_traffic_complete
+            and core_traffic_semantics_valid
+            and traffic_values_present
+            and all(value == 0 for value in core_traffic_values.values())
         )
 
-        traffic_zero = (
-            traffic_complete
-            and traffic_semantics_valid
-            and all(
-                value is not None and value == 0 for value in traffic_values.values()
+        core_traffic_positive = any(
+            value is not None and value > 0 for value in core_traffic_values.values()
+        )
+
+        traffic_complete = core_traffic_complete and core_traffic_semantics_valid
+
+        # --------------------------------------------------------------
+        # Connections
+        # --------------------------------------------------------------
+
+        active_metric = metrics_dict.get("ActiveConnectionCount")
+
+        active_observed = metric_has_observed_data(active_metric)
+
+        active_connection_count = (
+            metric_numeric_value(active_metric) if active_observed else None
+        )
+
+        active_connection_semantics_valid = (
+            (metric_numeric_value(active_metric) is not None)
+            if active_observed
+            else False
+        )
+
+        core_connection_available = active_observed
+
+        core_connection_complete = active_observed and active_connection_semantics_valid
+
+        active_connections_zero = (
+            core_connection_complete and active_connection_count == 0
+        )
+
+        active_connections_positive = (
+            active_connection_count is not None and active_connection_count > 0
+        )
+
+        # --------------------------------------------------------------
+        # Diagnostics
+        # --------------------------------------------------------------
+
+        diagnostic_values = {}
+        diagnostic_observed = {}
+        diagnostic_semantics_valid = {}
+
+        for name in self.diagnostic_connection_metrics:
+
+            metric = metrics_dict.get(name)
+
+            observed = metric_has_observed_data(metric)
+
+            diagnostic_observed[name] = observed
+
+            diagnostic_values[name] = metric_sum_value(metric) if observed else None
+
+            diagnostic_semantics_valid[name] = (
+                (metric_sum_value(metric) is not None) if observed else False
+            )
+
+        diagnostic_available = any(diagnostic_observed.values())
+
+        diagnostic_complete = all(
+            diagnostic_observed.get(
+                name,
+                False,
+            )
+            for name in (self.diagnostic_connection_metrics)
+        )
+
+        diagnostic_semantics_all_valid = all(
+            (
+                not diagnostic_observed.get(
+                    name,
+                    False,
+                )
+                or diagnostic_semantics_valid.get(
+                    name,
+                    False,
+                )
+            )
+            for name in (self.diagnostic_connection_metrics)
+        )
+
+        connection_attempt_count = diagnostic_values.get("ConnectionAttemptCount")
+
+        connection_established_count = diagnostic_values.get(
+            "ConnectionEstablishedCount"
+        )
+
+        error_port_allocation = diagnostic_values.get("ErrorPortAllocation")
+
+        idle_timeout_count = diagnostic_values.get("IdleTimeoutCount")
+
+        packets_drop_count = diagnostic_values.get("PacketsDropCount")
+
+        diagnostic_activity = any(
+            value is not None and value > 0
+            for value in (
+                connection_attempt_count,
+                connection_established_count,
+                error_port_allocation,
+                idle_timeout_count,
+                packets_drop_count,
             )
         )
 
-        # ----------------------------------------------------------
-        # Connections
-        # ----------------------------------------------------------
+        # --------------------------------------------------------------
+        # Packet metrics
+        # --------------------------------------------------------------
 
-        connection_values = {
-            name: metric_numeric_value(metrics_dict.get(name))
-            for name in connection_metrics
+        packet_metrics = {
+            name: {
+                "value": metric_sum_value(metrics_dict.get(name)),
+                "observed": (metric_has_observed_data(metrics_dict.get(name))),
+            }
+            for name in self.packet_metrics
         }
 
-        connection_observed = {
-            name: metric_has_observed_data(metrics_dict.get(name))
-            for name in connection_metrics
-        }
-
-        connection_available = any(connection_observed.values())
-
-        connection_complete = bool(connection_metrics) and all(
-            connection_observed.values()
-        )
-
-        observed_connection_values = [
-            float(value) for value in connection_values.values() if value is not None
-        ]
-
-        has_active_connection = (
-            any(value > 0 for value in observed_connection_values)
-            if connection_available
-            else None
-        )
-
-        connections_zero = connection_complete and all(
-            value is not None and value == 0 for value in connection_values.values()
-        )
-
-        # ----------------------------------------------------------
-        # Errors
-        # ----------------------------------------------------------
-
-        error_values = {
-            name: metric_sum_value(metrics_dict.get(name)) for name in error_metrics
-        }
-
-        observed_error_values = {
-            name: value for name, value in error_values.items() if value is not None
-        }
-
-        errors_available = bool(observed_error_values)
-
-        # ----------------------------------------------------------
-        # Generic activity
-        # ----------------------------------------------------------
-
-        activity_values = {
-            name: (metric_numeric_value(metrics_dict.get(name)))
-            for name in activity_metrics
-        }
-
-        observed_activity_values = [
-            value for value in activity_values.values() if value is not None
-        ]
-
-        activity_available = bool(observed_activity_values)
-
-        activity_observed = (
-            any(value > 0 for value in observed_activity_values)
-            if activity_available
-            else None
-        )
-
-        # ----------------------------------------------------------
+        # --------------------------------------------------------------
         # Peak metrics
-        # ----------------------------------------------------------
+        # --------------------------------------------------------------
 
-        peak_bytes = metric_numeric_value(metrics_dict.get("PeakBytesPerSecond"))
+        peak_bytes_metric = metrics_dict.get("PeakBytesPerSecond")
 
-        peak_packets = metric_numeric_value(metrics_dict.get("PeakPacketsPerSecond"))
+        peak_packets_metric = metrics_dict.get("PeakPacketsPerSecond")
+
+        peak_bytes_per_second = (
+            metric_numeric_value(peak_bytes_metric)
+            if metric_has_observed_data(peak_bytes_metric)
+            else None
+        )
+
+        peak_packets_per_second = (
+            metric_numeric_value(peak_packets_metric)
+            if metric_has_observed_data(peak_packets_metric)
+            else None
+        )
+
+        # --------------------------------------------------------------
+        # Core activity
+        # --------------------------------------------------------------
+
+        activity_available = traffic_available or core_connection_available
+
+        if core_traffic_complete and core_connection_complete:
+
+            core_activity_observed = (
+                core_traffic_positive or active_connections_positive
+            )
+
+        elif core_traffic_complete and core_traffic_zero:
+
+            core_activity_observed = (
+                False
+                if (core_connection_complete and active_connections_zero)
+                else None
+            )
+
+        elif active_connections_positive:
+
+            core_activity_observed = True
+
+        else:
+
+            core_activity_observed = None
 
         return {
-            "metric_groups": {
+            "profile_metric_groups": {
                 "traffic": list(traffic_metrics),
                 "connection": list(connection_metrics),
-                "error": list(error_metrics),
-                "activity": list(activity_metrics),
+                "core_traffic": list(self.core_traffic_metrics),
+                "core_connection": list(self.core_connection_metrics),
+                "diagnostic": list(self.diagnostic_connection_metrics),
             },
             "traffic": {
-                "bytes_out_to_destination": traffic_values.get("BytesOutToDestination"),
-                "bytes_out_to_source": traffic_values.get("BytesOutToSource"),
-                "bytes_in_from_source": traffic_values.get("BytesInFromSource"),
-                "bytes_in_from_destination": traffic_values.get(
-                    "BytesInFromDestination"
-                ),
-                "directional_traffic_bytes": directional_traffic_bytes,
-                "directional_traffic_gib": directional_traffic_gib,
-                "available": traffic_available,
-                "complete": traffic_complete,
-                "observed": (
-                    (
-                        directional_traffic_bytes is not None
-                        and directional_traffic_bytes > 0
-                    )
-                    if directional_traffic_bytes is not None
-                    else None
-                ),
-                "zero": traffic_zero,
-                "metric_observation": traffic_observed,
+                "bytes_in_from_source": (source_bytes),
+                "bytes_out_to_destination": (destination_bytes),
+                "bytes_in_from_destination": (reverse_destination_bytes),
+                "bytes_out_to_source": (reverse_source_bytes),
+                "primary_path_bytes": (primary_path_bytes),
+                "reverse_path_bytes": (reverse_path_bytes),
+                "traffic_bytes": (traffic_bytes),
+                "traffic_gib": (traffic_gib),
+                "available": (traffic_available),
+                "complete": (traffic_complete),
+                "observed": (core_traffic_positive if core_traffic_complete else None),
+                "zero": (core_traffic_zero),
+                "metric_observation": (core_traffic_observation),
+                "all_configured_metric_observation": (traffic_observed),
             },
             "connections": {
-                "active": connection_values.get("ActiveConnectionCount"),
-                "attempts": connection_values.get("ConnectionAttemptCount"),
-                "established": connection_values.get("ConnectionEstablishedCount"),
-                "available": connection_available,
-                "complete": connection_complete,
-                "observed": has_active_connection,
-                "zero": connections_zero,
-                "metric_observation": connection_observed,
+                "active": (active_connection_count),
+                "active_zero": (active_connections_zero),
+                "active_positive": (active_connections_positive),
+                "available": (core_connection_available),
+                "complete": (core_connection_complete),
+                "observed": (
+                    active_connections_positive if core_connection_complete else None
+                ),
+                "zero": (active_connections_zero),
+                "metric_observation": {"ActiveConnectionCount": (active_observed)},
+                "semantics_valid": (
+                    active_connection_semantics_valid if active_observed else False
+                ),
             },
-            "performance": {
-                "peak_bytes_per_second": peak_bytes,
-                "peak_packets_per_second": peak_packets,
-                "available": peak_bytes is not None or peak_packets is not None,
+            "diagnostics": {
+                "available": (diagnostic_available),
+                "complete": (diagnostic_complete),
+                "activity_observed": (
+                    diagnostic_activity if diagnostic_available else None
+                ),
+                "connection_attempts": (connection_attempt_count),
+                "connections_established": (connection_established_count),
+                "error_port_allocation": (error_port_allocation),
+                "idle_timeouts": (idle_timeout_count),
+                "packets_dropped": (packets_drop_count),
+                "metric_observation": (diagnostic_observed),
+                "semantics_valid": (diagnostic_semantics_all_valid),
+            },
+            "packets": {name: packet_metrics.get(name) for name in self.packet_metrics},
+            "peak": {
+                "bytes_per_second": (peak_bytes_per_second),
+                "packets_per_second": (peak_packets_per_second),
             },
             "activity": {
-                "observed": activity_observed,
+                "available": (activity_available),
+                "observed": (core_activity_observed),
                 "traffic_observed": (
-                    (
-                        directional_traffic_bytes is not None
-                        and directional_traffic_bytes > 0
-                    )
-                    if directional_traffic_bytes is not None
-                    else None
+                    core_traffic_positive if core_traffic_complete else None
                 ),
-                "connection_observed": has_active_connection,
-                "available": activity_available,
-            },
-            "errors": {
-                "packet_drops": error_values.get("PacketsDropCount"),
-                "port_allocation_errors": error_values.get("ErrorPortAllocation"),
-                "idle_timeouts": error_values.get("IdleTimeoutCount"),
-                "available": errors_available,
+                "connection_observed": (
+                    active_connections_positive if core_connection_complete else None
+                ),
+                "core_traffic_zero": (core_traffic_zero),
+                "core_connections_zero": (active_connections_zero),
+                "diagnostic_activity": (
+                    diagnostic_activity if diagnostic_available else None
+                ),
             },
             "semantics": {
                 "traffic_source": "CloudWatch",
                 "traffic_is_billing_usage": False,
                 "connection_is_billing_usage": False,
+                "diagnostic_is_billing_usage": False,
                 "traffic_requires_sum_statistic": True,
-                "traffic_semantics_valid": traffic_semantics_valid,
-                "traffic_indicator": "maximum_directional_traffic",
+                "active_connection_requires_max_statistic": True,
+                "diagnostic_counters_require_sum_statistic": True,
+                "traffic_semantics_valid": (core_traffic_semantics_valid),
+                "connection_semantics_valid": (active_connection_semantics_valid),
+                "diagnostic_semantics_valid": (diagnostic_semantics_all_valid),
+                "traffic_indicator": ("nat_gateway_processed_traffic_evidence"),
+                "connection_indicator": ("nat_gateway_active_connection_evidence"),
+                "diagnostic_indicator": ("nat_gateway_connection_diagnostic_evidence"),
                 "missing_is_zero": False,
             },
         }
 
-    # ==============================================================
     # TOPOLOGY
-    # ==============================================================
 
     def collect_topology(
         self,
@@ -1261,60 +1740,122 @@ class NatGatewayCollector(BaseCollector):
         nat_id = resource.get("id")
 
         if not vpc_id:
-
             return {
                 "status": "incomplete",
                 "reason": "VPC ID not available",
+                "vpc_id": None,
+                "nat_gateway_id": nat_id,
+                "summary": {
+                    "topology_complete": False,
+                    "dependency_evidence_complete": False,
+                },
             }
 
         if not nat_id:
-
             return {
                 "status": "incomplete",
                 "reason": "NAT Gateway ID not available",
+                "vpc_id": vpc_id,
+                "nat_gateway_id": None,
+                "summary": {
+                    "topology_complete": False,
+                    "dependency_evidence_complete": False,
+                },
             }
 
         topology = self.network_collector.collect(
-            vpc_id=vpc_id,
+            vpc_id=str(vpc_id),
             resource_type=self.resource_type,
-            resource_id=nat_id,
+            resource_id=str(nat_id),
         )
 
-        if topology.get("status") != "ok":
+        topology_status = str(topology.get("status") or "unknown")
 
-            return topology
+        topology_summary = topology.get(
+            "summary",
+            {},
+        )
+
+        if not isinstance(
+            topology_summary,
+            dict,
+        ):
+            topology_summary = {}
+
+        topology_complete = topology_summary.get("topology_complete") is True
 
         resolver = NetworkRelationshipResolver(topology)
 
-        nat_routes = resolver.routes_targeting(
+        # --------------------------------------------------------------
+        # NAT routes
+        # --------------------------------------------------------------
+
+        all_nat_routes = resolver.routes_targeting(
             "nat_gateway",
-            nat_id,
+            str(nat_id),
         )
 
-        route_dependent_subnet_ids = sorted(
-            {route.get("subnet_id") for route in nat_routes if route.get("subnet_id")}
-        )
+        if not isinstance(
+            all_nat_routes,
+            list,
+        ):
+            all_nat_routes = []
 
-        route_dependent_route_table_ids = sorted(
+        active_nat_routes = [
+            route
+            for route in all_nat_routes
+            if (
+                isinstance(
+                    route,
+                    dict,
+                )
+                and route.get("state") in self.active_route_states
+            )
+        ]
+
+        blackhole_nat_routes = [
+            route
+            for route in all_nat_routes
+            if (
+                isinstance(
+                    route,
+                    dict,
+                )
+                and route.get("state") == "blackhole"
+            )
+        ]
+
+        dependent_subnet_ids = sorted(
             {
-                route.get("route_table_id")
-                for route in nat_routes
+                str(route.get("subnet_id"))
+                for route in active_nat_routes
+                if route.get("subnet_id")
+            }
+        )
+
+        dependent_route_table_ids = sorted(
+            {
+                str(route.get("route_table_id"))
+                for route in active_nat_routes
                 if route.get("route_table_id")
             }
         )
 
-        route_dependent_subnets = [
+        dependent_subnets = [
             subnet
-            for subnet_id in route_dependent_subnet_ids
+            for subnet_id in dependent_subnet_ids
             for subnet in [resolver.subnet(subnet_id)]
             if subnet
         ]
 
         subnet_profile_index = {
-            profile.get("subnet_id"): profile
-            for profile in topology.get(
-                "subnet_profiles",
-                [],
+            str(profile.get("subnet_id")): profile
+            for profile in (
+                topology.get(
+                    "subnet_profiles",
+                    [],
+                )
+                or []
             )
             if (
                 isinstance(
@@ -1327,19 +1868,26 @@ class NatGatewayCollector(BaseCollector):
 
         dependent_subnet_profiles = [
             subnet_profile_index[subnet_id]
-            for subnet_id in route_dependent_subnet_ids
+            for subnet_id in dependent_subnet_ids
             if subnet_id in subnet_profile_index
         ]
 
-        # ----------------------------------------------------------
-        # NAT AZ relationships
-        # ----------------------------------------------------------
+        missing_dependent_subnet_profiles = sorted(
+            set(dependent_subnet_ids)
+            - set(
+                str(profile.get("subnet_id"))
+                for profile in dependent_subnet_profiles
+                if profile.get("subnet_id")
+            )
+        )
+
+        # --------------------------------------------------------------
+        # AZ analysis
+        # --------------------------------------------------------------
 
         nat_az = configuration.get("availability_zone")
 
-        availability_mode = str(
-            configuration.get("availability_mode") or "zonal"
-        ).lower()
+        mode = str(configuration.get("availability_mode") or "zonal").lower()
 
         covered_azs = (
             configuration.get(
@@ -1357,61 +1905,50 @@ class NatGatewayCollector(BaseCollector):
 
         dependent_azs = sorted(
             {
-                profile.get("availability_zone")
+                str(profile.get("availability_zone"))
                 for profile in dependent_subnet_profiles
                 if profile.get("availability_zone")
             }
         )
 
-        # Regional NAT already spans supported AZs.
-        # Therefore a subnet in another AZ is not, by itself,
-        # evidence of the classic "cross-AZ NAT gateway" problem.
-        cross_az_subnets = []
+        same_az_subnets: list[str] = []
+        cross_az_subnets: list[str] = []
+        unresolved_az_subnets: list[str] = []
 
-        same_az_subnets = []
+        if mode != "regional":
 
-        if availability_mode != "regional":
+            for profile in dependent_subnet_profiles:
 
-            cross_az_subnets = sorted(
-                {
-                    profile.get("subnet_id")
-                    for profile in dependent_subnet_profiles
-                    if (
-                        profile.get("subnet_id")
-                        and nat_az
-                        and profile.get("availability_zone")
-                        and profile.get("availability_zone") != nat_az
-                    )
-                }
-            )
+                subnet_id = profile.get("subnet_id")
 
-            same_az_subnets = sorted(
-                {
-                    profile.get("subnet_id")
-                    for profile in dependent_subnet_profiles
-                    if (
-                        profile.get("subnet_id")
-                        and nat_az
-                        and profile.get("availability_zone")
-                        and profile.get("availability_zone") == nat_az
-                    )
-                }
-            )
+                subnet_az = profile.get("availability_zone")
 
-        # ----------------------------------------------------------
-        # NAT fleet architecture
-        # ----------------------------------------------------------
+                if not subnet_id:
+                    continue
 
-        fleet_context = self._build_nat_fleet_context(
-            vpc_id=str(vpc_id),
-            nat_id=str(nat_id),
-            route_dependent_subnet_ids=(route_dependent_subnet_ids),
-            dependent_subnet_profiles=(dependent_subnet_profiles),
-        )
+                subnet_id = str(subnet_id)
 
-        # ----------------------------------------------------------
-        # Endpoints
-        # ----------------------------------------------------------
+                if not subnet_az:
+
+                    unresolved_az_subnets.append(subnet_id)
+
+                elif nat_az and subnet_az == nat_az:
+
+                    same_az_subnets.append(subnet_id)
+
+                elif nat_az and subnet_az != nat_az:
+
+                    cross_az_subnets.append(subnet_id)
+
+        same_az_subnets = sorted(set(same_az_subnets))
+
+        cross_az_subnets = sorted(set(cross_az_subnets))
+
+        unresolved_az_subnets = sorted(set(unresolved_az_subnets))
+
+        # --------------------------------------------------------------
+        # Strong endpoint analysis
+        # --------------------------------------------------------------
 
         endpoints = topology.get(
             "vpc_endpoints",
@@ -1424,15 +1961,31 @@ class NatGatewayCollector(BaseCollector):
         ):
             endpoints = []
 
-        relevant_endpoints = self._find_relevant_endpoints(
+        endpoint_evidence = self._build_strong_endpoint_evidence(
             endpoints=endpoints,
-            nat_routes=nat_routes,
-            resolver=resolver,
+            dependent_route_table_ids=(dependent_route_table_ids),
+            dependent_subnet_ids=(dependent_subnet_ids),
+            dependent_azs=(dependent_azs),
+            active_nat_routes=(active_nat_routes),
+            topology=topology,
         )
 
-        endpoint_summary = self._build_endpoint_summary(relevant_endpoints)
+        # --------------------------------------------------------------
+        # Fleet
+        # --------------------------------------------------------------
 
-        route_summary = self._build_nat_route_summary(nat_routes)
+        fleet_context = self._build_nat_fleet_context(
+            vpc_id=str(vpc_id),
+            nat_id=str(nat_id),
+            route_dependent_subnet_ids=(dependent_subnet_ids),
+            dependent_subnet_profiles=(dependent_subnet_profiles),
+        )
+
+        # --------------------------------------------------------------
+        # Route summary
+        # --------------------------------------------------------------
+
+        route_summary = self._build_nat_route_summary(all_nat_routes)
 
         all_routes = topology.get(
             "routes",
@@ -1445,26 +1998,66 @@ class NatGatewayCollector(BaseCollector):
         ):
             all_routes = []
 
+        missing_dependency_route_tables = sorted(
+            {
+                str(route.get("route_table_id"))
+                for route in active_nat_routes
+                if (
+                    route.get("route_table_id")
+                    and not resolver.route_table_for_subnet(str(route.get("subnet_id")))
+                )
+            }
+        )
+
+        dependency_evidence_complete = (
+            topology_complete
+            and not missing_dependent_subnet_profiles
+            and not missing_dependency_route_tables
+        )
+
+        route_dependent_az_count = len(dependent_azs)
+
         return {
-            "status": "ok",
+            "status": topology_status,
             "vpc_id": vpc_id,
             "nat_gateway_id": nat_id,
             "nat_subnet": configuration.get("subnet_id"),
-            "nat_availability_zone": nat_az,
-            "availability_mode": availability_mode,
-            "covered_availability_zones": covered_azs,
-            "route_dependent_subnet_ids": route_dependent_subnet_ids,
-            "route_dependent_subnets": route_dependent_subnets,
-            "route_dependent_subnet_profiles": dependent_subnet_profiles,
-            "route_dependent_route_table_ids": route_dependent_route_table_ids,
-            "dependent_availability_zones": dependent_azs,
-            "nat_routes": nat_routes,
+            "nat_availability_zone": (nat_az),
+            "availability_mode": mode,
+            "covered_availability_zones": sorted(
+                {str(value) for value in covered_azs if value}
+            ),
+            "nat_routes": all_nat_routes,
+            "active_nat_routes": active_nat_routes,
+            "blackhole_nat_routes": (blackhole_nat_routes),
+            "route_dependent_subnet_ids": (dependent_subnet_ids),
+            "route_dependent_subnets": (dependent_subnets),
+            "route_dependent_subnet_profiles": (dependent_subnet_profiles),
+            "route_dependent_route_table_ids": (dependent_route_table_ids),
             "route_summary": route_summary,
-            "vpc_endpoints": endpoints,
-            "relevant_endpoints": relevant_endpoints,
-            "endpoint_summary": endpoint_summary,
-            "same_az_subnets": same_az_subnets,
-            "cross_az_subnets": cross_az_subnets,
+            "dependency_evidence_complete": (dependency_evidence_complete),
+            "missing_dependent_subnet_profiles": (missing_dependent_subnet_profiles),
+            "missing_dependency_route_tables": (missing_dependency_route_tables),
+            "dependent_availability_zones": (dependent_azs),
+            "dependent_availability_zone_count": (route_dependent_az_count),
+            "same_az_subnets": (same_az_subnets),
+            "cross_az_subnets": (cross_az_subnets),
+            "unresolved_az_subnets": (unresolved_az_subnets),
+            # Strong endpoint evidence
+            "endpoint_evidence": endpoint_evidence,
+            # Compatibility with existing analyzer fields
+            "relevant_endpoints": (
+                endpoint_evidence.get(
+                    "relevant_endpoints",
+                    [],
+                )
+            ),
+            "endpoint_summary": (
+                endpoint_evidence.get(
+                    "summary",
+                    {},
+                )
+            ),
             "fleet": fleet_context,
             "network_summary": {
                 "subnet_count": len(
@@ -1472,72 +2065,515 @@ class NatGatewayCollector(BaseCollector):
                         "subnets",
                         [],
                     )
+                    or []
                 ),
                 "route_table_count": len(
                     topology.get(
                         "route_tables",
                         [],
                     )
+                    or []
                 ),
                 "route_count": len(all_routes),
+                "effective_route_count": len(
+                    topology.get(
+                        "effective_routes",
+                        [],
+                    )
+                    or []
+                ),
+                "effective_route_table_mapping_count": len(
+                    topology.get(
+                        "effective_route_table_mappings",
+                        [],
+                    )
+                    or []
+                ),
                 "endpoint_count": len(endpoints),
-                "nat_gateway_count_in_vpc": fleet_context.get(
-                    "nat_gateway_count",
-                    0,
+                "nat_gateway_count_in_vpc": (
+                    fleet_context.get(
+                        "nat_gateway_count",
+                        0,
+                    )
                 ),
-                "operational_nat_gateway_count_in_vpc": fleet_context.get(
-                    "operational_nat_gateway_count",
-                    0,
+                "operational_nat_gateway_count_in_vpc": (
+                    fleet_context.get(
+                        "operational_nat_gateway_count",
+                        0,
+                    )
                 ),
+                "topology_complete": (topology_complete),
+                "dependency_evidence_complete": (dependency_evidence_complete),
             },
             "summary": {
-                "route_dependent_subnet_count": len(route_dependent_subnet_ids),
-                "route_dependent_route_table_count": len(
-                    route_dependent_route_table_ids
-                ),
-                "nat_route_count": len(nat_routes),
-                "same_az_subnet_count": len(same_az_subnets),
-                "cross_az_subnet_count": len(cross_az_subnets),
+                "nat_route_count": len(all_nat_routes),
+                "active_nat_route_count": len(active_nat_routes),
+                "blackhole_nat_route_count": len(blackhole_nat_routes),
+                "route_dependent_subnet_count": (len(dependent_subnet_ids)),
+                "route_dependent_route_table_count": (len(dependent_route_table_ids)),
+                "same_az_subnet_count": (len(same_az_subnets)),
+                "cross_az_subnet_count": (len(cross_az_subnets)),
+                "unresolved_az_subnet_count": (len(unresolved_az_subnets)),
+                "has_active_route_dependency": bool(active_nat_routes),
+                "has_blackhole_route_dependency": bool(blackhole_nat_routes),
                 "has_same_az_route_dependency": bool(same_az_subnets),
                 "has_cross_az_route_dependency": bool(cross_az_subnets),
-                "regional_nat": availability_mode == "regional",
+                "regional_nat": (mode == "regional"),
                 "covered_az_count": len(covered_azs),
-                "vpc_endpoint_count": len(endpoints),
-                "relevant_endpoint_count": len(relevant_endpoints),
-                "relevant_endpoint_services": endpoint_summary.get(
-                    "services",
-                    [],
+                "relevant_endpoint_count": (
+                    endpoint_evidence.get(
+                        "summary",
+                        {},
+                    ).get(
+                        "relevant_endpoint_count",
+                        0,
+                    )
                 ),
-                "has_s3_endpoint_on_route_dependent_tables": endpoint_summary.get(
-                    "has_s3",
-                    False,
+                "relevant_endpoint_services": (
+                    endpoint_evidence.get(
+                        "summary",
+                        {},
+                    ).get(
+                        "services",
+                        [],
+                    )
                 ),
-                "has_dynamodb_endpoint_on_route_dependent_tables": endpoint_summary.get(
-                    "has_dynamodb",
-                    False,
+                "has_s3_endpoint_on_route_dependent_tables": (
+                    endpoint_evidence.get(
+                        "summary",
+                        {},
+                    ).get(
+                        "has_s3_gateway_route_coverage",
+                        False,
+                    )
                 ),
-                "has_ecr_endpoint_on_route_dependent_tables": endpoint_summary.get(
-                    "has_ecr",
-                    False,
+                "has_dynamodb_endpoint_on_route_dependent_tables": (
+                    endpoint_evidence.get(
+                        "summary",
+                        {},
+                    ).get(
+                        "has_dynamodb_gateway_route_coverage",
+                        False,
+                    )
                 ),
-                "same_az_alternative_nat_count": fleet_context.get(
-                    "same_az_alternative_nat_count",
-                    0,
+                "has_ecr_endpoint_on_route_dependent_tables": (
+                    endpoint_evidence.get(
+                        "summary",
+                        {},
+                    ).get(
+                        "has_ecr_interface_coverage",
+                        False,
+                    )
                 ),
-                "same_vpc_nat_count": fleet_context.get(
-                    "nat_gateway_count",
-                    0,
+                "same_az_alternative_nat_count": (
+                    fleet_context.get(
+                        "same_az_alternative_nat_count",
+                        0,
+                    )
                 ),
-                "same_vpc_operational_nat_count": fleet_context.get(
-                    "operational_nat_gateway_count",
-                    0,
+                "same_vpc_nat_count": (
+                    fleet_context.get(
+                        "nat_gateway_count",
+                        0,
+                    )
                 ),
+                "same_vpc_operational_nat_count": (
+                    fleet_context.get(
+                        "operational_nat_gateway_count",
+                        0,
+                    )
+                ),
+                "dependency_evidence_complete": (dependency_evidence_complete),
+                "topology_complete": (topology_complete),
             },
         }
 
-    # ==============================================================
-    # NAT FLEET CONTEXT
-    # ==============================================================
+    # STRONG ENDPOINT EVIDENCE
+
+    def _build_strong_endpoint_evidence(
+        self,
+        *,
+        endpoints: List[Dict[str, Any]],
+        dependent_route_table_ids: List[str],
+        dependent_subnet_ids: List[str],
+        dependent_azs: List[str],
+        active_nat_routes: List[Dict[str, Any]],
+        topology: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        route_table_set = {str(value) for value in dependent_route_table_ids if value}
+
+        subnet_set = {str(value) for value in dependent_subnet_ids if value}
+
+        az_set = {str(value) for value in dependent_azs if value}
+
+        relevant = []
+
+        gateway_route_coverage = []
+        interface_subnet_coverage = []
+
+        services = set()
+
+        gateway_s3 = []
+        gateway_dynamodb = []
+
+        interface_ecr = []
+
+        for endpoint in endpoints:
+
+            if not isinstance(
+                endpoint,
+                dict,
+            ):
+                continue
+
+            normalized = self._normalize_endpoint_evidence(endpoint)
+
+            endpoint_id = normalized.get("endpoint_id")
+
+            endpoint_type = normalized.get("endpoint_type")
+
+            service = normalized.get("service")
+
+            state = normalized.get("state")
+
+            route_table_ids = {
+                str(value)
+                for value in normalized.get(
+                    "route_table_ids",
+                    [],
+                )
+                if value
+            }
+
+            subnet_ids = {
+                str(value)
+                for value in normalized.get(
+                    "subnet_ids",
+                    [],
+                )
+                if value
+            }
+
+            endpoint_azs = {
+                str(value)
+                for value in normalized.get(
+                    "availability_zones",
+                    [],
+                )
+                if value
+            }
+
+            route_overlap = sorted(route_table_set & route_table_ids)
+
+            subnet_overlap = sorted(subnet_set & subnet_ids)
+
+            az_overlap = sorted(az_set & endpoint_azs)
+
+            route_relevant = bool(route_overlap)
+
+            subnet_relevant = bool(subnet_overlap)
+
+            az_relevant = bool(az_overlap)
+
+            if route_relevant or subnet_relevant or az_relevant:
+
+                relevant.append(
+                    {
+                        **normalized,
+                        "relevance": {
+                            "route_table_overlap": (route_overlap),
+                            "subnet_overlap": (subnet_overlap),
+                            "availability_zone_overlap": (az_overlap),
+                            "route_relevant": (route_relevant),
+                            "subnet_relevant": (subnet_relevant),
+                            "availability_zone_relevant": (az_relevant),
+                        },
+                    }
+                )
+
+            # Gateway endpoints
+
+            if endpoint_type == "Gateway":
+
+                if route_relevant:
+
+                    gateway_route_coverage.append(
+                        {
+                            "endpoint_id": endpoint_id,
+                            "service": service,
+                            "state": state,
+                            "route_table_ids": sorted(route_table_ids),
+                            "dependent_route_table_ids": (route_overlap),
+                            "coverage_complete": (
+                                route_table_set.issubset(route_table_ids)
+                                if route_table_set
+                                else False
+                            ),
+                        }
+                    )
+
+                    if service and self._is_s3_service(service):
+                        gateway_s3.append(endpoint_id)
+
+                    if service and self._is_dynamodb_service(service):
+                        gateway_dynamodb.append(endpoint_id)
+
+            # Interface endpoints
+
+            elif endpoint_type == "Interface":
+
+                if subnet_relevant or az_relevant:
+
+                    interface_subnet_coverage.append(
+                        {
+                            "endpoint_id": endpoint_id,
+                            "service": service,
+                            "state": state,
+                            "private_dns_enabled": (
+                                normalized.get("private_dns_enabled")
+                            ),
+                            "subnet_ids": sorted(subnet_ids),
+                            "dependent_subnet_ids": (subnet_overlap),
+                            "availability_zones": sorted(endpoint_azs),
+                            "dependent_availability_zones": (az_overlap),
+                            "coverage_complete": (
+                                subnet_set.issubset(subnet_ids) if subnet_set else False
+                            ),
+                        }
+                    )
+
+                    if service and self._is_ecr_service(service):
+                        interface_ecr.append(endpoint_id)
+
+            if service:
+                services.add(str(service))
+
+        relevant = sorted(
+            relevant,
+            key=lambda item: str(item.get("endpoint_id") or ""),
+        )
+
+        # --------------------------------------------------------------
+        # Strong evidence semantics
+        # --------------------------------------------------------------
+
+        gateway_route_table_covered = {
+            route_table_id
+            for item in gateway_route_coverage
+            for route_table_id in item.get(
+                "dependent_route_table_ids",
+                [],
+            )
+        }
+
+        endpoint_route_table_coverage_complete = bool(
+            route_table_set
+        ) and route_table_set.issubset(gateway_route_table_covered)
+
+        interface_subnet_covered = {
+            subnet_id
+            for item in interface_subnet_coverage
+            for subnet_id in item.get(
+                "dependent_subnet_ids",
+                [],
+            )
+        }
+
+        interface_subnet_coverage_complete = bool(subnet_set) and subnet_set.issubset(
+            interface_subnet_covered
+        )
+
+        has_s3_gateway_route_coverage = bool(
+            gateway_s3
+            and any(
+                item.get("service") and self._is_s3_service(item.get("service"))
+                for item in gateway_route_coverage
+            )
+        )
+
+        has_dynamodb_gateway_route_coverage = bool(
+            gateway_dynamodb
+            and any(
+                item.get("service") and self._is_dynamodb_service(item.get("service"))
+                for item in gateway_route_coverage
+            )
+        )
+
+        has_ecr_interface_coverage = bool(interface_ecr)
+
+        return {
+            "status": (
+                "ok"
+                if isinstance(
+                    endpoints,
+                    list,
+                )
+                else "incomplete"
+            ),
+            "endpoint_count": len(endpoints),
+            "relevant_endpoints": relevant,
+            "gateway_route_coverage": (gateway_route_coverage),
+            "interface_subnet_coverage": (interface_subnet_coverage),
+            "route_dependent_route_table_ids": (sorted(route_table_set)),
+            "route_dependent_subnet_ids": (sorted(subnet_set)),
+            "route_dependent_availability_zones": (sorted(az_set)),
+            "endpoint_route_table_coverage_complete": (
+                endpoint_route_table_coverage_complete
+            ),
+            "interface_subnet_coverage_complete": (interface_subnet_coverage_complete),
+            "summary": {
+                "relevant_endpoint_count": len(relevant),
+                "services": sorted(services),
+                "gateway_endpoint_count": len(gateway_route_coverage),
+                "interface_endpoint_count": len(interface_subnet_coverage),
+                "has_s3_gateway_route_coverage": (has_s3_gateway_route_coverage),
+                "has_dynamodb_gateway_route_coverage": (
+                    has_dynamodb_gateway_route_coverage
+                ),
+                "has_ecr_interface_coverage": (has_ecr_interface_coverage),
+                "gateway_route_table_coverage_complete": (
+                    endpoint_route_table_coverage_complete
+                ),
+                "interface_subnet_coverage_complete": (
+                    interface_subnet_coverage_complete
+                ),
+                # Explicitly distinguish evidence from a conclusion.
+                "endpoint_opportunity_evidence_available": bool(
+                    gateway_route_coverage or interface_subnet_coverage
+                ),
+                "does_not_prove_nat_traffic_avoidance": True,
+            },
+            "data_quality": {
+                "endpoint_inventory_available": True,
+                "route_table_context_available": bool(route_table_set),
+                "subnet_context_available": bool(subnet_set),
+                "az_context_available": bool(az_set),
+            },
+        }
+
+    # ENDPOINT NORMALIZATION
+
+    @staticmethod
+    def _normalize_endpoint_evidence(
+        endpoint: Dict[str, Any],
+    ) -> Dict[str, Any]:
+
+        endpoint_id = (
+            endpoint.get("VpcEndpointId")
+            or endpoint.get("VpcEndpointID")
+            or endpoint.get("endpoint_id")
+            or endpoint.get("id")
+        )
+
+        endpoint_type = (
+            endpoint.get("VpcEndpointType")
+            or endpoint.get("endpoint_type")
+            or endpoint.get("type")
+        )
+
+        state = endpoint.get("State") or endpoint.get("state")
+
+        service = (
+            endpoint.get("ServiceName")
+            or endpoint.get("service_name")
+            or endpoint.get("service")
+        )
+
+        route_table_ids = (
+            endpoint.get("RouteTableIds") or endpoint.get("route_table_ids") or []
+        )
+
+        subnet_ids = endpoint.get("SubnetIds") or endpoint.get("subnet_ids") or []
+
+        availability_zones = (
+            endpoint.get("AvailabilityZones")
+            or endpoint.get("availability_zones")
+            or []
+        )
+
+        private_dns_enabled = endpoint.get("PrivateDnsEnabled")
+
+        if private_dns_enabled is None:
+            private_dns_enabled = endpoint.get("private_dns_enabled")
+
+        policy = endpoint.get("PolicyDocument") or endpoint.get("policy_document")
+
+        dns_entries = endpoint.get("DnsEntries") or endpoint.get("dns_entries") or []
+
+        network_interface_ids = (
+            endpoint.get("NetworkInterfaceIds")
+            or endpoint.get("network_interface_ids")
+            or []
+        )
+
+        return {
+            "endpoint_id": (str(endpoint_id) if endpoint_id else None),
+            "endpoint_type": (str(endpoint_type) if endpoint_type else None),
+            "state": (str(state) if state else None),
+            "service": (str(service) if service else None),
+            "route_table_ids": sorted(
+                {str(value) for value in route_table_ids if value}
+            ),
+            "subnet_ids": sorted({str(value) for value in subnet_ids if value}),
+            "availability_zones": sorted(
+                {str(value) for value in availability_zones if value}
+            ),
+            "private_dns_enabled": (private_dns_enabled),
+            "policy_present": (policy is not None),
+            "dns_entry_count": (
+                len(dns_entries)
+                if isinstance(
+                    dns_entries,
+                    list,
+                )
+                else 0
+            ),
+            "network_interface_ids": sorted(
+                {str(value) for value in network_interface_ids if value}
+            ),
+            "raw": endpoint,
+        }
+
+    # ENDPOINT SERVICE HELPERS
+
+    @staticmethod
+    def _is_s3_service(
+        service: Optional[str],
+    ) -> bool:
+
+        if not service:
+            return False
+
+        value = str(service).lower()
+
+        return ".s3" in value or "s3.amazonaws.com" in value
+
+    @staticmethod
+    def _is_dynamodb_service(
+        service: Optional[str],
+    ) -> bool:
+
+        if not service:
+            return False
+
+        value = str(service).lower()
+
+        return "dynamodb" in value
+
+    @staticmethod
+    def _is_ecr_service(
+        service: Optional[str],
+    ) -> bool:
+
+        if not service:
+            return False
+
+        value = str(service).lower()
+
+        return "ecr.api" in value or "ecr.dkr" in value or "ecr" in value
+
+    # NAT FLEET
 
     def _build_nat_fleet_context(
         self,
@@ -1555,7 +2591,9 @@ class NatGatewayCollector(BaseCollector):
             )
         )
 
-        operational = [nat for nat in nats if nat.get("state") == "available"]
+        operational = [
+            nat for nat in nats if nat.get("state") in self.operational_states
+        ]
 
         regional = [
             nat for nat in operational if nat.get("availability_mode") == "regional"
@@ -1597,7 +2635,7 @@ class NatGatewayCollector(BaseCollector):
 
         dependent_azs = sorted(
             {
-                profile.get("availability_zone")
+                str(profile.get("availability_zone"))
                 for profile in dependent_subnet_profiles
                 if profile.get("availability_zone")
             }
@@ -1621,37 +2659,44 @@ class NatGatewayCollector(BaseCollector):
             "regional_nat_gateway_count": len(regional),
             "zonal_nat_gateway_count": len(zonal),
             "nat_gateway_ids": sorted(
-                str(nat.get("nat_gateway_id"))
-                for nat in nats
-                if nat.get("nat_gateway_id")
+                {
+                    str(nat.get("nat_gateway_id"))
+                    for nat in nats
+                    if nat.get("nat_gateway_id")
+                }
             ),
             "operational_nat_gateway_ids": sorted(
-                str(nat.get("nat_gateway_id"))
-                for nat in operational
-                if nat.get("nat_gateway_id")
+                {
+                    str(nat.get("nat_gateway_id"))
+                    for nat in operational
+                    if nat.get("nat_gateway_id")
+                }
             ),
             "availability_zone_nat_counts": dict(sorted(az_counts.items())),
-            "dependent_availability_zones": dependent_azs,
+            "dependent_availability_zones": (dependent_azs),
             "same_az_alternative_nat_ids": sorted(
-                str(nat.get("nat_gateway_id"))
-                for nat in same_az_alternatives
-                if nat.get("nat_gateway_id")
+                {
+                    str(nat.get("nat_gateway_id"))
+                    for nat in same_az_alternatives
+                    if nat.get("nat_gateway_id")
+                }
             ),
             "same_az_alternative_nat_count": len(same_az_alternatives),
-            "dependent_az_nat_coverage": covered_by_operational_nat,
+            "dependent_az_nat_coverage": (covered_by_operational_nat),
             "has_regional_nat": bool(regional),
-            "has_multiple_operational_nats": len(operational) > 1,
+            "has_multiple_operational_nats": (len(operational) > 1),
             "has_multiple_nats_in_same_az": any(
                 count > 1 for count in az_counts.values()
             ),
-            "current_nat_availability_zone": current_az,
-            "current_nat_is_regional": current.get("availability_mode") == "regional",
+            "current_nat_availability_zone": (current_az),
+            "current_nat_is_regional": (current.get("availability_mode") == "regional"),
+            "current_nat_operational": (
+                current.get("state") in self.operational_states
+            ),
             "route_dependent_subnet_count": len(route_dependent_subnet_ids),
         }
 
-    # ==============================================================
     # OPTIMIZATION EVIDENCE
-    # ==============================================================
 
     def build_optimization_evidence(
         self,
@@ -1673,9 +2718,13 @@ class NatGatewayCollector(BaseCollector):
 
         connections = self._dict(derived.get("connections"))
 
-        performance = self._dict(derived.get("performance"))
+        diagnostics = self._dict(derived.get("diagnostics"))
 
-        errors = self._dict(derived.get("errors"))
+        packets = self._dict(derived.get("packets"))
+
+        peak = self._dict(derived.get("peak"))
+
+        activity = self._dict(derived.get("activity"))
 
         semantics = self._dict(derived.get("semantics"))
 
@@ -1683,9 +2732,13 @@ class NatGatewayCollector(BaseCollector):
 
         fleet = self._dict(topology.get("fleet"))
 
-        endpoint_summary = self._dict(topology.get("endpoint_summary"))
+        endpoint_evidence = self._dict(topology.get("endpoint_evidence"))
 
-        result = {
+        endpoint_summary = self._dict(endpoint_evidence.get("summary"))
+
+        cloudwatch = self._dict(observations.get("cloudwatch"))
+
+        return {
             "resource": {
                 "id": resource.get("id"),
                 "name": identity.get("name"),
@@ -1704,7 +2757,11 @@ class NatGatewayCollector(BaseCollector):
                 "availability_mode": configuration.get("availability_mode"),
                 "regional": configuration.get("regional"),
                 "connectivity_type": configuration.get("connectivity_type"),
-                "availability_mode": configuration.get("availability_mode"),
+                "address_count": configuration.get("address_count"),
+                "attached_appliances": configuration.get(
+                    "attached_appliances",
+                    [],
+                ),
                 "auto_provision_zones": configuration.get("auto_provision_zones"),
                 "auto_scaling_ips": configuration.get("auto_scaling_ips"),
                 "state": configuration.get("state"),
@@ -1714,34 +2771,65 @@ class NatGatewayCollector(BaseCollector):
                 "traffic_complete": traffic.get("complete"),
                 "traffic_observed": traffic.get("observed"),
                 "traffic_zero": traffic.get("zero"),
-                "directional_traffic_bytes": traffic.get("directional_traffic_bytes"),
-                "directional_traffic_gib": traffic.get("directional_traffic_gib"),
+                "traffic_bytes": traffic.get("traffic_bytes"),
+                "traffic_gib": traffic.get("traffic_gib"),
                 "bytes_in_from_source": traffic.get("bytes_in_from_source"),
-                "bytes_in_from_destination": traffic.get("bytes_in_from_destination"),
                 "bytes_out_to_destination": traffic.get("bytes_out_to_destination"),
+                "bytes_in_from_destination": traffic.get("bytes_in_from_destination"),
                 "bytes_out_to_source": traffic.get("bytes_out_to_source"),
-                "connection_metrics_available": connections.get("available"),
-                "connection_complete": connections.get("complete"),
-                "connection_observed": connections.get("observed"),
-                "connections_zero": connections.get("zero"),
-                "peak_bytes_per_second": performance.get("peak_bytes_per_second"),
-                "peak_packets_per_second": performance.get("peak_packets_per_second"),
-                "packet_drops": errors.get("packet_drops"),
-                "port_allocation_errors": errors.get("port_allocation_errors"),
-                "idle_timeouts": errors.get("idle_timeouts"),
+                "primary_path_bytes": traffic.get("primary_path_bytes"),
+                "reverse_path_bytes": traffic.get("reverse_path_bytes"),
+                "connection_metrics_available": (connections.get("available")),
+                "connection_complete": (connections.get("complete")),
+                "active_connections": (connections.get("active")),
+                "active_connections_zero": (connections.get("active_zero")),
+                "active_connections_positive": (connections.get("active_positive")),
+                "connection_attempts": (diagnostics.get("connection_attempts")),
+                "connections_established": (diagnostics.get("connections_established")),
+                "error_port_allocation": (diagnostics.get("error_port_allocation")),
+                "idle_timeouts": (diagnostics.get("idle_timeouts")),
+                "packets_dropped": (diagnostics.get("packets_dropped")),
+                "diagnostic_activity": (diagnostics.get("activity_observed")),
+                "packet_metrics": packets,
+                "peak": peak,
+                "core_activity_observed": (activity.get("observed")),
+                "traffic_observed": (activity.get("traffic_observed")),
+                "connection_observed": (activity.get("connection_observed")),
+                "core_traffic_zero": (activity.get("core_traffic_zero")),
+                "core_connections_zero": (activity.get("core_connections_zero")),
             },
             "network": {
-                "route_dependent_subnet_count": summary.get(
-                    "route_dependent_subnet_count",
-                    0,
-                ),
-                "route_dependent_route_table_count": summary.get(
-                    "route_dependent_route_table_count",
-                    0,
+                "topology_status": topology.get("status"),
+                "topology_complete": (summary.get("topology_complete")),
+                "dependency_evidence_complete": (
+                    summary.get(
+                        "dependency_evidence_complete",
+                        topology.get("dependency_evidence_complete"),
+                    )
                 ),
                 "nat_route_count": summary.get(
                     "nat_route_count",
                     0,
+                ),
+                "active_nat_route_count": summary.get(
+                    "active_nat_route_count",
+                    0,
+                ),
+                "blackhole_nat_route_count": summary.get(
+                    "blackhole_nat_route_count",
+                    0,
+                ),
+                "route_dependent_subnet_count": (
+                    summary.get(
+                        "route_dependent_subnet_count",
+                        0,
+                    )
+                ),
+                "route_dependent_route_table_count": (
+                    summary.get(
+                        "route_dependent_route_table_count",
+                        0,
+                    )
                 ),
                 "same_az_subnet_count": summary.get(
                     "same_az_subnet_count",
@@ -1750,6 +2838,18 @@ class NatGatewayCollector(BaseCollector):
                 "cross_az_subnet_count": summary.get(
                     "cross_az_subnet_count",
                     0,
+                ),
+                "unresolved_az_subnet_count": summary.get(
+                    "unresolved_az_subnet_count",
+                    0,
+                ),
+                "has_active_route_dependency": summary.get(
+                    "has_active_route_dependency",
+                    False,
+                ),
+                "has_blackhole_route_dependency": summary.get(
+                    "has_blackhole_route_dependency",
+                    False,
                 ),
                 "has_same_az_route_dependency": summary.get(
                     "has_same_az_route_dependency",
@@ -1767,520 +2867,147 @@ class NatGatewayCollector(BaseCollector):
                     "covered_az_count",
                     0,
                 ),
-                "relevant_endpoint_count": summary.get(
-                    "relevant_endpoint_count",
-                    0,
+            },
+            # Strong endpoint evidence
+            "endpoints": {
+                "endpoint_count": (
+                    endpoint_evidence.get(
+                        "endpoint_count",
+                        0,
+                    )
                 ),
-                "relevant_endpoint_services": endpoint_summary.get(
+                "relevant_endpoint_count": (
+                    endpoint_summary.get(
+                        "relevant_endpoint_count",
+                        0,
+                    )
+                ),
+                "services": endpoint_summary.get(
                     "services",
                     [],
                 ),
-                "has_s3_endpoint": summary.get(
-                    "has_s3_endpoint_on_route_dependent_tables",
-                    False,
-                ),
-                "has_dynamodb_endpoint": summary.get(
-                    "has_dynamodb_endpoint_on_route_dependent_tables",
-                    False,
-                ),
-                "has_ecr_endpoint": summary.get(
-                    "has_ecr_endpoint_on_route_dependent_tables",
-                    False,
-                ),
-            },
-            "fleet": fleet,
-            "data_quality": {
-                "cloudwatch_available": bool(
-                    self._dict(observations.get("cloudwatch")).get(
-                        "metrics",
-                        {},
+                "gateway_route_coverage": (
+                    endpoint_evidence.get(
+                        "gateway_route_coverage",
+                        [],
                     )
                 ),
+                "interface_subnet_coverage": (
+                    endpoint_evidence.get(
+                        "interface_subnet_coverage",
+                        [],
+                    )
+                ),
+                "route_table_coverage_complete": (
+                    endpoint_evidence.get("endpoint_route_table_coverage_complete")
+                ),
+                "interface_subnet_coverage_complete": (
+                    endpoint_evidence.get("interface_subnet_coverage_complete")
+                ),
+                "has_s3_gateway_route_coverage": (
+                    endpoint_summary.get(
+                        "has_s3_gateway_route_coverage",
+                        False,
+                    )
+                ),
+                "has_dynamodb_gateway_route_coverage": (
+                    endpoint_summary.get(
+                        "has_dynamodb_gateway_route_coverage",
+                        False,
+                    )
+                ),
+                "has_ecr_interface_coverage": (
+                    endpoint_summary.get(
+                        "has_ecr_interface_coverage",
+                        False,
+                    )
+                ),
+                "endpoint_opportunity_evidence_available": (
+                    endpoint_summary.get(
+                        "endpoint_opportunity_evidence_available",
+                        False,
+                    )
+                ),
+                "does_not_prove_nat_traffic_avoidance": True,
+            },
+            "fleet": fleet,
+            "topology_detail": {
+                "route_dependent_subnet_ids": topology.get(
+                    "route_dependent_subnet_ids",
+                    [],
+                ),
+                "route_dependent_route_table_ids": topology.get(
+                    "route_dependent_route_table_ids",
+                    [],
+                ),
+                "dependent_availability_zones": topology.get(
+                    "dependent_availability_zones",
+                    [],
+                ),
+                "same_az_subnets": topology.get(
+                    "same_az_subnets",
+                    [],
+                ),
+                "cross_az_subnets": topology.get(
+                    "cross_az_subnets",
+                    [],
+                ),
+                "unresolved_az_subnets": topology.get(
+                    "unresolved_az_subnets",
+                    [],
+                ),
+                "nat_routes": topology.get(
+                    "nat_routes",
+                    [],
+                ),
+                "active_nat_routes": topology.get(
+                    "active_nat_routes",
+                    [],
+                ),
+                "blackhole_nat_routes": topology.get(
+                    "blackhole_nat_routes",
+                    [],
+                ),
+                "relevant_endpoints": topology.get(
+                    "relevant_endpoints",
+                    [],
+                ),
+            },
+            "data_quality": {
+                "cloudwatch_status": observations.get("status"),
+                "cloudwatch_available": bool(cloudwatch.get("metrics")),
                 "traffic_available": traffic.get("available"),
                 "traffic_complete": traffic.get("complete"),
                 "connection_data_available": connections.get("available"),
                 "connection_data_complete": connections.get("complete"),
-                "peak_metrics_available": performance.get("available"),
-                "topology_available": topology.get("status") == "ok",
+                "diagnostic_data_available": diagnostics.get("available"),
+                "diagnostic_data_complete": diagnostics.get("complete"),
+                "topology_available": topology.get("status")
+                in {
+                    "ok",
+                    "partial",
+                },
+                "topology_complete": summary.get("topology_complete"),
+                "dependency_evidence_complete": topology.get(
+                    "dependency_evidence_complete"
+                ),
+                "endpoint_inventory_available": ("endpoint_evidence" in topology),
                 "traffic_semantics_valid": semantics.get("traffic_semantics_valid"),
+                "connection_semantics_valid": semantics.get(
+                    "connection_semantics_valid"
+                ),
+                "diagnostic_semantics_valid": semantics.get(
+                    "diagnostic_semantics_valid"
+                ),
                 "missing_is_zero": False,
             },
             "semantics": {
                 "traffic_is_billing_usage": False,
                 "connection_is_billing_usage": False,
-                "traffic_indicator": "maximum_directional_traffic",
-                "billing_attribution": "handled_by_cost_reconciliation",
+                "diagnostic_is_billing_usage": False,
+                "traffic_indicator": ("nat_gateway_processed_traffic_evidence"),
+                "connection_indicator": ("nat_gateway_active_connection_evidence"),
+                "diagnostic_indicator": ("nat_gateway_connection_diagnostic_evidence"),
+                "billing_attribution": ("handled_by_cost_reconciliation"),
             },
-        }
-
-        return result
-
-    # ==============================================================
-    # ROUTE SUMMARY
-    # ==============================================================
-
-    @staticmethod
-    def _build_nat_route_summary(
-        nat_routes: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-
-        route_states: dict[
-            str,
-            int,
-        ] = {}
-
-        route_classes: dict[
-            str,
-            int,
-        ] = {}
-
-        default_route_count = 0
-        blackhole_route_count = 0
-
-        for route in nat_routes:
-
-            if not isinstance(
-                route,
-                dict,
-            ):
-                continue
-
-            state = route.get("state")
-
-            if state:
-
-                route_states[state] = (
-                    route_states.get(
-                        state,
-                        0,
-                    )
-                    + 1
-                )
-
-            route_class = route.get("route_class")
-
-            if route_class:
-
-                route_classes[route_class] = (
-                    route_classes.get(
-                        route_class,
-                        0,
-                    )
-                    + 1
-                )
-
-            if route.get("is_default_route"):
-                default_route_count += 1
-
-            if state == "blackhole":
-                blackhole_route_count += 1
-
-        return {
-            "route_count": len(nat_routes),
-            "route_states": route_states,
-            "route_classes": route_classes,
-            "default_route_count": default_route_count,
-            "blackhole_route_count": blackhole_route_count,
-            "has_blackhole_routes": blackhole_route_count > 0,
-        }
-
-    # ==============================================================
-    # ENDPOINT RELATIONSHIPS
-    # ==============================================================
-
-    @staticmethod
-    def _find_relevant_endpoints(
-        endpoints: List[Dict[str, Any]],
-        nat_routes: List[Dict[str, Any]],
-        resolver: NetworkRelationshipResolver,
-    ) -> List[Dict[str, Any]]:
-
-        route_table_ids = {
-            route.get("route_table_id")
-            for route in nat_routes
-            if route.get("route_table_id")
-        }
-
-        subnet_ids = {
-            route.get("subnet_id") for route in nat_routes if route.get("subnet_id")
-        }
-
-        result: list[Dict[str, Any]] = []
-
-        for endpoint in endpoints:
-
-            if not isinstance(
-                endpoint,
-                dict,
-            ):
-                continue
-
-            endpoint_id = endpoint.get("vpc_endpoint_id")
-
-            if not endpoint_id:
-                continue
-
-            endpoint_type = endpoint.get("endpoint_type")
-
-            endpoint_route_tables = set(
-                endpoint.get(
-                    "route_table_ids",
-                    [],
-                )
-                or []
-            )
-
-            endpoint_subnets = set(
-                endpoint.get(
-                    "subnet_ids",
-                    [],
-                )
-                or []
-            )
-
-            shared_route_tables = endpoint_route_tables & route_table_ids
-
-            shared_subnets = endpoint_subnets & subnet_ids
-
-            # ------------------------------------------------------
-            # Gateway endpoint
-            # ------------------------------------------------------
-
-            if endpoint_type == "Gateway":
-
-                gateway_routes = resolver.routes_targeting_vpc_endpoint(endpoint_id)
-
-                gateway_route_tables = {
-                    route.get("route_table_id")
-                    for route in gateway_routes
-                    if route.get("route_table_id")
-                }
-
-                shared_route_tables = gateway_route_tables & route_table_ids
-
-                relevant = bool(shared_route_tables)
-
-                relationship_kind = (
-                    "gateway_endpoint_route_table_overlap" if relevant else "none"
-                )
-
-            # ------------------------------------------------------
-            # Interface endpoint
-            # ------------------------------------------------------
-
-            elif endpoint_type == "Interface":
-
-                relevant = bool(shared_subnets)
-
-                relationship_kind = (
-                    "interface_endpoint_subnet_overlap" if relevant else "none"
-                )
-
-            else:
-
-                relevant = bool(shared_route_tables or shared_subnets)
-
-                relationship_kind = "network_overlap" if relevant else "none"
-
-            if not relevant:
-                continue
-
-            result.append(
-                {
-                    "vpc_endpoint_id": endpoint_id,
-                    "service_name": endpoint.get("service_name"),
-                    "endpoint_type": endpoint_type,
-                    "route_table_ids": sorted(shared_route_tables),
-                    "subnet_ids": sorted(shared_subnets),
-                    "relationship_kind": relationship_kind,
-                    "requester_managed": endpoint.get("requester_managed"),
-                }
-            )
-
-        return result
-
-    @staticmethod
-    def _build_endpoint_summary(
-        endpoints: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-
-        services: set[str] = set()
-
-        has_s3 = False
-        has_dynamodb = False
-        has_ecr = False
-
-        gateway_count = 0
-        interface_count = 0
-
-        for endpoint in endpoints:
-
-            service = str(
-                endpoint.get(
-                    "service_name",
-                    "",
-                )
-                or ""
-            ).lower()
-
-            if service:
-                services.add(service)
-
-            endpoint_type = endpoint.get("endpoint_type")
-
-            if endpoint_type == "Gateway":
-                gateway_count += 1
-
-            elif endpoint_type == "Interface":
-                interface_count += 1
-
-            if "s3" in service:
-                has_s3 = True
-
-            if "dynamodb" in service:
-                has_dynamodb = True
-
-            if "ecr" in service:
-                has_ecr = True
-
-        return {
-            "services": sorted(services),
-            "has_s3": has_s3,
-            "has_dynamodb": has_dynamodb,
-            "has_ecr": has_ecr,
-            "gateway_count": gateway_count,
-            "interface_count": interface_count,
-        }
-
-    # ==============================================================
-    # NAT INVENTORY NORMALIZATION
-    # ==============================================================
-
-    def _normalize_nat_for_fleet(
-        self,
-        nat: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-
-        if not isinstance(
-            nat,
-            dict,
-        ):
-            return None
-
-        nat_id = nat.get("NatGatewayId")
-
-        if not nat_id:
-            return None
-
-        availability_mode = str(nat.get("AvailabilityMode") or "zonal").lower()
-
-        return {
-            "nat_gateway_id": str(nat_id),
-            "vpc_id": nat.get("VpcId"),
-            "subnet_id": nat.get("SubnetId"),
-            "availability_zone": self._get_nat_primary_az(nat),
-            "availability_zones": self._get_nat_coverage_azs(nat),
-            "availability_mode": availability_mode,
-            "regional": availability_mode == "regional",
-            "connectivity_type": nat.get("ConnectivityType"),
-            "state": nat.get("State"),
-            "auto_provision_zones": nat.get("AutoProvisionZones"),
-            "auto_scaling_ips": nat.get("AutoScalingIps"),
-        }
-
-    def _get_nat_primary_az(
-        self,
-        nat: Dict[str, Any],
-    ) -> Optional[str]:
-
-        if not isinstance(
-            nat,
-            dict,
-        ):
-            return None
-
-        addresses = (
-            nat.get(
-                "NatGatewayAddresses",
-                [],
-            )
-            or []
-        )
-
-        for address in addresses:
-
-            if not isinstance(
-                address,
-                dict,
-            ):
-                continue
-
-            az = address.get("AvailabilityZone")
-
-            if az:
-                return str(az)
-
-        subnet_id = nat.get("SubnetId")
-
-        return self._get_subnet_az(subnet_id)
-
-    def _get_nat_coverage_azs(
-        self,
-        nat: Dict[str, Any],
-    ) -> list[str]:
-
-        if not isinstance(
-            nat,
-            dict,
-        ):
-            return []
-
-        values: set[str] = set()
-
-        addresses = (
-            nat.get(
-                "NatGatewayAddresses",
-                [],
-            )
-            or []
-        )
-
-        for address in addresses:
-
-            if not isinstance(
-                address,
-                dict,
-            ):
-                continue
-
-            az = address.get("AvailabilityZone")
-
-            if az:
-                values.add(str(az))
-
-        primary = self._get_nat_primary_az(nat)
-
-        if primary:
-            values.add(str(primary))
-
-        return sorted(values)
-
-    # ==============================================================
-    # HELPERS
-    # ==============================================================
-
-    @staticmethod
-    def _safe_period(
-        value: Any,
-    ) -> int:
-
-        try:
-            period = int(value)
-
-        except (
-            TypeError,
-            ValueError,
-        ):
-
-            return NatGatewayCollector.DEFAULT_PERIOD
-
-        return max(
-            period,
-            60,
-        )
-
-    @staticmethod
-    def _dict(
-        value: Any,
-    ) -> dict[str, Any]:
-
-        return (
-            value
-            if isinstance(
-                value,
-                dict,
-            )
-            else {}
-        )
-
-    @staticmethod
-    def _state_category(
-        state: Optional[str],
-    ) -> str:
-
-        if state == "available":
-            return "operational"
-
-        if state == "pending":
-            return "transitional"
-
-        if state in {
-            "failed",
-            "deleting",
-            "deleted",
-        }:
-            return "non_operational"
-
-        return "unknown"
-
-    def _get_subnet_az(
-        self,
-        subnet_id: Optional[str],
-    ) -> Optional[str]:
-
-        if not subnet_id:
-            return None
-
-        if subnet_id in self._subnet_az_cache:
-
-            return self._subnet_az_cache[subnet_id]
-
-        try:
-
-            response = self.ec2.describe_subnets(SubnetIds=[subnet_id])
-
-        except Exception:
-
-            self._subnet_az_cache[subnet_id] = None
-
-            return None
-
-        subnets = response.get(
-            "Subnets",
-            [],
-        )
-
-        if not subnets:
-
-            self._subnet_az_cache[subnet_id] = None
-
-            return None
-
-        availability_zone = subnets[0].get("AvailabilityZone")
-
-        self._subnet_az_cache[subnet_id] = availability_zone
-
-        return availability_zone
-
-    @staticmethod
-    def _tags(
-        tags: List[Dict[str, Any]],
-    ) -> Dict[str, Any]:
-
-        if not isinstance(
-            tags,
-            list,
-        ):
-            return {}
-
-        return {
-            str(tag["Key"]): tag.get("Value")
-            for tag in tags
-            if (
-                isinstance(
-                    tag,
-                    dict,
-                )
-                and tag.get("Key")
-            )
         }

@@ -1,235 +1,3835 @@
+
 # =============================================================================
-# AWS COST OPTIMIZATION RECOMMENDATION CATALOG
+# AWS COST OPTIMIZER - RECOMMENDATION CATALOG
 # =============================================================================
-#
-# The catalog defines recommendation intent and safety constraints.
-# Human-readable explanation is generated from the finding evidence by the LLM.
-#
-# The catalog does NOT contain long prose templates, savings claims,
-# replacement resource types, or hard-coded remediation commands.
+
+catalog:
+
+  version: "6.0"
+
+  purpose: cost_optimization_recommendations
+
+  architecture_principles:
+
+    analyzer_is_authority: true
+    catalog_is_procedural: true
+    recommendation_engine_is_thin: true
+    llm_is_explanation_only: true
+
+    catalog_does_not_collect_evidence: true
+    catalog_does_not_calculate_savings: true
+    catalog_does_not_reinterpret_billing: true
+    catalog_does_not_discover_resources: true
+    catalog_does_not_execute_changes: true
+
+
+  # ===========================================================================
+  # FINDING INPUT CONTRACT
+  # ===========================================================================
+
+  finding_input_contract:
+
+    required_fields:
+      - finding_id
+      - finding_key
+      - title
+      - severity
+      - recommendation_eligible
+      - resource
+      - evidence
+      - financial_impact
+      - confidence
+      - limitations
+
+    recommended_fields:
+      - analyzer
+      - observation_period
+      - current_state
+      - historical_state
+      - attribution
+      - source_finding_ids
+      - affected_resources
+
+    rules:
+
+      analyzer_is_authority:
+        - recommendation_engine_must_not_recompute_finding_eligibility
+        - catalog_must_not_override_analyzer_decision
+        - catalog_must_not_create_findings
+
+      evidence:
+        - recommendation_must_only_use_evidence_present_in_finding
+        - missing_evidence_must_not_be_invented
+        - unsupported_claims_must_not_be_added
+
+      resource_state:
+        - current_resource_must_be_distinguished_from_historical_resource
+        - deleted_resources_must_not_receive_current_remediation_actions
+        - resource_identity_must_not_be_reconstructed_from_guesswork
+
+      attribution:
+        - billing_attribution_must_come_from_finding
+        - catalog_must_not_perform_billing_reconciliation
+        - collection_plan_cost_must_not_be_presented_as_resource_cost
+
+
+  # ===========================================================================
+  # OUTPUT CONTRACT
+  # ===========================================================================
+
+  output_contract:
+
+    required:
+      - recommendation_id
+      - recommendation_key
+      - family
+      - action
+      - status
+      - priority
+      - title
+      - recommendation_text
+      - resource
+      - finding
+      - evidence
+      - financial_impact
+      - confidence
+      - limitations
+
+    optional:
+      - affected_resources
+      - historical_context
+      - validation_steps
+      - next_steps
+      - aws_operations
+      - llm_explanation
+
+
+  # ===========================================================================
+  # RECOMMENDATION STATUS
+  # ===========================================================================
+
+  recommendation_statuses:
+    - actionable
+    - requires_validation
+    - informational
+    - historical
+    - insufficient_evidence
+
+
+  status_policy:
+
+    actionable:
+
+      requirements:
+        - finding_recommendation_eligible == true
+        - required_evidence_present == true
+        - current_resource_confirmed == true
+        - no_blocking_limitation == true
+
+      meaning:
+        - recommendation_can_be_acted_on_after_normal_validation
+
+
+    requires_validation:
+
+      requirements:
+        - finding_recommendation_eligible == true
+        - evidence_supports_review
+        - additional_human_validation_required
+
+      meaning:
+        - action_is_supported_but_change_requires_engineering_validation
+
+
+    informational:
+
+      requirements:
+        - finding_exists
+        - finding_is_not_directly_actionable
+
+      examples:
+        - service_level_cost_only
+        - diagnostic_finding
+        - architecture_observation
+        - no_resource_specific_attribution
+
+
+    historical:
+
+      requirements:
+        - finding_refers_to_historical_resource
+        - current_resource_not_confirmed
+        - or resource_deleted
+        - or billing_period_does_not_match_current_resource
+
+      meaning:
+        - historical_context_only
+        - must_not_recommend_current_resource_remediation
+
+
+    insufficient_evidence:
+
+      requirements:
+        - required_evidence_missing
+        - or evidence_conflicts
+        - or resource_identity_not_confirmed
+
+      meaning:
+        - do_not_recommend_remediation
+
+
+  # ===========================================================================
+  # HISTORICAL RESOURCE POLICY
+  # ===========================================================================
+
+  historical_policy:
+
+    purpose:
+      - prevent_current_actions_from_being_generated_for_deleted_or_mismatched_resources
+
+    historical_resource_rules:
+
+      - historical_resource_must_be_explicitly_marked
+      - current_resource_identity_must_be_verified_before_current_action
+      - historical_cost_must_not_be_presented_as_current_cost
+      - historical_cost_must_not_be_presented_as_current_savings
+      - deleted_resource_must_not_receive_delete_recommendation
+      - deleted_resource_must_not_receive_rightsizing_recommendation
+      - deleted_resource_must_not_receive_current_configuration_recommendation
+      - deleted_resource_must_not_receive_scheduling_recommendation
+      - deleted_resource_must_not_receive_pricing_commitment_recommendation
+      - historical_finding_may_be_informational
+      - historical_finding_may_be_used_to_explain_billing_reconciliation
+
+
+  # ===========================================================================
+  # FINANCIAL BASIS
+  # ===========================================================================
+
+  financial_basis:
+
+    allowed:
+      - resource_attributed_cost
+      - service_cost
+      - collection_plan_cost
+      - historical_cost
+      - unavailable
+
+
+    resource_attributed_cost:
+
+      allowed_when:
+        - attribution_scope == resource
+        - resource_cost_attributed == true
+        - claimable_resource_cost_is_numeric
+
+      may_describe:
+        - current_resource_cost
+        - attributed_resource_cost
+
+      must_not:
+        - estimate_savings_without_explicit_evidence
+
+
+    service_cost:
+
+      may_describe:
+        - service_level_cost
+        - service_cost_context
+
+      must_not_be_used_as:
+        - current_resource_cost
+        - resource_savings
+        - exact_recommendation_savings
+
+
+    collection_plan_cost:
+
+      may_describe:
+        - collection_scope_cost
+        - investigation_scope_cost
+
+      must_not_be_used_as:
+        - current_resource_cost
+        - resource_savings
+        - savings_estimate
+
+
+    historical_cost:
+
+      may_describe:
+        - historical_billing
+        - historical_cost_context
+
+      must_not_be_used_as:
+        - current_resource_cost
+        - current_resource_savings
+        - guaranteed_savings
+
+
+    unavailable:
+
+      rules:
+        - do_not_estimate_financial_impact
+        - explicitly_state_financial_impact_unavailable
+
+
+  # ===========================================================================
+  # SAVINGS POLICY
+  # ===========================================================================
+
+  savings_policy:
+
+    default: not_estimated
+
+    allowed_only_when:
+      - analyzer_or_pricing_evidence_explicitly_supports_estimate
+      - calculation_inputs_are_present
+      - estimate_is_traceable_to_evidence
+
+    forbidden:
+      - infer_savings_from_cost_alone
+      - assume_100_percent_cost_removal
+      - invent_replacement_price
+      - invent_target_capacity
+      - invent_discount
+      - invent_commitment_term
+      - invent_usage_reduction
+      - convert_service_cost_to_resource_savings
+      - convert_collection_plan_cost_to_resource_savings
+      - convert_historical_cost_to_current_savings
+
+
+  # ===========================================================================
+  # AGGREGATION POLICY
+  # ===========================================================================
+
+  aggregation_policy:
+
+    purpose:
+      - prevent_shared_cost_from_being_counted_multiple_times
+
+    rules:
+      - retain_source_finding_ids
+      - retain_stable_finding_ids
+      - retain_affected_resources
+      - do_not_sum_same_cost_across_multiple_findings_when_cost_is_shared
+      - service_cost_must_not_be_multiplied_by_resource_count
+      - collection_plan_cost_must_not_be_multiplied_by_resource_count
+      - historical_cost_must_not_be_added_to_current_cost_without_explicit_period_logic
+
+
+  # ===========================================================================
+  # SAFETY POLICY
+  # ===========================================================================
+
+  safety_policy:
+
+    destructive_actions:
+
+      require:
+        - resource_identity
+        - current_resource_state
+        - dependency_evidence_when_applicable
+        - observed_state
+        - human_confirmation
+
+      must_not_assert:
+        - safe_to_delete
+        - safe_to_release
+        - deletion_required
+        - dependency_absent
+        - business_requirement_absent
+        - guaranteed_savings
+
+
+    migration_actions:
+
+      require:
+        - current_configuration
+        - observed_behavior
+        - compatibility_evidence
+
+      must_not_assert:
+        - migration_is_risk_free
+        - migration_is_required
+        - compatibility_is_guaranteed
+
+
+    pricing_actions:
+
+      require:
+        - eligible_usage
+        - usage_pattern
+        - pricing_eligibility
+
+      must_not_assert:
+        - commitment_is_profitable
+        - exact_savings
+        - exact_commitment_amount
+        - exact_discount
+
+
+    capacity_actions:
+
+      require:
+        - current_capacity
+        - observed_demand
+
+      must_not_assert:
+        - exact_target_capacity
+        - exact_replacement_instance
+        - guaranteed_performance
+
+
+    networking_actions:
+
+      require:
+        - topology_evidence
+        - traffic_evidence
+        - route_evidence_when_route_change_is_proposed
+
+      must_not_assert:
+        - replacement_path_is_safe
+        - route_change_is_required
+        - dependency_is_absent
+
+
+  # ===========================================================================
+  # PROCEDURE CONTRACT
+  # ===========================================================================
+
+  procedure_contract:
+
+    required_fields:
+      - objective
+      - validation_steps
+      - possible_actions
+
+    optional_fields:
+      - aws_operations
+      - destructive
+      - requires_human_confirmation
+
+    rules:
+
+      objective:
+        - describe_purpose_of_action
+        - must_not_claim_that_change_is_already_validated
+
+      validation_steps:
+        - ordered
+        - evidence_driven
+        - no_invented_requirements
+
+      possible_actions:
+        - must_be_conditional
+        - must_not_claim_safety
+        - must_not_claim_guaranteed_savings
+
+      aws_operations:
+        - operation_names_only
+        - no_hardcoded_resource_ids
+        - no_hardcoded_regions
+        - no_hardcoded_target_values
+
+      destructive:
+        - destructive_changes_require_human_confirmation
+
+      requires_human_confirmation:
+        - true_for_destructive_changes
+        - true_for_irreversible_changes
+        - true_for_production_capacity_changes
+
+
+# =============================================================================
+# RECOMMENDATIONS
 # =============================================================================
 
 recommendations:
 
-  review_unused:
+
+  # ===========================================================================
+  # RDS
+  # ===========================================================================
+
+  rds_delete_unused_database:
+
     family: unused_resource
-    action: review_unused
+    action: review_database_retirement
     priority: high
-    recommendation_eligible: true
+
+    title_template: "Review Retirement of Inactive RDS Database — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
+      - resource_identity
       - observed_usage
       - resource_state
-      - dependencies
-    never_invent:
-      - savings
-      - replacement_resource
-      - deletion_safety
+      - current_configuration
 
-  review_rightsizing:
-    family: rightsizing
-    action: review_capacity
-    priority: high
-    recommendation_eligible: true
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - business_requirement
+      - dependency
+      - recovery_requirement
+      - deletion_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_current_RDS_instance_is_still_required
+
+      validation_steps:
+        - verify_current_instance_identity
+        - verify_current_instance_status
+        - review_observed_cpu_connections_and_io
+        - review_recent_activity
+        - review_lifecycle_activity
+        - verify_read_replica_relationships
+        - verify_dependency_and_network_requirements
+        - review_backup_and_snapshot_context
+        - confirm_business_owner_or_application_requirement
+
+      possible_actions:
+        - retain_database
+        - stop_database_when_supported_and_validated
+        - retire_database_after_validation
+
+      aws_operations:
+        - describe-db-instances
+        - describe-db-snapshots
+        - describe-db-instance-automated-backups
+        - describe-db-clusters
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  rds_review_stopped_database:
+
+    family: lifecycle
+    action: review_stopped_rds_database
+    priority: medium
+
+    title_template: "Review Stopped RDS Database — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
+      - resource_identity
+      - resource_state
+      - current_configuration
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - deletion_safety
+      - business_requirement
+      - future_usage
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_stopped_database_should_remain_retained
+
+      validation_steps:
+        - verify_current_stopped_state
+        - inspect_environment_classification
+        - review_backup_and_snapshot_context
+        - review_recent_start_and_stop_activity
+        - verify_application_dependency
+        - confirm_expected_future_use
+
+      possible_actions:
+        - retain_stopped_database
+        - restart_when_required
+        - retire_after_validation
+
+      aws_operations:
+        - describe-db-instances
+        - describe-db-snapshots
+        - describe-db-instance-automated-backups
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  rds_rightsize_instance:
+
+    family: rightsizing
+    action: review_rds_instance_rightsizing
+    priority: high
+
+    title_template: "Review RDS Instance Rightsizing — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_capacity
       - utilization
       - peak_behavior
-      - current_capacity
+      - performance
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
     never_invent:
+      - replacement_instance
       - replacement_size
+      - exact_capacity
+      - pricing
       - savings
-      - exact_capacity_to_remove
 
-  review_capacity:
-    family: capacity
-    action: review_capacity_configuration
-    priority: medium
-    recommendation_eligible: true
+    procedure:
+
+      objective:
+        - determine_whether_current_RDS_capacity_exceeds_observed_workload_requirements
+
+      validation_steps:
+        - verify_current_instance_class
+        - review_average_and_peak_cpu
+        - review_database_connections
+        - review_read_iops
+        - review_write_iops
+        - review_read_throughput
+        - review_write_throughput
+        - review_freeable_memory
+        - review_recent_resize_history
+        - confirm_workload_stability
+        - compare_compatible_instance_classes_using_current_aws_data
+        - validate_application_performance_before_change
+
+      possible_actions:
+        - retain_current_instance_class
+        - evaluate_smaller_compatible_instance
+        - test_smaller_instance_before_production_change
+
+      aws_operations:
+        - describe-db-instances
+        - describe-db-parameters
+        - describe-events
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  rds_remove_read_replica:
+
+    family: replica_optimization
+    action: review_rds_read_replica_removal
+    priority: high
+
+    title_template: "Review Unnecessary RDS Read Replica — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
-      - configured_capacity
-      - observed_demand
-      - performance_signals
+      - resource_identity
+      - resource_relationships
+      - observed_usage
+      - resource_state
+      - current_configuration
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
     never_invent:
-      - replacement_capacity
+      - replica_to_delete
+      - failover_requirement
+      - reporting_requirement
+      - read_routing_requirement
       - savings
 
-  review_autoscaling:
-    family: autoscaling
-    action: review_dynamic_capacity
+    procedure:
+
+      objective:
+        - determine_whether_the_read_replica_is_still_required
+
+      validation_steps:
+        - verify_replica_source
+        - review_replica_connections
+        - review_replica_network_activity
+        - review_replica_read_and_write_iops
+        - inspect_replica_role
+        - verify_application_read_routing
+        - verify_failover_or_disaster_recovery_dependency
+        - confirm_replica_is_not_required_for_reporting_or_analytics
+
+      possible_actions:
+        - retain_replica
+        - resize_replica
+        - remove_replica_after_validation
+
+      aws_operations:
+        - describe-db-instances
+        - describe-db-clusters
+        - describe-events
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  rds_purchase_reserved_instance:
+
+    family: commitment
+    action: evaluate_rds_reserved_instance
     priority: medium
-    recommendation_eligible: true
+
+    title_template: "Evaluate RDS Reserved Instance — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: account
+
     required_evidence:
+      - resource_identity
+      - current_configuration
+      - eligible_usage
+      - usage_stability
+      - pricing_eligibility
+
+    never_invent:
+      - commitment_term
+      - offering_type
+      - commitment_amount
+      - discount
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_steady_state_RDS_usage_justifies_evaluating_reserved_capacity
+
+      validation_steps:
+        - verify_current_instance_class
+        - verify_engine
+        - verify_multi_az_configuration
+        - review_long_running_usage_pattern
+        - verify_active_matching_reservations
+        - inspect_available_reserved_instance_offerings
+        - compare_on_demand_and_reserved_pricing_using_current_aws_data
+        - validate_expected_usage_duration
+
+      possible_actions:
+        - remain_on_demand
+        - evaluate_reserved_db_instance
+        - compare_multiple_reserved_offerings
+
+      aws_operations:
+        - describe-db-instances
+        - describe-reserved-db-instances
+        - describe-reserved-db-instances-offerings
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  rds_schedule_dev_test:
+
+    family: scheduling
+    action: evaluate_rds_dev_test_schedule
+    priority: medium
+
+    title_template: "Schedule Non-Production RDS Database — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - workload_behavior
+      - activity_pattern
+      - observed_usage
+      - current_configuration
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - shutdown_schedule
+      - startup_schedule
+      - business_hours
+      - production_unsuitability
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_nonproduction_RDS_runtime_can_be_reduced
+
+      validation_steps:
+        - verify_environment_classification
+        - review_activity_pattern
+        - review_observation_window
+        - confirm_low_activity_periods_are_recurring
+        - verify_application_dependency_during_low_activity_periods
+        - confirm_database_is_not_production
+        - determine_schedule_from_actual_operational_requirements
+
+      possible_actions:
+        - retain_continuous_runtime
+        - evaluate_start_stop_automation
+        - implement_schedule_after_validation
+
+      aws_operations:
+        - describe-db-instances
+        - describe-events
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # AURORA
+  # ===========================================================================
+
+  aurora_review_unused_cluster:
+
+    family: unused_resource
+    action: review_aurora_cluster_retirement
+    priority: high
+
+    title_template: "Review Stopped Aurora Cluster — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - resource_state
+      - observed_usage
+      - retention_behavior
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - cluster_deletion_safety
+      - business_requirement
+      - dependency
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_Aurora_cluster_is_still_required
+
+      validation_steps:
+        - verify_cluster_status
+        - review_cluster_cpu_connections_and_io
+        - review_cluster_members
+        - review_reader_instances
+        - review_backup_and_snapshot_context
+        - review_lifecycle_events
+        - verify_application_dependency
+        - confirm_business_requirement
+
+      possible_actions:
+        - retain_cluster
+        - stop_cluster_when_supported
+        - retire_cluster_after_validation
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-db-cluster-snapshots
+        - describe-db-cluster-automated-backups
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  aurora_serverless_v2:
+
+    family: serverless
+    action: evaluate_aurora_serverless_v2
+    priority: high
+
+    title_template: "Evaluate Aurora Serverless v2 — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_capacity
+      - observed_activity
+      - performance
+      - workload_variability
+
+    never_invent:
+      - target_capacity
+      - migration_safety
+      - compatibility
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_Aurora_Serverless_v2_is_an_appropriate_capacity_model
+
+      validation_steps:
+        - verify_current_capacity_model
+        - review_cpu_average_and_peak
+        - review_database_connections
+        - review_workload_variability
+        - review_cluster_member_configuration
+        - verify_engine_and_version_compatibility
+        - compare_provisioned_and_serverless_pricing_using_current_aws_data
+        - validate_application_behavior_in_nonproduction_first_when_possible
+
+      possible_actions:
+        - retain_provisioned_model
+        - evaluate_serverless_v2
+        - test_serverless_v2_before_production_migration
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-db-instances
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  aurora_reader_autoscaling:
+
+    family: autoscaling
+    action: evaluate_aurora_reader_autoscaling
+    priority: high
+
+    title_template: "Evaluate Aurora Reader Auto Scaling — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - observed_demand
       - demand_pattern
       - configured_capacity
       - autoscaling_state
+
     never_invent:
-      - scaling_policy
       - min_capacity
       - max_capacity
+      - scaling_policy
       - savings
 
-  review_billing_mode:
-    family: billing_mode
-    action: compare_pricing_models
-    priority: medium
-    recommendation_eligible: true
-    required_evidence:
-      - billing_mode
-      - workload_pattern
-      - capacity_usage
-    never_invent:
-      - cheaper_mode
-      - savings
-      - target_capacity
+    procedure:
 
-  review_replica:
+      objective:
+        - determine_whether_Aurora_reader_capacity_should_respond_dynamically_to_workload
+
+      validation_steps:
+        - verify_current_reader_count
+        - review_reader_cpu_average
+        - review_reader_cpu_peak
+        - review_reader_connections
+        - inspect_current_autoscaling_configuration
+        - review_reader_demand_variation
+        - determine_operational_minimum_and_maximum_from_actual_requirements
+
+      possible_actions:
+        - retain_fixed_reader_capacity
+        - evaluate_reader_auto_scaling
+        - configure_auto_scaling_after_validation
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-scalable-targets
+        - describe-scaling-policies
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  aurora_remove_underused_reader:
+
     family: replica_optimization
-    action: review_replica_usage
+    action: review_aurora_reader_removal
     priority: high
-    recommendation_eligible: true
+
+    title_template: "Review Underutilized Aurora Reader — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
-      - replica_usage
+      - resource_identity
+      - resource_relationships
+      - observed_usage
       - read_traffic
       - failover_context
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
     never_invent:
-      - replica_to_delete
+      - reader_to_remove
+      - failover_requirement
+      - reporting_requirement
       - savings
 
-  review_global_replication:
-    family: replication
-    action: review_replica_regions
+    procedure:
+
+      objective:
+        - determine_whether_the_underutilized_Aurora_reader_is_still_required
+
+      validation_steps:
+        - identify_reader_instance
+        - review_reader_cpu_and_connections
+        - review_reader_network_activity
+        - inspect_cluster_reader_topology
+        - verify_application_read_routing
+        - verify_failover_requirement
+        - confirm_reporting_or_analytics_dependency
+
+      possible_actions:
+        - retain_reader
+        - resize_reader
+        - remove_reader_after_validation
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-db-instances
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  aurora_review_reader_capacity:
+
+    family: capacity
+    action: review_aurora_reader_capacity
     priority: medium
-    recommendation_eligible: true
+
+    title_template: "Review Aurora Reader Capacity — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
+      - resource_identity
+      - resource_inventory
+      - observed_usage
+      - demand_pattern
+
+    never_invent:
+      - reader_to_remove
+      - exact_reader_count
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_current_Aurora_reader_topology_matches_workload_demand
+
+      validation_steps:
+        - inspect_reader_count
+        - inspect_reader_workload
+        - inspect_reader_autoscaling
+        - review_application_read_distribution
+        - review_failover_requirements
+        - compare_current_reader_capacity_with_observed_demand
+
+      possible_actions:
+        - retain_reader_topology
+        - evaluate_reader_scaling
+        - evaluate_reader_consolidation
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-db-instances
+        - describe-scalable-targets
+        - describe-scaling-policies
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  aurora_review_global_replication:
+
+    family: replication
+    action: review_aurora_global_replication
+    priority: medium
+
+    title_template: "Review Aurora Global Database — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
       - replica_regions
       - regional_usage
       - replication_configuration
+
     never_invent:
       - region_to_remove
+      - disaster_recovery_requirement
       - savings
 
-  review_serverless:
-    family: serverless
-    action: review_serverless_suitability
-    priority: medium
-    recommendation_eligible: true
-    required_evidence:
-      - workload_variability
-      - current_capacity
-      - performance
-    never_invent:
-      - serverless_migration
-      - target_capacity
-      - savings
+    procedure:
 
-  review_scheduling:
-    family: scheduling
-    action: review_operating_schedule
-    priority: medium
-    recommendation_eligible: true
-    required_evidence:
-      - activity_pattern
-      - resource_status
-      - observation_window
-    never_invent:
-      - shutdown_schedule
-      - business_hours
-      - savings
+      objective:
+        - determine_whether_current_cross_region_Aurora_replication_remains_required
 
-  review_storage:
-    family: storage
-    action: review_storage_configuration
-    priority: medium
-    recommendation_eligible: true
-    required_evidence:
-      - storage_usage
-      - growth
-      - performance
-      - retention
-    never_invent:
-      - target_storage_type
-      - target_size
-      - savings
+      validation_steps:
+        - identify_global_cluster
+        - identify_secondary_regions
+        - review_regional_workload
+        - review_replication_configuration
+        - confirm_disaster_recovery_or_global_availability_requirement
+        - compare_cost_and_operational_requirement
 
-  review_network:
-    family: network
-    action: review_network_architecture
-    priority: medium
-    recommendation_eligible: true
-    required_evidence:
-      - traffic
-      - topology
-      - routing
-      - dependencies
-    never_invent:
-      - route_change
-      - resource_deletion
-      - savings
+      possible_actions:
+        - retain_global_replication
+        - review_secondary_region_capacity
+        - review_global_database_architecture
 
-  review_network_path:
-    family: network_path
-    action: review_traffic_path
-    priority: medium
-    recommendation_eligible: true
-    required_evidence:
-      - traffic
-      - source
-      - destination
-      - topology
-    never_invent:
-      - replacement_path
-      - savings
+      aws_operations:
+        - describe-global-clusters
+        - describe-db-clusters
 
-  review_backup:
+      destructive: true
+      requires_human_confirmation: true
+
+
+  aurora_review_backup_retention:
+
     family: backup
-    action: review_retention
+    action: review_aurora_backup_retention
     priority: medium
-    recommendation_eligible: true
+
+    title_template: "Review Aurora Backup Retention — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
+      - resource_identity
       - retention
       - backup_usage
       - recovery_requirements
+
     never_invent:
       - retention_target
       - compliance_requirement
       - savings
 
-  review_pricing:
-    family: commitment
-    action: review_commitment
+    procedure:
+
+      objective:
+        - determine_whether_current_Aurora_backup_retention_exceeds_verified_requirements
+
+      validation_steps:
+        - verify_current_retention
+        - review_backup_storage_usage
+        - review_manual_snapshot_inventory
+        - review_recovery_requirements
+        - confirm_compliance_or_business_retention_requirements
+
+      possible_actions:
+        - retain_current_retention
+        - evaluate_reduced_retention
+        - review_snapshot_cleanup
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-db-cluster-snapshots
+        - describe-db-cluster-automated-backups
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  aurora_review_serverless_capacity_pressure:
+
+    family: capacity
+    action: review_aurora_serverless_capacity_pressure
     priority: medium
-    recommendation_eligible: true
+
+    title_template: "Review Aurora Serverless v2 Capacity Pressure — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
-      - usage_stability
+      - resource_identity
+      - utilization
+
+    never_invent:
+      - target_capacity
+      - max_capacity_change
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_Aurora_Serverless_v2_capacity_ceiling_should_be_increased
+
+      validation_steps:
+        - verify_current_capacity_model
+        - review_ACU_utilization_average_and_peak
+        - inspect_current_min_and_max_capacity
+        - review_workload_variability
+        - compare_capacity_ceiling_with_observed_demand
+
+      possible_actions:
+        - retain_current_capacity_ceiling
+        - evaluate_increased_max_capacity
+        - evaluate_workload_optimization_before_scaling
+
+      aws_operations:
+        - describe-db-clusters
+        - describe-db-instances
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  aurora_review_io_optimized_storage:
+
+    family: storage
+    action: evaluate_aurora_io_optimized_storage
+    priority: low
+
+    title_template: "Evaluate Aurora I/O-Optimized Storage — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - iops_usage
+      - current_storage_class
+
+    never_invent:
+      - pricing
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_Aurora_IO_Optimized_pricing_is_more_economical_than_standard_storage_for_this_workload
+
+      validation_steps:
+        - verify_current_storage_configuration
+        - review_observed_read_and_write_IOPS
+        - review_observation_period_length
+        - compare_standard_and_IO_Optimized_pricing_using_current_aws_data
+
+      possible_actions:
+        - retain_standard_storage
+        - evaluate_io_optimized_storage
+        - test_io_optimized_before_production_change
+
+      aws_operations:
+        - describe-db-clusters
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  aurora_review_serverless_v1_migration:
+
+    family: serverless
+    action: evaluate_aurora_serverless_v1_migration
+    priority: low
+
+    title_template: "Review Aurora Serverless v1 Architecture — Amazon RDS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+
+    never_invent:
+      - target_architecture
+      - migration_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_migration_from_Aurora_Serverless_v1_to_a_current_capacity_model_is_appropriate
+
+      validation_steps:
+        - verify_current_engine_mode
+        - review_available_migration_options
+        - verify_engine_and_version_compatibility
+        - validate_application_behavior_in_nonproduction_first_when_possible
+
+      possible_actions:
+        - retain_serverless_v1
+        - evaluate_serverless_v2_migration
+        - evaluate_provisioned_migration
+
+      aws_operations:
+        - describe-db-clusters
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # EC2
+  # ===========================================================================
+
+  ec2_rightsize_instance:
+
+    family: rightsizing
+    action: review_ec2_instance_rightsizing
+    priority: high
+
+    title_template: "Review EC2 Instance Rightsizing — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_capacity
+      - utilization
+      - peak_behavior
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - replacement_instance
+      - target_capacity
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_current_EC2_capacity_exceeds_observed_workload_demand
+
+      validation_steps:
+        - verify_instance_type
+        - review_cpu_utilization
+        - review_memory_evidence_when_available
+        - review_network_activity
+        - review_peak_behavior
+        - inspect_application_performance
+        - compare_supported_instance_options_using_current_aws_data
+
+      possible_actions:
+        - retain_current_instance
+        - evaluate_smaller_instance
+        - evaluate_newer_generation
+
+      aws_operations:
+        - describe-instances
+        - describe-instance-types
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_review_idle_instance:
+
+    family: unused_resource
+    action: review_ec2_instance_retirement
+    priority: high
+
+    title_template: "Review Idle EC2 Instance — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - observed_usage
+      - resource_state
+      - dependencies
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - deletion_safety
+      - business_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_EC2_instance_is_still_required
+
+      validation_steps:
+        - verify_instance_state
+        - review_cpu_and_network_activity
+        - inspect_attached_volumes
+        - inspect_iam_and_network_relationships
+        - confirm_application_dependency
+        - confirm_instance_owner
+
+      possible_actions:
+        - retain_instance
+        - stop_instance_after_validation
+        - terminate_instance_after_validation
+
+      aws_operations:
+        - describe-instances
+        - describe-volumes
+        - describe-network-interfaces
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  ec2_review_capacity:
+
+    family: capacity
+    action: review_ec2_capacity_scaling
+    priority: medium
+
+    title_template: "Review EC2 Capacity Scaling — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - current_capacity
+      - observed_demand
+      - performance
+
+    never_invent:
+      - min_capacity
+      - max_capacity
+      - scaling_policy
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_static_EC2_capacity_is_aligned_with_demand
+
+      validation_steps:
+        - review_current_capacity
+        - review_peak_demand
+        - review_scaling_constraints
+        - inspect_workload_variability
+        - inspect_existing_autoscaling
+
+      possible_actions:
+        - retain_static_capacity
+        - evaluate_auto_scaling
+        - evaluate_capacity_adjustment
+
+      aws_operations:
+        - describe-instances
+        - describe-auto-scaling-groups
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_schedule_nonproduction:
+
+    family: scheduling
+    action: evaluate_ec2_nonproduction_schedule
+    priority: medium
+
+    title_template: "Schedule Non-Production EC2 Instance — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - activity_pattern
+      - resource_status
+      - observation_window
+
+    never_invent:
+      - shutdown_schedule
+      - business_hours
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_nonproduction_EC2_runtime_can_be_reduced
+
+      validation_steps:
+        - verify_environment
+        - review_recurring_activity_pattern
+        - identify_low_activity_periods
+        - verify_application_dependencies
+        - confirm_nonproduction_status
+        - determine_schedule_from_actual_usage
+
+      possible_actions:
+        - retain_continuous_runtime
+        - evaluate_start_stop_automation
+        - implement_schedule_after_validation
+
+      aws_operations:
+        - describe-instances
+        - describe-tags
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_purchase_savings_plan:
+
+    family: commitment
+    action: evaluate_ec2_savings_plan
+    priority: medium
+
+    title_template: "Evaluate EC2 Savings Plan — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: account
+
+    required_evidence:
       - eligible_usage
-      - existing_commitments
+      - usage_stability
+      - historical_usage
+
     never_invent:
       - commitment_amount
+      - commitment_term
+      - discount
       - savings
 
-  review_architecture:
-    family: architecture
-    action: review_architecture
+    procedure:
+
+      objective:
+        - determine_whether_stable_compute_usage_justifies_evaluating_a_Savings_Plan
+
+      validation_steps:
+        - review_long_running_compute_usage
+        - review_usage_stability
+        - inspect_existing_commitments
+        - identify_eligible_usage
+        - compare_commitment_options_using_current_aws_data
+
+      possible_actions:
+        - remain_on_demand
+        - evaluate_savings_plan
+        - compare_multiple_commitment_options
+
+      aws_operations:
+        - describe-savings-plans
+        - get-savings-plans-purchase-recommendation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_evaluate_spot:
+
+    family: pricing
+    action: evaluate_ec2_spot_eligibility
     priority: medium
-    recommendation_eligible: true
+
+    title_template: "Evaluate EC2 Spot Eligibility — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
-      - traffic
-      - workload_pattern
-      - current_architecture
+      - resource_identity
+      - workload_behavior
+      - interruption_tolerance
+      - usage_pattern
+      - current_configuration
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
     never_invent:
-      - architecture_replacement
+      - spot_suitability
+      - interruption_tolerance
+      - workload_criticality
+      - exact_savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_EC2_workload_is_suitable_for_interruptible_capacity
+
+      validation_steps:
+        - verify_current_instance_and_workload
+        - determine_whether_workload_is_fault_tolerant
+        - verify_interruption_tolerance
+        - inspect_application_state_recovery_behavior
+        - inspect_auto_scaling_or_replacement_mechanism
+        - verify_workload_is_not_dependent_on_uninterrupted_instance_lifetime
+        - compare_on_demand_and_spot_options_using_current_aws_data
+
+      possible_actions:
+        - retain_on_demand
+        - evaluate_spot_capacity
+        - evaluate_mixed_on_demand_and_spot_capacity
+        - test_spot_in_nonproduction
+
+      aws_operations:
+        - describe-instances
+        - describe-instance-types
+        - describe-auto-scaling-groups
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_review_memory_pressure:
+
+    family: rightsizing
+    action: review_ec2_memory_pressure
+    priority: medium
+
+    title_template: "Review EC2 Memory Pressure — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - memory_utilization
+      - peak_memory_behavior
+
+    never_invent:
+      - replacement_instance
+      - target_capacity
       - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_memory_capacity_should_be_preserved_or_increased_during_rightsizing
+
+      validation_steps:
+        - verify_instance_type
+        - review_memory_utilization_average_and_peak
+        - review_cpu_utilization_for_context
+        - confirm_memory_bound_workload
+        - compare_supported_instance_options_using_current_aws_data
+
+      possible_actions:
+        - retain_current_instance
+        - evaluate_higher_memory_instance_family
+        - preserve_memory_capacity_during_rightsizing
+
+      aws_operations:
+        - describe-instances
+        - describe-instance-types
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_review_ebs_gp2_migration:
+
+    family: storage
+    action: review_ec2_attached_ebs_gp2_migration
+    priority: medium
+
+    title_template: "Review Attached EBS gp2 Volume Migration — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_volume_type
+      - volume_configuration
+
+    never_invent:
+      - target_iops
+      - target_throughput
+      - pricing
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_attached_gp2_volume_should_migrate_to_a_current_generation_EBS_volume_type
+
+      validation_steps:
+        - verify_current_volume_type_and_size
+        - review_workload_iops_and_throughput_requirements
+        - compare_gp3_and_other_current_volume_options_using_current_aws_data
+
+      possible_actions:
+        - retain_current_volume_type
+        - evaluate_gp3_migration
+        - test_migration_in_nonproduction_first
+
+      aws_operations:
+        - describe-volumes
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_review_ebs_provisioned_iops:
+
+    family: storage
+    action: review_ec2_attached_ebs_provisioned_iops
+    priority: medium
+
+    title_template: "Review Attached EBS Provisioned IOPS — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - iops_usage
+      - volume_configuration
+
+    never_invent:
+      - target_iops
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_provisioned_IOPS_exceeds_verified_workload_requirements
+
+      validation_steps:
+        - verify_provisioned_iops
+        - review_observed_iops_average_and_peak
+        - review_observation_period_length
+        - validate_workload_peak_requirements_before_reducing_provisioned_performance
+
+      possible_actions:
+        - retain_current_provisioned_iops
+        - evaluate_reduced_provisioned_iops
+        - test_change_in_nonproduction_first
+
+      aws_operations:
+        - describe-volumes
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ec2_review_ebs_delete_on_termination:
+
+    family: storage
+    action: review_ec2_ebs_delete_on_termination_lifecycle
+    priority: low
+
+    title_template: "Review EBS Delete-on-Termination Lifecycle — Amazon EC2"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_configuration
+
+    never_invent:
+      - dependency
+      - business_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_retained_volume_lifecycle_setting_is_intentional
+
+      validation_steps:
+        - verify_delete_on_termination_setting
+        - confirm_lifecycle_owner_or_business_requirement
+        - review_whether_the_volume_is_still_in_active_use
+
+      possible_actions:
+        - retain_current_lifecycle_setting
+        - confirm_lifecycle_owner
+        - change_delete_on_termination_after_validation
+
+      aws_operations:
+        - describe-volumes
+        - describe-instance-attribute
+        - modify-instance-attribute
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # EBS
+  # ===========================================================================
+
+  ebs_delete_unattached_volume:
+
+    family: storage
+    action: review_unattached_ebs_volume_deletion
+    priority: high
+
+    title_template: "Review Unattached EBS Volume Deletion — Amazon EBS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - attachment_state
+      - resource_state
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - dependency
+      - backup_requirement
+      - recovery_requirement
+      - deletion_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_an_unattached_EBS_volume_should_be_retained_or_deleted
+
+      validation_steps:
+        - verify_volume_is_unattached
+        - inspect_volume_configuration
+        - inspect_snapshot_relationship
+        - verify_volume_is_not_required_for_recovery
+        - determine_whether_external_dependencies_exist
+        - confirm_volume_owner
+        - confirm_deletion_decision
+
+      possible_actions:
+        - retain_volume
+        - create_or_verify_snapshot
+        - delete_volume_after_validation
+
+      aws_operations:
+        - describe-volumes
+        - describe-volume-attribute
+        - describe-snapshots
+        - delete-volume
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  ebs_migrate_gp2_to_gp3:
+
+    family: storage
+    action: evaluate_gp3_migration
+    priority: medium
+
+    title_template: "Evaluate EBS gp2 to gp3 Migration — Amazon EBS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_volume_type
+      - volume_configuration
+      - iops_usage
+      - throughput_usage
+
+    never_invent:
+      - target_iops
+      - target_throughput
+      - pricing
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_an_EBS_volume_should_move_from_gp2_to_gp3
+
+      validation_steps:
+        - verify_current_volume_type
+        - inspect_volume_size
+        - inspect_current_iops
+        - inspect_current_throughput
+        - review_observed_iops_usage
+        - review_observed_throughput_usage
+        - compare_gp2_and_gp3_pricing_using_current_aws_data
+        - determine_required_gp3_performance_before_change
+
+      possible_actions:
+        - retain_gp2
+        - migrate_to_gp3
+        - migrate_with_adjusted_performance_configuration
+
+      aws_operations:
+        - describe-volumes
+        - modify-volume
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  ebs_rightsize_storage:
+
+    family: storage
+    action: review_ebs_storage_configuration
+    priority: medium
+
+    title_template: "Review EBS Storage Configuration — Amazon EBS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - storage_usage
+      - performance
+      - current_configuration
+
+    never_invent:
+      - target_size
+      - target_iops
+      - target_throughput
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_EBS_storage_configuration_exceeds_observed_requirements
+
+      validation_steps:
+        - verify_volume_type
+        - review_volume_size
+        - review_iops_usage
+        - review_throughput_usage
+        - review_growth_behavior
+        - review_performance_requirements
+        - compare_supported_storage_configurations_using_current_aws_data
+
+      possible_actions:
+        - retain_configuration
+        - evaluate_iops_adjustment
+        - evaluate_throughput_adjustment
+        - evaluate_storage_size_adjustment
+
+      aws_operations:
+        - describe-volumes
+        - modify-volume
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # PUBLIC IPV4
+  # ===========================================================================
+
+  release_unassociated_public_ipv4:
+
+    family: unused_resource
+    action: review_public_ipv4_release
+    priority: high
+
+    title_template: "Review Unassociated Public IPv4 Address — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - association_state
+      - observed_state
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - dependency
+      - business_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_an_unassociated_public_IPv4_address_should_be_released
+
+      validation_steps:
+        - verify_address_is_unassociated
+        - verify_address_is_not_service_managed
+        - determine_whether_address_is_reserved_for_future_use
+        - confirm_address_owner
+
+      possible_actions:
+        - retain_address
+        - release_address_after_validation
+
+      aws_operations:
+        - describe-addresses
+        - release-address
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  review_public_ipv4:
+
+    family: network
+    action: review_public_ipv4_usage
+    priority: medium
+
+    title_template: "Review Public IPv4 Usage — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - observed_state
+      - current_configuration
+
+    never_invent:
+      - replacement_network_path
+      - address_removal
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_direct_public_IPv4_connectivity_is_required
+
+      validation_steps:
+        - identify_associated_resource
+        - inspect_resource_role
+        - inspect_network_interface
+        - verify_public_connectivity_requirement
+        - determine_whether_private_connectivity_is_available
+
+      possible_actions:
+        - retain_public_ipv4
+        - evaluate_private_networking
+        - remove_public_ipv4_after_validation
+
+      aws_operations:
+        - describe-addresses
+        - describe-network-interfaces
+        - describe-instances
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # NAT GATEWAY
+  # ===========================================================================
+
+  review_nat_gateway_removal:
+
+    family: network
+    action: review_nat_gateway_removal
+    priority: high
+
+    title_template: "Review Removal of Idle NAT Gateway — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - traffic
+      - active_connections
+      - route_dependency
+      - resource_state
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - dependency
+      - replacement_network_path
+      - deletion_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_NAT_gateway_is_required_by_current_workloads_and_routes
+
+      validation_steps:
+        - verify_nat_gateway_state
+        - review_nat_gateway_traffic
+        - review_active_connections
+        - inspect_route_tables
+        - identify_subnets_using_nat_gateway
+        - identify_private_workloads_using_nat_gateway
+        - verify_aws_service_traffic_dependencies
+        - determine_replacement_network_path_before_removal
+
+      possible_actions:
+        - retain_nat_gateway
+        - evaluate_gateway_endpoint_for_supported_service_traffic
+        - evaluate_network_path_change
+        - remove_nat_gateway_after_validation
+
+      aws_operations:
+        - describe-nat-gateways
+        - describe-route-tables
+        - describe-subnets
+        - describe-network-interfaces
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  review_nat_gateway_network_path:
+
+    family: network_path
+    action: review_nat_gateway_traffic_path
+    priority: high
+
+    title_template: "Review NAT Gateway Traffic Path — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - traffic
+      - source
+      - destination
+      - topology
+
+    never_invent:
+      - replacement_path
+      - exact_route_change
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_observed_NAT_traffic_uses_an_unnecessarily_expensive_path
+
+      validation_steps:
+        - identify_traffic_source
+        - identify_traffic_destination
+        - inspect_route_tables
+        - inspect_availability_zone_relationships
+        - identify_cross_az_traffic
+        - identify_supported_vpc_endpoint_opportunities
+        - compare_existing_and_candidate_network_paths
+
+      possible_actions:
+        - retain_current_path
+        - evaluate_vpc_endpoint
+        - evaluate_cross_az_path_change
+        - evaluate_nat_gateway_topology_change
+
+      aws_operations:
+        - describe-nat-gateways
+        - describe-route-tables
+        - describe-vpc-endpoints
+        - describe-subnets
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # ELB
+  # ===========================================================================
+
+  review_load_balancer_removal:
+
+    family: unused_resource
+    action: review_load_balancer_removal
+    priority: high
+
+    title_template: "Review Load Balancer With No Registered Targets — Elastic Load Balancing"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - target_count
+      - resource_state
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - dependency
+      - production_requirement
+      - deletion_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_load_balancer_is_still_required
+
+      validation_steps:
+        - verify_load_balancer_state
+        - inspect_listener_configuration
+        - inspect_target_groups
+        - inspect_registered_targets
+        - review_observed_traffic
+        - verify_application_dependency
+        - identify_service_owner
+
+      possible_actions:
+        - retain_load_balancer
+        - remove_unused_target_configuration
+        - delete_load_balancer_after_validation
+
+      aws_operations:
+        - describe-load-balancers
+        - describe-listeners
+        - describe-target-groups
+        - describe-target-health
+        - delete-load-balancer
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # EKS
+  # ===========================================================================
+
+  eks_rightsize_nodes:
+
+    family: rightsizing
+    action: review_eks_node_capacity
+    priority: high
+
+    title_template: "Review EKS Node Capacity — Amazon EKS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - node_capacity
+      - utilization
+      - peak_behavior
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - instance_type
+      - target_node_count
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_current_EKS_worker_capacity_exceeds_observed_workload_demand
+
+      validation_steps:
+        - inspect_nodegroup_capacity
+        - review_node_cpu_utilization
+        - review_node_memory_utilization
+        - review_pod_requests
+        - review_peak_demand
+        - inspect_daemonset_overhead
+        - compare_supported_node_options_using_current_evidence
+
+      possible_actions:
+        - retain_node_capacity
+        - evaluate_smaller_nodes
+        - evaluate_nodegroup_scaling
+
+      aws_operations:
+        - describe-nodegroups
+        - describe-cluster
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  eks_enable_cluster_autoscaler:
+
+    family: autoscaling
+    action: evaluate_eks_cluster_autoscaling
+    priority: medium
+
+    title_template: "Evaluate EKS Cluster Autoscaling — Amazon EKS"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - node_capacity
+      - workload_demand
+      - scaling_behavior
+
+    never_invent:
+      - node_count
+      - min_capacity
+      - max_capacity
+      - scaling_policy
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_EKS_node_capacity_should_scale_with_workload_demand
+
+      validation_steps:
+        - inspect_current_node_capacity
+        - review_workload_demand
+        - review_pod_scheduling
+        - inspect_scaling_behavior
+        - inspect_existing_autoscaling
+        - identify_operational_constraints_on_node_scaling
+
+      possible_actions:
+        - retain_fixed_capacity
+        - evaluate_cluster_autoscaling
+        - configure_autoscaling_after_validation
+
+      aws_operations:
+        - describe-nodegroups
+        - describe-cluster
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # S3
+  # ===========================================================================
+
+  s3_apply_lifecycle_policy:
+
+    family: lifecycle
+    action: evaluate_s3_lifecycle_policy
+    priority: medium
+
+    title_template: "Evaluate S3 Lifecycle Policy — Amazon S3"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - storage_usage
+      - access_pattern
+      - retention_behavior
+
+    never_invent:
+      - transition_days
+      - expiration_days
+      - retention_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_S3_lifecycle_automation_can_reduce_unnecessary_storage_retention
+
+      validation_steps:
+        - inspect_current_storage_usage
+        - inspect_access_pattern
+        - inspect_existing_lifecycle_configuration
+        - inspect_versioning
+        - determine_data_retention_requirement
+        - identify_candidate_transition_or_expiration_rules
+
+      possible_actions:
+        - retain_current_storage_behavior
+        - add_lifecycle_rule
+        - modify_existing_lifecycle_rule
+
+      aws_operations:
+        - get-bucket-lifecycle-configuration
+        - put-bucket-lifecycle-configuration
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  s3_abort_multipart_uploads:
+
+    family: storage
+    action: review_incomplete_multipart_upload_cleanup
+    priority: medium
+
+    title_template: "Review Incomplete S3 Multipart Upload Cleanup — Amazon S3"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - observed_state
+
+    never_invent:
+      - upload_owner
+      - upload_is_unneeded
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_incomplete_multipart_uploads_should_be_cleaned_up
+
+      validation_steps:
+        - inspect_incomplete_multipart_uploads
+        - inspect_upload_age
+        - verify_upload_is_not_still_required
+        - identify_cleanup_policy
+
+      possible_actions:
+        - retain_upload
+        - abort_upload_after_validation
+        - configure_lifecycle_cleanup
+
+      aws_operations:
+        - list-multipart-uploads
+        - abort-multipart-upload
+        - get-bucket-lifecycle-configuration
+        - put-bucket-lifecycle-configuration
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # DYNAMODB
+  # ===========================================================================
+
+  dynamodb_rightsize_capacity:
+
+    family: rightsizing
+    action: review_dynamodb_capacity
+    priority: high
+
+    title_template: "Review DynamoDB Capacity — Amazon DynamoDB"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_capacity
+      - capacity_usage
+      - peak_behavior
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - target_capacity
+      - replacement_capacity
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_provisioned_DynamoDB_capacity_exceeds_observed_demand
+
+      validation_steps:
+        - inspect_billing_mode
+        - inspect_current_read_capacity
+        - inspect_current_write_capacity
+        - review_consumed_capacity
+        - review_peak_usage
+        - inspect_autoscaling_configuration
+        - compare_observed_demand_with_current_provisioning
+
+      possible_actions:
+        - retain_capacity
+        - reduce_provisioned_capacity
+        - evaluate_autoscaling
+        - evaluate_on_demand_billing
+
+      aws_operations:
+        - describe-table
+        - describe-scalable-target
+        - describe-scaling-policies
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # QUICKSIGHT
+  # ===========================================================================
+
+  quicksight_review_unused_asset:
+
+    family: unused_resource
+    action: review_quicksight_asset_retirement
+    priority: medium
+
+    title_template: "Review Unused QuickSight Asset — Amazon QuickSight"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - observed_usage
+      - resource_state
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - business_requirement
+      - user_dependency
+      - deletion_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_QuickSight_resource_is_still_required
+
+      validation_steps:
+        - verify_resource_identity
+        - inspect_current_resource_state
+        - review_available_usage_evidence
+        - identify_users_or_dependents_when_available
+        - confirm_business_owner
+        - confirm_retirement_requirement
+
+      possible_actions:
+        - retain_asset
+        - remove_unused_dependency
+        - retire_asset_after_validation
+
+      aws_operations:
+        - describe-account-settings
+        - list-users
+        - list-dashboards
+        - list-analyses
+        - list-data-sets
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # VPC ENDPOINT
+  # ===========================================================================
+
+  vpc_endpoint_review_non_operational:
+
+    family: network
+    action: review_vpc_endpoint_configuration
+    priority: high
+
+    title_template: "Review Non-Operational VPC Endpoint — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - endpoint_type
+      - endpoint_state
+      - route_or_interface_configuration
+      - observed_usage
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - endpoint_is_unused
+      - deletion_safety
+      - replacement_path
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_current_VPC_endpoint_is_operational_and_required
+
+      validation_steps:
+        - verify_endpoint_identity
+        - verify_endpoint_state
+        - inspect_endpoint_type
+        - inspect_route_configuration_when_applicable
+        - inspect_interface_endpoint_network_interfaces_when_applicable
+        - review_observed_usage
+        - verify_service_dependency
+        - verify_application_dependency
+
+      possible_actions:
+        - retain_endpoint
+        - repair_endpoint_configuration
+        - evaluate_endpoint_replacement
+        - remove_endpoint_after_validation
+
+      aws_operations:
+        - describe-vpc-endpoints
+        - describe-route-tables
+        - describe-network-interfaces
+        - describe-subnets
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  vpc_endpoint_review_gateway_routes:
+
+    family: network_path
+    action: review_vpc_endpoint_gateway_route_coverage
+    priority: medium
+
+    title_template: "Review VPC Gateway Endpoint Route Coverage — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - endpoint_type
+      - route_configuration
+      - subnet_scope
+      - observed_traffic
+
+    never_invent:
+      - route_to_add
+      - replacement_path
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_supported_service_traffic_can_use_the_gateway_endpoint_path
+
+      validation_steps:
+        - verify_gateway_endpoint
+        - inspect_route_tables
+        - identify_subnets_with_and_without_endpoint_routes
+        - identify_observed_service_traffic
+        - verify_service_is_supported_by_gateway_endpoint
+        - compare_current_route_with_endpoint_route
+
+      possible_actions:
+        - retain_current_routes
+        - extend_endpoint_route_coverage
+        - evaluate_route_configuration_change
+
+      aws_operations:
+        - describe-vpc-endpoints
+        - describe-route-tables
+        - describe-subnets
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  vpc_endpoint_review_interface_eni:
+
+    family: network
+    action: review_vpc_interface_endpoint_eni_configuration
+    priority: medium
+
+    title_template: "Review VPC Interface Endpoint Network Interfaces — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - endpoint_type
+      - interface_network_interfaces
+      - subnet_configuration
+      - observed_usage
+
+    never_invent:
+      - eni_to_remove
+      - subnet_to_remove
+      - replacement_path
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_interface_endpoint_network_interface_coverage_matches_observed_usage
+
+      validation_steps:
+        - verify_interface_endpoint
+        - inspect_endpoint_network_interfaces
+        - inspect_endpoint_subnets
+        - review_observed_service_traffic
+        - inspect_availability_zone_coverage
+        - verify_application_dependency
+        - compare_endpoint_scope_with_actual_usage
+
+      possible_actions:
+        - retain_endpoint_configuration
+        - evaluate_endpoint_scope
+        - evaluate_network_interface_coverage
+        - modify_endpoint_after_validation
+
+      aws_operations:
+        - describe-vpc-endpoints
+        - describe-network-interfaces
+        - describe-subnets
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # TRANSIT GATEWAY
+  # ===========================================================================
+
+  transit_gateway_review_unused:
+
+    family: unused_resource
+    action: review_transit_gateway_retirement
+    priority: high
+
+    title_template: "Review Unused Transit Gateway — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - resource_state
+      - observed_traffic
+      - attachments
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - dependency
+      - deletion_safety
+      - replacement_architecture
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_transit_gateway_is_still_required
+
+      validation_steps:
+        - verify_transit_gateway_state
+        - inspect_transit_gateway_attachments
+        - review_observed_traffic
+        - inspect_route_tables
+        - identify_connected_networks
+        - verify_application_dependencies
+        - confirm_network_owner
+
+      possible_actions:
+        - retain_transit_gateway
+        - consolidate_network_connectivity
+        - retire_transit_gateway_after_validation
+
+      aws_operations:
+        - describe-transit-gateways
+        - describe-transit-gateway-attachments
+        - describe-transit-gateway-route-tables
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  transit_gateway_review_attachment:
+
+    family: unused_resource
+    action: review_transit_gateway_attachment_removal
+    priority: medium
+
+    title_template: "Review Unused Transit Gateway Attachment — Amazon VPC"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - traffic
+      - resource_state
+      - dependencies
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - dependency
+      - replacement_route
+      - deletion_safety
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_transit_gateway_attachment_is_still_required
+
+      validation_steps:
+        - verify_attachment_state
+        - review_observed_traffic
+        - inspect_transit_gateway_route_tables
+        - identify_connected_network
+        - verify_network_dependencies
+        - confirm_network_owner
+
+      possible_actions:
+        - retain_attachment
+        - modify_network_architecture_after_validation
+        - remove_attachment_after_validation
+
+      aws_operations:
+        - describe-transit-gateway-attachments
+        - describe-transit-gateway-route-tables
+        - search-transit-gateway-routes
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # WAF
+  # ===========================================================================
+
+  waf_review_unused_web_acl:
+
+    family: unused_resource
+    action: review_waf_web_acl_retirement
+    priority: high
+
+    title_template: "Review Unused WAF Web ACL — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - association_state
+      - observed_activity
+      - resource_state
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - deletion_safety
+      - application_dependency
+      - protection_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_WAF_web_ACL_is_still_required
+
+      validation_steps:
+        - verify_web_acl_identity
+        - verify_current_associations
+        - review_observed_request_activity
+        - inspect_rules_and_rule_groups
+        - verify_protected_resource_dependency
+        - confirm_security_requirement
+        - confirm_owner_before_retirement
+
+      possible_actions:
+        - retain_web_acl
+        - remove_unused_association_after_validation
+        - retire_web_acl_after_validation
+
+      aws_operations:
+        - get-web-acl
+        - list-resources-for-web-acl
+        - get-web-acl-for-resource
+        - list-web-acls
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_request_volume_cost:
+
+    family: pricing
+    action: review_waf_request_volume_cost
+    priority: high
+
+    title_template: "Review WAF Request Volume Cost — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - request_volume
+      - observation_period
+      - current_configuration
+
+    never_invent:
+      - request_reduction_target
+      - traffic_source
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_which_observed_request_volume_drivers_should_be_investigated_for_WAF_cost
+
+      validation_steps:
+        - verify_web_acl_identity
+        - review_request_volume
+        - review_observation_period
+        - inspect_associated_resources
+        - inspect_request_source_patterns_when_available
+        - identify_unnecessary_or_unexpected_request_sources
+        - compare_current_request_behavior_with_application_requirements
+
+      possible_actions:
+        - retain_current_request_processing
+        - investigate_request_source_reduction
+        - evaluate_architecture_changes_upstream_of_WAF
+
+      aws_operations:
+        - get-web-acl
+        - list-resources-for-web-acl
+        - get-sampled-requests
+        - list-web-acls
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  waf_review_wcu_configuration:
+
+    family: capacity
+    action: review_waf_wcu_configuration
+    priority: high
+
+    title_template: "Review WAF WCU Configuration — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - wcu_usage
+      - rule_inventory
+      - current_configuration
+
+    never_invent:
+      - rule_to_remove
+      - replacement_rule
+      - target_wcu
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_WAF_rule_configuration_creates_unnecessary_capacity_or_cost_exposure
+
+      validation_steps:
+        - verify_web_acl_identity
+        - inspect_rule_inventory
+        - inspect_rule_priorities
+        - review_WCU_consumption
+        - identify_high_WCU_rules_or_rule_groups
+        - verify_rule_purpose
+        - verify_rule_coverage_and_security_requirement
+        - evaluate_lower_cost_equivalent_configuration_when_available
+
+      possible_actions:
+        - retain_current_rules
+        - optimize_rule_configuration
+        - remove_redundant_rule_after_validation
+        - replace_rule_after_security_validation
+
+      aws_operations:
+        - get-web-acl
+        - check-capacity
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_rule_count_cost:
+
+    family: configuration
+    action: review_waf_rule_count_cost
+    priority: medium
+
+    title_template: "Review WAF Rule Count Cost — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - rule_count
+      - rule_inventory
+      - current_configuration
+
+    never_invent:
+      - redundant_rule
+      - rule_to_remove
+      - security_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_number_of_WAF_rules_creates_unnecessary_cost_or_configuration_overhead
+
+      validation_steps:
+        - verify_web_acl_identity
+        - inspect_rule_inventory
+        - identify_duplicate_or_overlapping_rule_logic
+        - inspect_rule_usage_evidence_when_available
+        - verify_each_rule_has_an_operational_or_security_purpose
+        - evaluate_consolidation_opportunities
+
+      possible_actions:
+        - retain_rule_set
+        - consolidate_rules
+        - remove_redundant_rule_after_validation
+        - redesign_rule_logic_after_security_validation
+
+      aws_operations:
+        - get-web-acl
+        - check-capacity
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_managed_rule_group_cost:
+
+    family: configuration
+    action: review_waf_managed_rule_group_cost
+    priority: high
+
+    title_template: "Review WAF Managed Rule Group Cost — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - managed_rule_groups
+      - request_activity
+      - current_configuration
+
+    never_invent:
+      - managed_rule_group_to_remove
+      - security_requirement
+      - replacement_rule_group
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_managed_rule_groups_create_unnecessary_cost_or_overlapping_protection
+
+      validation_steps:
+        - verify_web_acl_identity
+        - inspect_managed_rule_groups
+        - review_rule_group_usage
+        - review_observed_requests
+        - identify_overlapping_protection
+        - verify_security_requirements
+        - review_vendor_rule_group_scope
+        - evaluate_removal_or_scope_reduction_only_after_validation
+
+      possible_actions:
+        - retain_managed_rule_group
+        - evaluate_managed_rule_group_scope
+        - evaluate_redundant_rule_group_removal
+        - replace_with_supported_alternative_after_validation
+
+      aws_operations:
+        - get-web-acl
+        - list-available-managed-rule-groups
+        - get-managed-rule-set
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_captcha_cost:
+
+    family: configuration
+    action: review_waf_captcha_cost
+    priority: medium
+
+    title_template: "Review WAF CAPTCHA Cost — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - captcha_activity
+      - request_activity
+      - rule_configuration
+
+    never_invent:
+      - captcha_rule_to_remove
+      - captcha_necessity
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_CAPTCHA_processing_creates_avoidable_cost_exposure
+
+      validation_steps:
+        - verify_web_acl_identity
+        - identify_rules_using_captcha
+        - review_captcha_request_activity
+        - review_rule_match_behavior
+        - verify_security_or_abuse_prevention_requirement
+        - identify_unnecessary_captcha_application_scope
+
+      possible_actions:
+        - retain_captcha_behavior
+        - narrow_captcha_scope
+        - optimize_captcha_rule_configuration
+        - remove_captcha_after_security_validation
+
+      aws_operations:
+        - get-web-acl
+        - get-sampled-requests
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_challenge_cost:
+
+    family: configuration
+    action: review_waf_challenge_cost
+    priority: medium
+
+    title_template: "Review WAF Challenge Cost — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - challenge_activity
+      - request_activity
+      - rule_configuration
+
+    never_invent:
+      - challenge_rule_to_remove
+      - security_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_WAF_challenge_processing_creates_avoidable_cost_exposure
+
+      validation_steps:
+        - verify_web_acl_identity
+        - identify_rules_using_challenge
+        - review_challenge_activity
+        - review_rule_match_behavior
+        - verify_security_requirement
+        - identify_unnecessary_challenge_scope
+
+      possible_actions:
+        - retain_challenge_behavior
+        - narrow_challenge_scope
+        - optimize_challenge_rule_configuration
+        - remove_challenge_after_security_validation
+
+      aws_operations:
+        - get-web-acl
+        - get-sampled-requests
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_body_inspection_cost:
+
+    family: configuration
+    action: review_waf_body_inspection_cost
+    priority: medium
+
+    title_template: "Review WAF Request Body Inspection — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - body_inspection_configuration
+      - request_activity
+      - rule_configuration
+
+    never_invent:
+      - body_inspection_requirement
+      - request_size
+      - rule_to_remove
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_request_body_inspection_scope_is_larger_than_required
+
+      validation_steps:
+        - verify_web_acl_identity
+        - identify_rules_inspecting_request_body
+        - review_request_body_inspection_activity
+        - identify_protected_paths
+        - verify_application_security_requirement
+        - evaluate_scope_reduction_opportunities
+        - confirm_security_behavior_before_change
+
+      possible_actions:
+        - retain_body_inspection
+        - narrow_body_inspection_scope
+        - optimize_rules_using_body_inspection
+        - remove_body_inspection_after_security_validation
+
+      aws_operations:
+        - get-web-acl
+        - get-sampled-requests
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_bot_control_cost:
+
+    family: configuration
+    action: review_waf_bot_control_cost
+    priority: medium
+
+    title_template: "Review WAF Bot Control Cost — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - bot_control_configuration
+      - request_activity
+      - current_configuration
+
+    never_invent:
+      - bot_control_requirement
+      - protected_traffic_scope
+      - rule_to_remove
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_Bot_Control_is_applied_more_broadly_than_required
+
+      validation_steps:
+        - verify_web_acl_identity
+        - identify_bot_control_rules
+        - review_bot_control_request_activity
+        - inspect_protected_paths
+        - verify_security_requirement
+        - identify_unnecessary_scope
+        - evaluate_scope_reduction_after_validation
+
+      possible_actions:
+        - retain_bot_control
+        - narrow_bot_control_scope
+        - optimize_bot_control_configuration
+        - remove_bot_control_after_security_validation
+
+      aws_operations:
+        - get-web-acl
+        - get-sampled-requests
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  waf_review_configuration:
+
+    family: configuration
+    action: review_waf_configuration
+    priority: medium
+
+    title_template: "Review WAF Configuration — AWS WAF"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - current_configuration
+      - observed_behavior
+
+    never_invent:
+      - required_configuration
+      - security_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_WAF_configuration_contains_a_verified_cost_driver
+
+      validation_steps:
+        - verify_web_acl_identity
+        - inspect_rules
+        - inspect_rule_groups
+        - inspect_associations
+        - review_observed_behavior
+        - identify_configuration_cost_driver
+        - verify_security_requirement
+
+      possible_actions:
+        - retain_configuration
+        - evaluate_configuration_change
+
+      aws_operations:
+        - get-web-acl
+        - list-web-acls
+        - list-resources-for-web-acl
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  # ===========================================================================
+  # GENERIC FALLBACKS
+  # ===========================================================================
+
+  review_unused:
+
+    family: unused_resource
+    action: review_unused_resource
+    priority: high
+
+    title_template: "Review Potentially Unused Resource — {service}"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - observed_usage
+      - resource_state
+      - dependencies
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - deletion_safety
+      - dependency
+      - business_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_current_resource_is_still_required
+
+      validation_steps:
+        - verify_current_resource_state
+        - review_observed_usage
+        - inspect_resource_relationships
+        - inspect_dependencies
+        - confirm_business_or_application_requirement
+
+      possible_actions:
+        - retain_resource
+        - stop_resource_when_supported
+        - retire_resource_after_validation
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  review_unused_network_attachment:
+
+    family: unused_resource
+    action: review_unused_network_attachment
+    priority: medium
+
+    title_template: "Review Potentially Unused Network Attachment — {service}"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - resource_identity
+      - traffic
+      - resource_state
+      - dependencies
+
+    forbidden_if:
+      - historical_resource_only
+      - current_resource_not_confirmed
+
+    never_invent:
+      - deletion_safety
+      - replacement_architecture
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_the_network_attachment_is_still_required
+
+      validation_steps:
+        - verify_current_attachment
+        - review_observed_traffic
+        - inspect_dependencies
+        - confirm_business_or_application_requirement
+
+      possible_actions:
+        - retain_attachment
+        - consolidate_attachment
+        - remove_attachment_after_validation
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  review_storage:
+
+    family: storage
+    action: review_storage_configuration
+    priority: medium
+
+    title_template: "Review Storage Configuration — {service}"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - storage_usage
+      - performance
+      - current_configuration
+
+    never_invent:
+      - target_storage_type
+      - target_size
+      - target_iops
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_storage_configuration_is_aligned_with_observed_usage
+
+      validation_steps:
+        - inspect_current_storage_configuration
+        - review_storage_usage
+        - review_performance
+        - review_growth_behavior
+        - compare_supported_storage_options
+
+      possible_actions:
+        - retain_storage_configuration
+        - evaluate_storage_reduction
+        - evaluate_storage_class_change
+        - evaluate_performance_adjustment
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  review_backup:
+
+    family: backup
+    action: review_backup_retention
+    priority: medium
+
+    title_template: "Review Backup Retention — {service}"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - retention
+      - backup_usage
+      - recovery_requirements
+
+    never_invent:
+      - retention_target
+      - compliance_requirement
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_backup_retention_exceeds_verified_recovery_requirements
+
+      validation_steps:
+        - inspect_current_retention
+        - inspect_backup_storage_usage
+        - inspect_backup_age_or_inventory
+        - verify_recovery_requirement
+        - verify_compliance_requirement_when_applicable
+
+      possible_actions:
+        - retain_backup_policy
+        - evaluate_reduced_retention
+        - review_old_backup_cleanup
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: true
+      requires_human_confirmation: true
+
+
+  review_pricing_commitment:
+
+    family: commitment
+    action: evaluate_commitment_pricing
+    priority: medium
+
+    title_template: "Evaluate Commitment Pricing — {service}"
+
+    catalog_enabled: true
+    recommendation_scope: account
+
+    required_evidence:
+      - eligible_usage
+      - usage_stability
+      - existing_commitments
+
+    never_invent:
+      - commitment_amount
+      - commitment_term
+      - discount
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_stable_eligible_usage_justifies_a_pricing_commitment_review
+
+      validation_steps:
+        - identify_eligible_usage
+        - review_usage_stability
+        - inspect_existing_commitments
+        - compare_on_demand_and_commitment_options
+        - verify_expected_usage_duration
+
+      possible_actions:
+        - remain_on_demand
+        - evaluate_commitment
+        - compare_multiple_commitment_options
+
+      aws_operations:
+        - service_specific_pricing_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  review_autoscaling:
+
+    family: autoscaling
+    action: evaluate_dynamic_capacity
+    priority: medium
+
+    title_template: "Evaluate Dynamic Capacity Scaling — {service}"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - demand_pattern
+      - configured_capacity
+      - autoscaling_state
+
+    never_invent:
+      - min_capacity
+      - max_capacity
+      - scaling_policy
+      - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_capacity_should_respond_dynamically_to_observed_demand
+
+      validation_steps:
+        - inspect_current_capacity
+        - inspect_demand_variability
+        - inspect_existing_autoscaling
+        - identify_scaling_constraints
+        - determine_operational_capacity_bounds
+
+      possible_actions:
+        - retain_current_capacity_model
+        - evaluate_autoscaling
+        - configure_autoscaling_after_validation
+
+      aws_operations:
+        - service_specific_autoscaling_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
 
   review_configuration:
+
     family: configuration
     action: review_configuration
     priority: low
-    recommendation_eligible: true
+
+    title_template: "Review {service} Configuration"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
     required_evidence:
       - configuration
       - observed_behavior
+
     never_invent:
       - required_configuration
+      - compliance_requirement
       - savings
+
+    procedure:
+
+      objective:
+        - determine_whether_current_configuration_should_be_changed
+
+      validation_steps:
+        - inspect_current_configuration
+        - review_observed_behavior
+        - identify_configuration_cost_driver
+        - verify_operational_requirement
+
+      possible_actions:
+        - retain_configuration
+        - evaluate_configuration_change
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  review_rightsizing:
+
+    family: rightsizing
+    action: review_rightsizing
+    priority: low
+
+    title_template: "Review {service} Rightsizing"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - observed_usage
+      - performance
+
+    never_invent:
+      - replacement_instance_class
+      - replacement_resource
+      - target_capacity
+      - savings
+      - workload_requirements
+
+    procedure:
+
+      objective:
+        - determine_whether_observed_utilization_justifies_a_capacity_change
+
+      validation_steps:
+        - review_observed_utilization
+        - verify_observation_period_coverage
+        - confirm_workload_requirements
+        - identify_candidate_target_capacity
+
+      possible_actions:
+        - retain_current_capacity
+        - evaluate_capacity_change
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  review_billing_mode:
+
+    family: pricing
+    action: review_billing_mode
+    priority: low
+
+    title_template: "Review {service} Billing Mode"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - billing_mode
+      - demand_pattern
+
+    never_invent:
+      - savings
+      - commitment_terms
+      - discounts
+      - workload_requirements
+
+    procedure:
+
+      objective:
+        - determine_whether_current_billing_mode_matches_observed_demand
+
+      validation_steps:
+        - review_current_billing_mode
+        - review_observed_demand_pattern
+        - compare_pricing_modes_against_observed_usage
+        - verify_operational_requirements
+
+      possible_actions:
+        - retain_current_billing_mode
+        - evaluate_billing_mode_change
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  review_global_replication:
+
+    family: resilience
+    action: review_global_replication
+    priority: low
+
+    title_template: "Review {service} Global Replication"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - replica_regions
+      - regional_usage
+
+    never_invent:
+      - savings
+      - target_region
+      - replication_requirements
+      - business_requirements
+
+    procedure:
+
+      objective:
+        - determine_whether_current_replication_footprint_matches_observed_regional_usage
+
+      validation_steps:
+        - review_current_replica_regions
+        - review_regional_usage
+        - verify_resilience_requirements
+        - verify_compliance_requirements
+
+      possible_actions:
+        - retain_current_replication
+        - evaluate_replication_change
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: false
+      requires_human_confirmation: true
+
+
+  review_capacity:
+
+    family: capacity
+    action: review_capacity
+    priority: low
+
+    title_template: "Review {service} Capacity"
+
+    catalog_enabled: true
+    recommendation_scope: resource
+
+    required_evidence:
+      - configured_capacity
+      - capacity_usage
+
+    never_invent:
+      - savings
+      - target_capacity
+      - workload_requirements
+
+    procedure:
+
+      objective:
+        - determine_whether_configured_capacity_matches_observed_usage
+
+      validation_steps:
+        - review_configured_capacity
+        - review_observed_capacity_usage
+        - verify_observation_period_coverage
+        - confirm_workload_requirements
+
+      possible_actions:
+        - retain_current_capacity
+        - evaluate_capacity_change
+
+      aws_operations:
+        - service_specific_describe_operation
+
+      destructive: false
+      requires_human_confirmation: true
 
 
 # =============================================================================
@@ -238,75 +3838,84 @@ recommendations:
 
 routes:
 
+
   # ---------------------------------------------------------------------------
   # RDS
   # ---------------------------------------------------------------------------
 
   rds_stopped_instance:
-    recommendation_key: review_unused
+    recommendation_key: rds_review_stopped_database
 
   rds_no_activity:
-    recommendation_key: review_unused
+    recommendation_key: rds_delete_unused_database
 
   rds_instance_possible_oversized:
-    recommendation_key: review_rightsizing
+    recommendation_key: rds_rightsize_instance
 
   rds_underused_read_replica:
-    recommendation_key: review_replica
+    recommendation_key: rds_remove_read_replica
+
+  rds_reserved_instance_candidate:
+    recommendation_key: rds_purchase_reserved_instance
+
+  rds_dev_test_scheduling_candidate:
+    recommendation_key: rds_schedule_dev_test
+
+  # rds_multi_az_cost_review, rds_backup_retention_review,
+  # rds_performance_insights_review, rds_old_instance_generation,
+  # rds_public_accessibility, rds_io_pressure: diagnostic/config-review
+  # findings from database/instance.py -- hardcoded
+  # recommendation_eligible=False with no policy key to override it, so
+  # no recommendation is possible for them. Intentionally unrouted.
 
 
   # ---------------------------------------------------------------------------
   # AURORA
   # ---------------------------------------------------------------------------
-  #
-  # Use these exact route names when the Aurora analyzer is implemented.
-  # Keep the catalog independent of long explanatory prose.
 
-  # Route keys must match the finding_type the analyzer actually emits
-  # (analysis/analyzers/database/aurora.py). Four of these previously
-  # did not, so every Aurora route was dead configuration.
-
-  # Cluster shows near-zero CPU, connections AND I/O -- an idle
-  # cluster, not a right-sizing candidate, so this routes to
-  # review_unused rather than review_rightsizing.
   aurora_no_observed_activity:
-    recommendation_key: review_unused
+    recommendation_key: aurora_review_unused_cluster
 
-  # Provisioned cluster with sustained low activity -> evaluate
-  # Serverless v2. (Not aurora_serverless_capacity_pressure, which is
-  # an already-serverless cluster under HIGH load -- the opposite
-  # condition, and diagnostic rather than recommendation-eligible.)
-  aurora_serverless_v2_suitability_review:
-    recommendation_key: review_serverless
+  aurora_stopped_cluster:
+    recommendation_key: aurora_review_unused_cluster
 
-  # One specific reader is underused -> review that replica.
+  aurora_serverless_v2_cost_opportunity:
+    recommendation_key: aurora_serverless_v2
+
+  aurora_reader_autoscaling_cost_opportunity:
+    recommendation_key: aurora_reader_autoscaling
+
   aurora_reader_underutilized:
-    recommendation_key: review_replica
+    recommendation_key: aurora_remove_underused_reader
 
-  # The cluster carries more readers than the workload uses ->
-  # review the reader-scaling policy rather than any one replica.
-  aurora_reader_count_review:
-    recommendation_key: review_autoscaling
+  aurora_reader_capacity_excess:
+    recommendation_key: aurora_review_reader_capacity
 
-  aurora_global_database_cost_review:
-    recommendation_key: review_global_replication
+  aurora_global_database:
+    recommendation_key: aurora_review_global_replication
 
-  aurora_backup_retention_review:
-    recommendation_key: review_backup
+  aurora_backup_retention_excess:
+    recommendation_key: aurora_review_backup_retention
+
+  aurora_serverless_capacity_pressure:
+    recommendation_key: aurora_review_serverless_capacity_pressure
+
+  aurora_io_optimized_high_io:
+    recommendation_key: aurora_review_io_optimized_storage
+
+  aurora_serverless_v1_detected:
+    recommendation_key: aurora_review_serverless_v1_migration
 
 
   # ---------------------------------------------------------------------------
   # EKS
   # ---------------------------------------------------------------------------
 
-  eks_low_worker_utilization:
-    recommendation_key: review_rightsizing
+  eks_worker_underutilization:
+    recommendation_key: eks_rightsize_nodes
 
   eks_nodegroup_underutilization:
-    recommendation_key: review_rightsizing
-
-  eks_minimum_capacity_review:
-    recommendation_key: review_capacity
+    recommendation_key: eks_rightsize_nodes
 
   eks_pod_cpu_request_overprovisioning:
     recommendation_key: review_rightsizing
@@ -315,15 +3924,12 @@ routes:
     recommendation_key: review_rightsizing
 
   eks_gpu_underutilization:
-    recommendation_key: review_rightsizing
+    recommendation_key: eks_rightsize_nodes
 
-  eks_no_observed_worker_capacity:
+  eks_no_observed_worker_nodes:
     recommendation_key: review_unused
 
-
-  # Extended-support pricing is a cost signal, but the actual upgrade
-  # target must come from current AWS compatibility/pricing data.
-  eks_extended_support_review:
+  eks_extended_support_version:
     recommendation_key: review_configuration
 
 
@@ -332,60 +3938,61 @@ routes:
   # ---------------------------------------------------------------------------
 
   elb_no_observed_activity:
-    recommendation_key: review_unused
+    recommendation_key: review_load_balancer_removal
 
   elb_low_traffic:
-    recommendation_key: review_rightsizing
+    recommendation_key: review_load_balancer_removal
 
   elb_no_registered_targets:
-    recommendation_key: review_unused
-
-  elb_idle_target_group:
-    recommendation_key: review_unused
+    recommendation_key: review_load_balancer_removal
 
   elb_no_healthy_targets_no_traffic:
-    recommendation_key: review_unused
+    recommendation_key: review_load_balancer_removal
 
   elb_idle_with_cost:
-    recommendation_key: review_unused
+    recommendation_key: review_load_balancer_removal
+
+  elb_idle:
+    recommendation_key: review_load_balancer_removal
 
 
   # ---------------------------------------------------------------------------
   # TRANSIT GATEWAY
   # ---------------------------------------------------------------------------
 
-  transit_gateway_no_observed_traffic:
-    recommendation_key: review_network
+  transit_gateway_no_attachments:
+    recommendation_key: transit_gateway_review_unused
 
-  transit_gateway_high_traffic:
-    recommendation_key: review_network_path
+  transit_gateway_low_utilization:
+    recommendation_key: transit_gateway_review_unused
 
-  transit_gateway_unrouted_attachment:
-    recommendation_key: review_configuration
-
-  transit_gateway_unassociated_attachment:
-    recommendation_key: review_configuration
-
-  transit_gateway_blackhole_routes:
-    recommendation_key: review_configuration
-
-  transit_gateway_vpc_blackhole_routes:
-    recommendation_key: review_configuration
+  # transit_gateway_topology_incomplete: explicitly commented in
+  # network/vpc/transit_gateway.py as a data-quality evidence gap, not
+  # an optimization finding -- hardcoded recommendation_eligible=False.
+  # Intentionally unrouted.
 
 
   # ---------------------------------------------------------------------------
   # VPC ENDPOINT
   # ---------------------------------------------------------------------------
-  #
-  # These are operational diagnostics in your current analyzer.
-  # They should remain recommendation_eligible=False there.
-  #
-  # Therefore they intentionally have NO recommendation route:
-  #
-  # vpc_endpoint_non_operational
-  # vpc_endpoint_gateway_missing_route
-  # vpc_endpoint_gateway_partial_route_coverage
-  # vpc_endpoint_interface_eni_mismatch
+
+  vpc_endpoint_non_operational:
+    recommendation_key: vpc_endpoint_review_non_operational
+
+  vpc_endpoint_gateway_missing_route:
+    recommendation_key: vpc_endpoint_review_gateway_routes
+
+  vpc_endpoint_gateway_partial_route_coverage:
+    recommendation_key: vpc_endpoint_review_gateway_routes
+
+  vpc_endpoint_interface_eni_mismatch:
+    recommendation_key: vpc_endpoint_review_interface_eni
+
+  # vpc_endpoint_billing_resource_mismatch,
+  # vpc_endpoint_historical_billing_without_current_resource: billing-
+  # reconciliation diagnostics (same family as historical_unmatched) --
+  # hardcoded recommendation_eligible=False, no policy override.
+  # Intentionally unrouted.
 
 
   # ---------------------------------------------------------------------------
@@ -393,7 +4000,7 @@ routes:
   # ---------------------------------------------------------------------------
 
   dynamodb_provisioned_capacity_underutilized:
-    recommendation_key: review_rightsizing
+    recommendation_key: dynamodb_rightsize_capacity
 
   dynamodb_provisioned_autoscaling_review:
     recommendation_key: review_autoscaling
@@ -410,10 +4017,10 @@ routes:
   dynamodb_gsi_underutilized:
     recommendation_key: review_capacity
 
-  # Operational only.
-  # Keep recommendation_eligible=False in the analyzer.
-  #
-  # dynamodb_throttling_observed
+  # dynamodb_throttling_observed: explicitly commented in
+  # database/dynamodb.py as an operational signal, never a cost
+  # recommendation -- hardcoded recommendation_eligible=False regardless
+  # of policy. Intentionally unrouted.
 
 
   # ---------------------------------------------------------------------------
@@ -421,25 +4028,31 @@ routes:
   # ---------------------------------------------------------------------------
 
   nat_gateway_idle:
-    recommendation_key: review_network
-
-  nat_gateway_low_traffic:
-    recommendation_key: review_network
+    recommendation_key: review_nat_gateway_removal
 
   nat_gateway_no_route_dependency:
-    recommendation_key: review_unused
+    recommendation_key: review_nat_gateway_removal
+
+  nat_gateway_low_traffic:
+    recommendation_key: review_nat_gateway_network_path
 
   nat_gateway_cross_az:
-    recommendation_key: review_network_path
+    recommendation_key: review_nat_gateway_network_path
 
   nat_gateway_endpoint_opportunity:
-    recommendation_key: review_network_path
+    recommendation_key: review_nat_gateway_network_path
 
   nat_gateway_high_data_processing:
-    recommendation_key: review_network_path
+    recommendation_key: review_nat_gateway_network_path
 
   nat_gateway_multiple_az:
-    recommendation_key: review_network
+    recommendation_key: review_nat_gateway_network_path
+
+  # nat_gateway_blackhole_route_dependency, nat_gateway_port_allocation_pressure,
+  # nat_gateway_idle_timeout_activity, nat_gateway_packet_drop_activity:
+  # capacity/error diagnostics from network/vpc/nat_gateway.py, most
+  # explicitly marked metadata.diagnostic_only=True -- hardcoded
+  # recommendation_eligible=False. Intentionally unrouted.
 
 
   # ---------------------------------------------------------------------------
@@ -447,45 +4060,51 @@ routes:
   # ---------------------------------------------------------------------------
 
   unattached_ebs_volume:
-    recommendation_key: review_unused
+    recommendation_key: ebs_delete_unattached_volume
 
   ebs_gp2_to_gp3:
-    recommendation_key: review_storage
+    recommendation_key: ebs_migrate_gp2_to_gp3
 
   ebs_low_iops_utilization:
-    recommendation_key: review_storage
+    recommendation_key: ebs_rightsize_storage
 
   ebs_low_throughput_utilization:
-    recommendation_key: review_storage
+    recommendation_key: ebs_rightsize_storage
 
 
   # ---------------------------------------------------------------------------
   # EC2
   # ---------------------------------------------------------------------------
 
-  ec2_idle_instance:
-    recommendation_key: review_unused
+  ec2_instance_stopped:
+    recommendation_key: ec2_review_idle_instance
 
-  ec2_instance_underutilized:
-    recommendation_key: review_rightsizing
+  ec2_instance_very_low_activity:
+    recommendation_key: ec2_review_idle_instance
 
-  ec2_capacity_pressure:
-    recommendation_key: review_capacity
+  ec2_rightsizing_candidate:
+    recommendation_key: ec2_rightsize_instance
 
-  ec2_old_generation:
-    recommendation_key: review_rightsizing
+  ec2_memory_underutilization:
+    recommendation_key: ec2_rightsize_instance
 
-  ec2_spot_candidate:
-    recommendation_key: review_pricing
+  ec2_schedule_review:
+    recommendation_key: ec2_schedule_nonproduction
 
-  ec2_stable_long_running:
-    recommendation_key: review_pricing
+  ec2_autoscaling_capacity_review:
+    recommendation_key: ec2_review_capacity
 
-  ec2_autoscaling_opportunity:
-    recommendation_key: review_autoscaling
+  ec2_memory_pressure:
+    recommendation_key: ec2_review_memory_pressure
 
-  ec2_nonproduction_scheduling:
-    recommendation_key: review_scheduling
+  ec2_ebs_gp2_review:
+    recommendation_key: ec2_review_ebs_gp2_migration
+
+  ec2_ebs_provisioned_iops_review:
+    recommendation_key: ec2_review_ebs_provisioned_iops
+
+  ec2_ebs_delete_on_termination_review:
+    recommendation_key: ec2_review_ebs_delete_on_termination
 
 
   # ---------------------------------------------------------------------------
@@ -493,17 +4112,17 @@ routes:
   # ---------------------------------------------------------------------------
 
   elastic_ip_unassociated:
-    recommendation_key: review_unused
+    recommendation_key: release_unassociated_public_ipv4
 
   elastic_ip_on_stopped_instance:
-    recommendation_key: review_unused
+    recommendation_key: release_unassociated_public_ipv4
 
   public_ipv4_in_use_review:
-    recommendation_key: review_network
+    recommendation_key: review_public_ipv4
 
 
   # ---------------------------------------------------------------------------
-  # QUICKSight
+  # QUICKSIGHT
   # ---------------------------------------------------------------------------
 
   quicksight_spice_capacity_pressure:
@@ -513,20 +4132,83 @@ routes:
     recommendation_key: review_storage
 
   quicksight_stale_dashboard:
-    recommendation_key: review_unused
+    recommendation_key: quicksight_review_unused_asset
 
   quicksight_stale_analysis:
-    recommendation_key: review_unused
+    recommendation_key: quicksight_review_unused_asset
 
   quicksight_potentially_orphaned_dataset:
-    recommendation_key: review_unused
+    recommendation_key: quicksight_review_unused_asset
+
+  # quicksight_dashboard_errors, quicksight_data_source_failure:
+  # broken-asset/data-quality diagnostics from analytics/quicksight.py --
+  # hardcoded recommendation_eligible=False. Intentionally unrouted.
+
+
+  # ---------------------------------------------------------------------------
+  # S3
+  # ---------------------------------------------------------------------------
+
+  s3_lifecycle_missing:
+    recommendation_key: s3_apply_lifecycle_policy
+
+  s3_incomplete_multipart_uploads:
+    recommendation_key: s3_abort_multipart_uploads
+
+  s3_intelligent_tiering_candidate:
+    recommendation_key: review_storage
+
+  s3_standard_ia_candidate:
+    recommendation_key: review_storage
+
+  s3_glacier_candidate:
+    recommendation_key: review_storage
+
+  s3_replication_cost_exposure:
+    recommendation_key: review_configuration
 
 
   # ---------------------------------------------------------------------------
   # WAF
   # ---------------------------------------------------------------------------
-  #
-  # These should remain operational/security-focused unless the analyzer
-  # explicitly marks them recommendation_eligible=True.
-  #
-  # No routes by default.
+
+  waf_unused_web_acl:
+    recommendation_key: waf_review_unused_web_acl
+
+  waf_high_request_volume:
+    recommendation_key: waf_review_request_volume_cost
+
+  waf_high_wcu:
+    recommendation_key: waf_review_wcu_configuration
+
+  # waf_high_rule_count already has a recommendation definition
+  # (waf_review_rule_count_cost) but the route below is currently inert:
+  # security/waf.py hardcodes recommendation_eligible=False for this
+  # finding_type with no policy key to override it, so no recommendation
+  # will actually be produced until the analyzer is also changed. Routed
+  # anyway for catalog correctness/documentation.
+  waf_high_rule_count:
+    recommendation_key: waf_review_rule_count_cost
+
+
+  waf_managed_rule_group_cost_exposure:
+    recommendation_key: waf_review_managed_rule_group_cost
+
+  waf_captcha_cost_exposure:
+    recommendation_key: waf_review_captcha_cost
+
+  waf_challenge_cost_exposure:
+    recommendation_key: waf_review_challenge_cost
+
+  waf_body_inspection_cost_exposure:
+    recommendation_key: waf_review_body_inspection_cost
+
+
+  waf_bot_control_cost_exposure:
+    recommendation_key: waf_review_bot_control_cost
+
+  # waf_rule_no_observed_activity, waf_fraud_control_cost_exposure:
+  # hardcoded recommendation_eligible=False in security/waf.py, no
+  # policy key to override, and no existing recommendation definition
+  # to route to. Intentionally unrouted.
+

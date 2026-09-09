@@ -9,7 +9,13 @@ from pathlib import Path
 import json
 from typing import Any
 
+from aws_cost_optimizer.analysis.reconciliation import (
+    CURRENT_MISMATCH,
+    HISTORICAL,
+    HISTORICAL_ONLY,
+)
 from aws_cost_optimizer.collection.cost.periods import period_label
+from aws_cost_optimizer.planner.resource_catalog import get_resource_catalog
 
 
 def _box(title: str, width: int = 72) -> list[str]:
@@ -190,12 +196,25 @@ class ScanExporter:
             "N/A",
         )
 
+        tolerance = float(
+            validation.get(
+                "tolerance",
+                0,
+            )
+            or 0
+        )
+
+        validation_line = f"{'PASS' if matches else 'FAIL'}"
+
+        if tolerance:
+            validation_line += f" (difference <= ${tolerance:,.2f} tolerance)"
+
         lines.extend(
             [
                 f" Billing scope  : {scope}",
                 f" Period total   : ${total:,.2f}",
                 f" Monthly total  : ${monthly_total:,.2f}",
-                f" Validation     : " f"{'PASS' if matches else 'FAIL'}",
+                f" Validation     : {validation_line}",
                 f" Difference     : ${difference:,.2f}",
             ]
         )
@@ -321,6 +340,39 @@ class ScanExporter:
             ]
         )
 
+        # Collectors are billed per-collector, but several collectors can
+        # share one AWS billing service (e.g. rds + aurora_cluster both
+        # bill under "Amazon Relational Database Service"; nat_gateway +
+        # ebs both bill under "EC2 - Other"). Without an explicit
+        # per-service recap, two collectors' costs summing to a service's
+        # total on the AWS bill reads as a discrepancy rather than the
+        # same amount split across collectors.
+        #
+        # resource_catalog.yaml's top-level key is NOT always the runtime
+        # collector name -- e.g. the "rds_instance" entry's actual
+        # collector key is "rds", "ebs_volume"'s is "ebs" (8 such
+        # mismatches exist). Index by entry["collector"]["key"], which is
+        # what CollectorManager/collection results actually use, not the
+        # raw top-level YAML key.
+        billing_by_collector_key: dict[str, list[str]] = {}
+
+        for entry in get_resource_catalog().all().values():
+
+            if not isinstance(entry, dict):
+                continue
+
+            collector_key = (entry.get("collector") or {}).get("key")
+
+            if not collector_key:
+                continue
+
+            services = (entry.get("billing") or {}).get("services") or []
+
+            if services:
+                billing_by_collector_key[str(collector_key)] = services
+
+        service_totals: dict[str, dict[str, Any]] = {}
+
         for result in results:
 
             collector = str(
@@ -373,9 +425,34 @@ class ScanExporter:
                     "N/A",
                 )
 
+                # cost is the sum across every usage type that maps to
+                # this collector (see CollectionPlanner.plan) -- usage_type
+                # names only the single largest-cost line, not the whole
+                # amount, so it must not read as a 1:1 label.
                 lines.append(
-                    f"   Billing: " f"{usage_type} " f"(${float(cost or 0):,.2f})"
+                    f"   Billing attributed to this collector: "
+                    f"${float(cost or 0):,.2f} "
+                    f"(largest usage type: {usage_type})"
                 )
+
+                billing_services = billing_by_collector_key.get(collector, [])
+
+                # The first listed service is each collector's primary
+                # billing service (see resource_catalog.yaml comments,
+                # e.g. nat_gateway's "EC2 - Other" before "Amazon Virtual
+                # Private Cloud") -- summing under it is what lets two
+                # collectors' costs reconcile against one AWS service line.
+                if billing_services:
+
+                    service_name = str(billing_services[0])
+
+                    bucket = service_totals.setdefault(
+                        service_name,
+                        {"total": 0.0, "collectors": []},
+                    )
+
+                    bucket["total"] += float(cost or 0)
+                    bucket["collectors"].append(collector)
 
             if result.get("match_reason"):
 
@@ -384,6 +461,29 @@ class ScanExporter:
             if result.get("error"):
 
                 lines.append("   ERROR: " + str(result["error"]))
+
+        multi_collector_services = {
+            service: bucket
+            for service, bucket in service_totals.items()
+            if len(bucket["collectors"]) > 1
+        }
+
+        if multi_collector_services:
+
+            lines.append("")
+            lines.append(" Billing by AWS service (split across collectors):")
+
+            for service, bucket in sorted(
+                multi_collector_services.items(),
+                key=lambda item: item[1]["total"],
+                reverse=True,
+            ):
+
+                collectors_label = " + ".join(bucket["collectors"])
+
+                lines.append(
+                    f"   {service}: ${bucket['total']:,.2f} " f"({collectors_label})"
+                )
 
         return lines
 
@@ -421,10 +521,30 @@ class ScanExporter:
 
         return lines
 
-    @staticmethod
-    def _finding_category(finding) -> str:
+    # Analyzers tag their finding's true nature in metadata.category
+    # (e.g. "unused_resource", "lifecycle", "data_quality",
+    # "telemetry_status") -- the top-level Finding.category field is
+    # left at its "optimization" default by nearly every analyzer, so
+    # relying on it alone silently reports telemetry-incomplete /
+    # no-observed-metrics findings as optimization findings.
+    _DATA_QUALITY_METADATA_CATEGORIES = frozenset(
+        {
+            "data_quality",
+            "telemetry_status",
+        }
+    )
+
+    @classmethod
+    def _finding_category(cls, finding) -> str:
         if not isinstance(finding, dict):
             return "optimization"
+
+        metadata = finding.get("metadata")
+        if isinstance(metadata, dict):
+            metadata_category = str(metadata.get("category", "")).lower()
+            if metadata_category in cls._DATA_QUALITY_METADATA_CATEGORIES:
+                return "data_quality"
+
         return str(finding.get("category", "optimization")).lower()
 
     def _format_user_finding(self, finding) -> list[str]:
@@ -507,11 +627,76 @@ class ScanExporter:
         if reason:
             lines.append(reason)
 
+        if str(finding.get("finding_type")) == "billing_resource_mismatch":
+            lines.extend(self._format_billing_mismatch_detail(finding))
+
         limitations = _safe_list(finding.get("limitations"))
         if limitations:
             first = str(limitations[0]).strip()
             if first:
                 lines.append(f"Note: {first}")
+
+        return lines
+
+    @staticmethod
+    def _format_billing_mismatch_detail(
+        finding,
+    ) -> list[str]:
+
+        metadata = finding.get("metadata")
+
+        if not isinstance(
+            metadata,
+            dict,
+        ):
+            return []
+
+        lines: list[str] = []
+
+        current_resource_id = str(metadata.get("current_resource_id") or "unknown")
+
+        billing_cost = metadata.get("billing_cost")
+
+        current_config = metadata.get("current_configuration")
+
+        endpoint_type = None
+
+        if isinstance(
+            current_config,
+            dict,
+        ):
+
+            candidate = (
+                current_config.get("endpoint_type")
+                or current_config.get("db_instance_class")
+                or current_config.get("instance_class")
+            )
+
+            if candidate is not None:
+                endpoint_type = str(candidate)
+
+        lines.append("")
+        lines.append(f"Current resource: {current_resource_id}")
+
+        if endpoint_type:
+            lines.append(f"Current endpoint type: {endpoint_type}")
+
+        lines.append("")
+        lines.append("Therefore:")
+
+        lines.append("- no current resource-level cost attribution")
+
+        lines.append("- no optimization finding generated")
+
+        if isinstance(
+            billing_cost,
+            (int, float),
+        ):
+            lines.append(
+                f"- historical ${billing_cost:,.2f} retained " "as billing evidence"
+            )
+        else:
+            lines.append("- historical billing retained " "as billing evidence")
 
         return lines
 
@@ -677,6 +862,23 @@ class ScanExporter:
         ):
             lines.append(f"Observed cost: ${observed_cost:,.2f}")
 
+            # The number above is real billing, but when reconciliation
+            # could not attribute it to this specific resource it is a
+            # shared bucket total (e.g. 3 NAT gateways sharing one
+            # EU-NatGateway-Hours line). Saying so prevents the reader
+            # from multiplying the figure by the resource count.
+            if financial_impact.get("savings_basis") in {
+                "cost_not_resource_attributed",
+                "billing_usage_type_mismatch",
+            }:
+                resource_type = str(
+                    recommendation.get("resource_type") or "resource"
+                ).replace("_", " ")
+                lines.append(
+                    "Cost attribution: shared billing bucket; "
+                    f"not allocated per {resource_type}"
+                )
+
         estimated_savings = financial_impact.get("estimated_monthly_savings")
 
         if isinstance(
@@ -728,22 +930,52 @@ class ScanExporter:
                 or 0
             )
 
-            lines.extend(
-                [
-                    "",
-                    f"{service}",
-                    f" Region     : {region}",
-                    f" Usage type : {usage_type}",
-                    f" Cost       : ${cost:,.2f}",
-                    f" Resources  : {len(resources)} " f"{resource_type}",
-                ]
-            )
+            # A CURRENT_MISMATCH / HISTORICAL context means the billed
+            # usage type does NOT belong to the resources listed below
+            # (e.g. db.t3.large historical billing vs a current
+            # db.r6g.large instance). Rendering the cost as a plain
+            # group header visually attributed historical spend to the
+            # current resource -- split the two explicitly instead.
+            historical_billing = context.get("reconciliation_status") in {
+                CURRENT_MISMATCH,
+                HISTORICAL,
+                HISTORICAL_ONLY,
+            }
+
+            lines.append("")
+            lines.append(f"{service}")
+            lines.append(f" Region     : {region}")
+
+            if historical_billing:
+
+                lines.extend(
+                    [
+                        " Billing    : historical evidence only",
+                        f" Usage type : {usage_type}",
+                        f" Cost       : ${cost:,.2f}",
+                        " Current resource match : NONE",
+                        f" Resources  : {len(resources)} "
+                        f"{resource_type} (current resources; NOT billed "
+                        "under this usage type)",
+                    ]
+                )
+
+            else:
+
+                lines.extend(
+                    [
+                        f" Usage type : {usage_type}",
+                        f" Cost       : ${cost:,.2f}",
+                        f" Resources  : {len(resources)} " f"{resource_type}",
+                    ]
+                )
 
             for resource in resources:
 
                 self._append_resource(
                     lines,
                     resource,
+                    billing_matched=not historical_billing,
                 )
 
         return lines
@@ -752,6 +984,8 @@ class ScanExporter:
         self,
         lines: list[str],
         resource: dict,
+        *,
+        billing_matched: bool = True,
     ) -> None:
 
         resource_id = resource.get("resource_id") or resource.get("id") or "unknown"
@@ -762,6 +996,9 @@ class ScanExporter:
                 f"  Resource: {resource_id}",
             ]
         )
+
+        if not billing_matched:
+            lines.append("  Billing attribution: NOT MATCHED")
 
         configuration = _safe_dict(resource.get("configuration"))
 
@@ -938,7 +1175,21 @@ class ScanExporter:
         if not topology:
             return
 
-        lines.append("  Topology:")
+        body: list[str] = []
+
+        # A topology dict may carry only a status/reason stub -- e.g.
+        # {"status": "not_applicable", "reason": "..."} for resources
+        # that do not use VPC topology, or {"status": "incomplete",
+        # "reason": "..."} when the resource has no VPC. Surface that
+        # reasoning instead of printing a bare, empty "Topology:" header.
+        status = topology.get("status")
+        reason = topology.get("reason")
+
+        if status is not None:
+            if reason:
+                body.append(f"    status: {status} ({reason})")
+            else:
+                body.append(f"    status: {status}")
 
         summary = _safe_dict(topology.get("summary"))
 
@@ -960,7 +1211,7 @@ class ScanExporter:
             if key not in summary:
                 continue
 
-            lines.append(f"    {key}: " f"{summary[key]}")
+            body.append(f"    {key}: " f"{summary[key]}")
 
         route_tables = _safe_list(topology.get("route_tables"))
 
@@ -988,7 +1239,7 @@ class ScanExporter:
 
             if ids:
 
-                lines.append("    Route tables: " + ", ".join(ids))
+                body.append("    Route tables: " + ", ".join(ids))
 
         subnets = _safe_list(topology.get("subnets"))
 
@@ -1014,7 +1265,7 @@ class ScanExporter:
 
             if ids:
 
-                lines.append("    Subnets: " + ", ".join(ids))
+                body.append("    Subnets: " + ", ".join(ids))
 
         endpoints = _safe_list(topology.get("vpc_endpoints"))
 
@@ -1041,4 +1292,14 @@ class ScanExporter:
 
             if names:
 
-                lines.append("    VPC endpoints: " + ", ".join(names))
+                body.append("    VPC endpoints: " + ", ".join(names))
+
+        # Only emit the header when there is something meaningful to
+        # show underneath it. A status-only stub renders as one line; a
+        # truly bare topology dict renders nothing at all.
+        if not body:
+            return
+
+        lines.append("  Topology:")
+
+        lines.extend(body)

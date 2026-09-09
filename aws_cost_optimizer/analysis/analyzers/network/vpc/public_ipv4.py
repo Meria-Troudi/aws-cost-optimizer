@@ -1,16 +1,25 @@
 """
 Public IPv4 cost optimization analyzer.
 
+Purpose
+-------
+Identify public IPv4 configurations that create a known AWS
+public IPv4 cost exposure and determine whether they warrant
+cost review.
+
 Findings
 --------
 1. elastic_ip_unassociated
 2. elastic_ip_on_stopped_instance
 3. public_ipv4_in_use_review
 
-The analyzer does not calculate savings.
+Important
+---------
+This analyzer does not calculate savings.
 
-It only identifies public IPv4 configurations that warrant
-cost review.
+It does not assume that every public IPv4 address is unnecessary.
+An associated public IPv4 on a running resource is treated as a
+cost-exposure review finding, not as proof of waste.
 
 Cost attribution remains handled by the billing/reconciliation layer.
 """
@@ -26,6 +35,7 @@ from ....evidence import Evidence
 from ....finding import Finding, ObservationPeriod
 from ....registry import register
 
+
 SUPPORTED_RESOURCE_TYPES = frozenset(
     {
         "public_ipv4",
@@ -34,26 +44,36 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
     }
 )
 
+STOPPED_INSTANCE_STATES = frozenset(
+    {
+        "stopped",
+        "stopping",
+        "hibernated",
+    }
+)
 
-def _dict(
-    value: Any,
-) -> dict[str, Any]:
 
-    return (
-        value
-        if isinstance(
-            value,
-            dict,
-        )
-        else {}
-    )
+def _dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+
+    return {}
+
+
+def _normalise_string(value: Any) -> str | None:
+    if value is None:
+        return None
+
+    value = str(value).strip().lower()
+
+    return value or None
 
 
 @register
 class IPv4Analyzer(Analyzer):
 
     name = "ipv4"
-    version = "9.0"
+    version = "10.0"
 
     def supports(
         self,
@@ -72,7 +92,7 @@ class IPv4Analyzer(Analyzer):
 
         data = self._data(context)
 
-        if not data.get("configuration_available"):
+        if not data["configuration_available"]:
             return []
 
         findings: list[Finding] = []
@@ -103,45 +123,94 @@ class IPv4Analyzer(Analyzer):
 
         return findings
 
-    # ==============================================================
+    # ------------------------------------------------------------------
     # DATA
-    # ==============================================================
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _data(
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        configuration = _dict(context.configuration())
+        configuration = _dict(
+            context.configuration()
+        )
 
         return {
             "configuration_available": bool(configuration),
-            "public_ip": configuration.get("public_ip"),
-            "allocation_id": configuration.get("allocation_id"),
-            "association_id": configuration.get("association_id"),
-            "associated": configuration.get("associated"),
-            "instance_id": configuration.get("instance_id"),
-            "instance_state": str(configuration.get("instance_state") or "").lower()
-            or None,
-            "network_interface_id": configuration.get("network_interface_id"),
-            "requester_managed": configuration.get("requester_managed"),
-            "service_managed": configuration.get("service_managed"),
-            "optimization_candidate": configuration.get("optimization_candidate"),
-            "release_candidate": configuration.get("release_candidate"),
-            "cost_relevant": configuration.get("cost_relevant"),
-            "address_source": str(configuration.get("address_source") or "").lower()
-            or None,
-            "address_type": str(configuration.get("address_type") or "").lower()
-            or None,
-            "public_ip_type": str(configuration.get("public_ip_type") or "").lower()
-            or None,
-            "billing_usage_type": configuration.get("billing_usage_type"),
-            "network_interface_type": configuration.get("network_interface_type"),
+
+            "public_ip": configuration.get(
+                "public_ip"
+            ),
+
+            "allocation_id": configuration.get(
+                "allocation_id"
+            ),
+
+            "association_id": configuration.get(
+                "association_id"
+            ),
+
+            "associated": configuration.get(
+                "associated"
+            ),
+
+            "instance_id": configuration.get(
+                "instance_id"
+            ),
+
+            "instance_state": _normalise_string(
+                configuration.get("instance_state")
+            ),
+
+            "network_interface_id": configuration.get(
+                "network_interface_id"
+            ),
+
+            "network_interface_type": _normalise_string(
+                configuration.get("network_interface_type")
+            ),
+
+            "requester_managed": configuration.get(
+                "requester_managed"
+            ),
+
+            "service_managed": configuration.get(
+                "service_managed"
+            ),
+
+            "optimization_candidate": configuration.get(
+                "optimization_candidate"
+            ),
+
+            "release_candidate": configuration.get(
+                "release_candidate"
+            ),
+
+            "cost_relevant": configuration.get(
+                "cost_relevant"
+            ),
+
+            "address_source": _normalise_string(
+                configuration.get("address_source")
+            ),
+
+            "address_type": _normalise_string(
+                configuration.get("address_type")
+            ),
+
+            "public_ip_type": _normalise_string(
+                configuration.get("public_ip_type")
+            ),
+
+            "billing_usage_type": configuration.get(
+                "billing_usage_type"
+            ),
         }
 
-    # ==============================================================
+    # ------------------------------------------------------------------
     # RULE 1 — UNASSOCIATED EIP
-    # ==============================================================
+    # ------------------------------------------------------------------
 
     def _unassociated_eip(
         self,
@@ -161,6 +230,9 @@ class IPv4Analyzer(Analyzer):
         if data["requester_managed"] is True:
             return None
 
+        if data["service_managed"] is True:
+            return None
+
         if data["release_candidate"] is not True:
             return None
 
@@ -170,7 +242,10 @@ class IPv4Analyzer(Analyzer):
             title="Unassociated Elastic IP",
             severity="medium",
             confidence="high",
-            reason=("An allocated Elastic IP is not associated " "with a resource."),
+            reason=(
+                "An allocated Elastic IP is not associated with "
+                "a resource and is classified as a release candidate."
+            ),
             statements=[
                 self._statement(
                     "public_ip",
@@ -186,9 +261,15 @@ class IPv4Analyzer(Analyzer):
                 ),
                 self._statement(
                     "associated",
-                    False,
+                    data["associated"],
                     "configuration.associated",
-                    "No resource association was discovered.",
+                    "Whether the Elastic IP is associated with a resource.",
+                ),
+                self._statement(
+                    "release_candidate",
+                    data["release_candidate"],
+                    "configuration.release_candidate",
+                    "Collector classification indicating that release is a candidate.",
                 ),
                 self._statement(
                     "billing_usage_type",
@@ -201,20 +282,13 @@ class IPv4Analyzer(Analyzer):
                 "optimization_action": "review_and_release",
                 "region": context.region,
             },
-            limitations=[
-                (
-                    "The address may be intentionally retained "
-                    "for failover, migration, DNS, or future use."
-                ),
-                ("Savings are not calculated without valid " "billing attribution."),
-            ],
             data=data,
             cost_optimization_type="elimination",
         )
 
-    # ==============================================================
-    # RULE 2 — STOPPED EC2
-    # ==============================================================
+    # ------------------------------------------------------------------
+    # RULE 2 — EIP ON STOPPED INSTANCE
+    # ------------------------------------------------------------------
 
     def _stopped_eip(
         self,
@@ -234,14 +308,13 @@ class IPv4Analyzer(Analyzer):
         if not data["instance_id"]:
             return None
 
-        if data["instance_state"] not in {
-            "stopped",
-            "stopping",
-            "hibernated",
-        }:
+        if data["instance_state"] not in STOPPED_INSTANCE_STATES:
             return None
 
         if data["requester_managed"] is True:
+            return None
+
+        if data["service_managed"] is True:
             return None
 
         return self._finding(
@@ -251,9 +324,9 @@ class IPv4Analyzer(Analyzer):
             severity="medium",
             confidence="high",
             reason=(
-                "An Elastic IP remains associated with a "
-                "stopped EC2 instance and is therefore "
-                "classified as idle public IPv4 usage."
+                "An Elastic IP remains associated with a stopped "
+                "EC2 instance. Review whether the Elastic IP is "
+                "still required."
             ),
             statements=[
                 self._statement(
@@ -272,7 +345,7 @@ class IPv4Analyzer(Analyzer):
                     "instance_state",
                     data["instance_state"],
                     "configuration.instance_state",
-                    "Current EC2 state.",
+                    "Current EC2 instance state.",
                 ),
                 self._statement(
                     "billing_usage_type",
@@ -286,23 +359,13 @@ class IPv4Analyzer(Analyzer):
                 "instance_id": data["instance_id"],
                 "region": context.region,
             },
-            limitations=[
-                (
-                    "The Elastic IP may be intentionally retained "
-                    "for restart, failover, DNS, or migration."
-                ),
-                (
-                    "Stopping the EC2 instance does not prove that "
-                    "the address can be released."
-                ),
-                ("Savings are not calculated without valid " "billing attribution."),
-            ],
             data=data,
+            cost_optimization_type="elimination",
         )
 
-    # ==============================================================
-    # RULE 3 — IN-USE PUBLIC IPV4
-    # ==============================================================
+    # ------------------------------------------------------------------
+    # RULE 3 — ASSOCIATED PUBLIC IPV4 COST EXPOSURE
+    # ------------------------------------------------------------------
 
     def _in_use_public_ipv4(
         self,
@@ -319,15 +382,15 @@ class IPv4Analyzer(Analyzer):
         if data["requester_managed"] is True:
             return None
 
+        if data["service_managed"] is True:
+            return None
+
         if not data["public_ip"]:
             return None
 
-        if data["address_source"] == "elastic_ip" and data["instance_state"] in {
-            "stopped",
-            "stopping",
-            "hibernated",
-        }:
-            return None
+        if data["address_source"] == "elastic_ip":
+            if data["instance_state"] in STOPPED_INSTANCE_STATES:
+                return None
 
         return self._finding(
             context=context,
@@ -336,10 +399,11 @@ class IPv4Analyzer(Analyzer):
             severity="low",
             confidence="high",
             reason=(
-                "A public IPv4 address is associated with "
-                "a resource and incurs an in-use public IPv4 "
-                "charge. Review whether direct public IPv4 "
-                "connectivity is required."
+                "A public IPv4 address is associated with a resource "
+                "and creates public IPv4 cost exposure. The evidence "
+                "does not establish that the address is unnecessary; "
+                "review whether direct public IPv4 connectivity is "
+                "required."
             ),
             statements=[
                 self._statement(
@@ -349,10 +413,40 @@ class IPv4Analyzer(Analyzer):
                     "Public IPv4 address.",
                 ),
                 self._statement(
+                    "associated",
+                    data["associated"],
+                    "configuration.associated",
+                    "Whether the public IPv4 is associated with a resource.",
+                ),
+                self._statement(
+                    "address_source",
+                    data["address_source"],
+                    "configuration.address_source",
+                    "Source of the public IPv4 association.",
+                ),
+                self._statement(
                     "address_type",
                     data["address_type"],
                     "configuration.address_type",
                     "Public IPv4 address type.",
+                ),
+                self._statement(
+                    "instance_id",
+                    data["instance_id"],
+                    "configuration.instance_id",
+                    "Associated EC2 instance when available.",
+                ),
+                self._statement(
+                    "instance_state",
+                    data["instance_state"],
+                    "configuration.instance_state",
+                    "Current EC2 instance state when available.",
+                ),
+                self._statement(
+                    "network_interface_id",
+                    data["network_interface_id"],
+                    "configuration.network_interface_id",
+                    "Associated network interface when available.",
                 ),
                 self._statement(
                     "billing_usage_type",
@@ -365,26 +459,16 @@ class IPv4Analyzer(Analyzer):
                 "optimization_action": "review_public_ipv4_requirement",
                 "instance_id": data["instance_id"],
                 "network_interface_id": data["network_interface_id"],
+                "address_source": data["address_source"],
                 "region": context.region,
             },
-            limitations=[
-                (
-                    "The public IPv4 address may be required "
-                    "for application connectivity."
-                ),
-                (
-                    "Removing it may require architectural "
-                    "changes such as a load balancer or "
-                    "private connectivity."
-                ),
-                ("No savings are claimed from inventory " "alone."),
-            ],
             data=data,
+            cost_optimization_type="review",
         )
 
-    # ==============================================================
+    # ------------------------------------------------------------------
     # FINDING
-    # ==============================================================
+    # ------------------------------------------------------------------
 
     def _finding(
         self,
@@ -397,7 +481,6 @@ class IPv4Analyzer(Analyzer):
         reason: str,
         statements: list[EvidenceStatement],
         metadata: dict[str, Any],
-        limitations: list[str],
         data: dict[str, Any],
         cost_optimization_type: str = "review",
     ) -> Finding:
@@ -405,8 +488,14 @@ class IPv4Analyzer(Analyzer):
         return Finding(
             finding_type=finding_type,
             title=title,
-            resource_type=(context.resource_type or "public_ipv4"),
-            resource_id=(context.resource_id or "unknown"),
+            resource_type=(
+                context.resource_type
+                or "public_ipv4"
+            ),
+            resource_id=(
+                context.resource_id
+                or "unknown"
+            ),
             analyzer=self.name,
             analyzer_version=self.version,
             severity=severity,
@@ -417,16 +506,17 @@ class IPv4Analyzer(Analyzer):
                 context,
                 data,
             ),
-            observation_period=self._observation_period(context),
-            limitations=list(limitations),
+            observation_period=self._observation_period(
+                context
+            ),
             metadata=dict(metadata),
             recommendation_eligible=True,
             cost_optimization_type=cost_optimization_type,
         )
 
-    # ==============================================================
+    # ------------------------------------------------------------------
     # EVIDENCE
-    # ==============================================================
+    # ------------------------------------------------------------------
 
     def _evidence(
         self,
@@ -435,17 +525,15 @@ class IPv4Analyzer(Analyzer):
     ) -> Evidence:
 
         configuration = dict(
-            data.get(
-                "configuration",
-                context.configuration(),
-            )
-            or {}
+            context.configuration() or {}
         )
 
         return Evidence(
             metrics={},
             configuration=configuration,
-            topology=dict(context.topology() or {}),
+            topology=dict(
+                context.topology() or {}
+            ),
             resource={
                 "resource_id": context.resource_id,
                 "resource_type": context.resource_type,
@@ -456,6 +544,7 @@ class IPv4Analyzer(Analyzer):
                 for key in (
                     "public_ip",
                     "allocation_id",
+                    "association_id",
                     "associated",
                     "instance_id",
                     "instance_state",
@@ -464,26 +553,40 @@ class IPv4Analyzer(Analyzer):
                     "public_ip_type",
                     "billing_usage_type",
                     "network_interface_id",
+                    "network_interface_type",
                     "requester_managed",
                     "service_managed",
                 )
             },
             data_quality={
-                "configuration_available": bool(configuration),
-                "public_ip_available": data["public_ip"] is not None,
-                "association_available": data["associated"] is not None,
-                "instance_state_available": (
-                    data["instance_state"] is not None or not data["instance_id"]
+                "configuration_available": bool(
+                    configuration
                 ),
-                "management_available": data["requester_managed"] is not None,
-                "billing_classification_available": data["billing_usage_type"]
-                is not None,
+                "public_ip_available": (
+                    data["public_ip"] is not None
+                ),
+                "association_available": (
+                    data["associated"] is not None
+                ),
+                "instance_state_available": (
+                    data["instance_state"] is not None
+                    or not data["instance_id"]
+                ),
+                "management_available": (
+                    data["requester_managed"] is not None
+                ),
+                "service_management_available": (
+                    data["service_managed"] is not None
+                ),
+                "billing_classification_available": (
+                    data["billing_usage_type"] is not None
+                ),
             },
         )
 
-    # ==============================================================
+    # ------------------------------------------------------------------
     # STATEMENT
-    # ==============================================================
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _statement(
@@ -501,13 +604,17 @@ class IPv4Analyzer(Analyzer):
                 "AWS EC2 API",
                 "collector-derived evidence",
             ],
-            evidence_keys=[path] if path else [],
+            evidence_keys=(
+                [path]
+                if path
+                else []
+            ),
             observed=True,
         )
 
-    # ==============================================================
+    # ------------------------------------------------------------------
     # OBSERVATION PERIOD
-    # ==============================================================
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _observation_period(
@@ -522,5 +629,7 @@ class IPv4Analyzer(Analyzer):
         return ObservationPeriod(
             start=period.get("start"),
             end=period.get("end"),
-            duration_seconds=period.get("duration_seconds"),
+            duration_seconds=period.get(
+                "duration_seconds"
+            ),
         )

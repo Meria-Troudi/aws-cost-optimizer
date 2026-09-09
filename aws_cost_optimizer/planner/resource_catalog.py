@@ -30,21 +30,23 @@ class ResourceCatalog:
             raise ValueError("resource_catalog.yaml must contain a mapping.")
         self.items: Dict[str, Dict[str, Any]] = data
 
-    def by_key(self, key: str) -> Dict[str, Any] | None:
-        return self.items.get(key)
-
     def all(self) -> Dict[str, Dict[str, Any]]:
         return self.items
 
+    def group_for(self, resource_type: str) -> Dict[str, Any]:
+        entry = self.items.get(str(resource_type or "").strip()) or {}
+        return {
+            "domain": entry.get("domain") or "other",
+            "subdomain": entry.get("subdomain"),
+            "service": entry.get("service"),
+        }
 
-_catalog_instance: ResourceCatalog | None = None
+
+_catalog: ResourceCatalog | None = None
 
 
-def load_catalog() -> ResourceCatalog:
-
-    global _catalog_instance
-
-    if _catalog_instance is None:
-        _catalog_instance = ResourceCatalog()
-
-    return _catalog_instance
+def get_resource_catalog() -> ResourceCatalog:
+    global _catalog
+    if _catalog is None:
+        _catalog = ResourceCatalog()
+    return _catalog

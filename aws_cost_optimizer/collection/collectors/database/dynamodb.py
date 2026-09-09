@@ -53,9 +53,6 @@ class DynamoDBCollector(BaseCollector):
     key = "dynamodb"
     resource_type = "dynamodb_table"
 
-    DEFAULT_NAMESPACE = "AWS/DynamoDB"
-    DEFAULT_PERIOD = 300
-
     CONSUMED_READ = "ConsumedReadCapacityUnits"
     CONSUMED_WRITE = "ConsumedWriteCapacityUnits"
     PROVISIONED_READ = "ProvisionedReadCapacityUnits"
@@ -146,26 +143,14 @@ class DynamoDBCollector(BaseCollector):
 
     def _namespace(self) -> str:
 
-        return str(
-            self._cloudwatch_profile().get(
-                "namespace",
-                self.DEFAULT_NAMESPACE,
-            )
-        ).strip()
+        return self.cloudwatch_namespace()
 
     def _requested_period(self) -> int:
 
-        try:
-            value = int(
-                self._cloudwatch_profile().get(
-                    "period",
-                    self.DEFAULT_PERIOD,
-                )
-            )
-        except (TypeError, ValueError):
-            value = self.DEFAULT_PERIOD
-
-        return max(60, value)
+        return max(
+            60,
+            self.cloudwatch_period(),
+        )
 
     # ==============================================================
     # DISCOVERY
