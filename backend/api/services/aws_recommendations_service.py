@@ -50,7 +50,6 @@ from backend.api.services.dashboard_service import (
     _cache_set,
 )
 
-
 RESERVATION_SERVICES = [
     (
         "Amazon Relational Database Service",
@@ -159,11 +158,7 @@ class AwsRecommendationsService:
 
         currency = value.get("currency")
 
-        return (
-            str(currency)
-            if currency
-            else default
-        )
+        return str(currency) if currency else default
 
     @staticmethod
     def _sum_savings(
@@ -214,13 +209,9 @@ class AwsRecommendationsService:
                 dict,
             ):
 
-                code = error.get(
-                    "Code"
-                )
+                code = error.get("Code")
 
-                message = error.get(
-                    "Message"
-                )
+                message = error.get("Message")
 
                 if code and message:
                     return f"{code}: {message}"
@@ -248,14 +239,11 @@ class AwsRecommendationsService:
 
             try:
 
-                response = (
-                    self.client
-                    .get_savings_plans_purchase_recommendation(
-                        LookbackPeriodInDays="THIRTY_DAYS",
-                        TermInYears="ONE_YEAR",
-                        PaymentOption="NO_UPFRONT",
-                        SavingsPlansType=sp_type,
-                    )
+                response = self.client.get_savings_plans_purchase_recommendation(
+                    LookbackPeriodInDays="THIRTY_DAYS",
+                    TermInYears="ONE_YEAR",
+                    PaymentOption="NO_UPFRONT",
+                    SavingsPlansType=sp_type,
                 )
 
             except Exception as exc:
@@ -287,9 +275,7 @@ class AwsRecommendationsService:
             )
 
             savings = self._float(
-                summary.get(
-                    "EstimatedMonthlySavingsAmount"
-                ),
+                summary.get("EstimatedMonthlySavingsAmount"),
                 None,
             )
 
@@ -299,42 +285,28 @@ class AwsRecommendationsService:
             results.append(
                 {
                     "plan_type": sp_type,
-
                     "hourly_commitment": self._float(
-                        summary.get(
-                            "EstimatedHourlyCommitment"
-                        ),
+                        summary.get("EstimatedHourlyCommitment"),
                         None,
                     ),
-
                     "estimated_monthly_savings": round(
                         savings,
                         2,
                     ),
-
                     "estimated_savings_pct": self._float(
-                        summary.get(
-                            "EstimatedSavingsPercentage"
-                        ),
+                        summary.get("EstimatedSavingsPercentage"),
                         None,
                     ),
-
                     "currency": self.CURRENCY,
-
                     "lookback_period_days": 30,
-
                     "term_years": 1,
-
                     "payment_option": "NO_UPFRONT",
-
                     "source": "AWS Cost Explorer",
                 }
             )
 
         results.sort(
-            key=lambda row: row[
-                "estimated_monthly_savings"
-            ],
+            key=lambda row: row["estimated_monthly_savings"],
             reverse=True,
         )
 
@@ -358,9 +330,7 @@ class AwsRecommendationsService:
             "NodeDetails",
         ):
 
-            details = instance_details.get(
-                key
-            )
+            details = instance_details.get(key)
 
             if not isinstance(
                 details,
@@ -393,14 +363,11 @@ class AwsRecommendationsService:
 
             try:
 
-                response = (
-                    self.client
-                    .get_reservation_purchase_recommendation(
-                        Service=service_id,
-                        LookbackPeriodInDays="THIRTY_DAYS",
-                        TermInYears="ONE_YEAR",
-                        PaymentOption="NO_UPFRONT",
-                    )
+                response = self.client.get_reservation_purchase_recommendation(
+                    Service=service_id,
+                    LookbackPeriodInDays="THIRTY_DAYS",
+                    TermInYears="ONE_YEAR",
+                    PaymentOption="NO_UPFRONT",
                 )
 
             except Exception as exc:
@@ -442,62 +409,41 @@ class AwsRecommendationsService:
                         continue
 
                     savings = self._float(
-                        detail.get(
-                            "EstimatedMonthlySavingsAmount"
-                        ),
+                        detail.get("EstimatedMonthlySavingsAmount"),
                         None,
                     )
 
                     if savings is None or savings <= 0:
                         continue
 
-                    instance_details = (
-                        detail.get(
-                            "InstanceDetails"
-                        )
-                        or {}
-                    )
+                    instance_details = detail.get("InstanceDetails") or {}
 
                     quantity = self._safe_int(
-                        detail.get(
-                            "RecommendedNumberOfInstances"
-                        ),
+                        detail.get("RecommendedNumberOfInstances"),
                         0,
                     )
 
                     results.append(
                         {
                             "service": display_name,
-
                             "resource_type": (
-                                self._reservation_resource_type(
-                                    instance_details
-                                )
+                                self._reservation_resource_type(instance_details)
                             ),
-
                             "recommended_quantity": quantity,
-
                             "estimated_monthly_savings": round(
                                 savings,
                                 2,
                             ),
-
                             "currency": self.CURRENCY,
-
                             "lookback_period_days": 30,
-
                             "term_years": 1,
-
                             "payment_option": "NO_UPFRONT",
-
                             "source": "AWS Cost Explorer",
                         }
                     )
 
         results.sort(
-            key=lambda row: row[
-                "estimated_monthly_savings"
-            ],
+            key=lambda row: row["estimated_monthly_savings"],
             reverse=True,
         )
 
@@ -516,17 +462,12 @@ class AwsRecommendationsService:
 
         try:
 
-            response = (
-                self.client
-                .get_rightsizing_recommendation(
-                    Service="AmazonEC2",
-                    Configuration={
-                        "RecommendationTarget": (
-                            "SAME_INSTANCE_FAMILY"
-                        ),
-                        "BenefitsConsidered": True,
-                    },
-                )
+            response = self.client.get_rightsizing_recommendation(
+                Service="AmazonEC2",
+                Configuration={
+                    "RecommendationTarget": ("SAME_INSTANCE_FAMILY"),
+                    "BenefitsConsidered": True,
+                },
             )
 
         except Exception as exc:
@@ -556,51 +497,27 @@ class AwsRecommendationsService:
             ):
                 continue
 
-            current = (
-                recommendation.get(
-                    "CurrentInstance"
-                )
-                or {}
-            )
+            current = recommendation.get("CurrentInstance") or {}
 
-            current_details = (
-                current.get(
-                    "ResourceDetails"
-                )
-                or {}
-            ).get(
+            current_details = (current.get("ResourceDetails") or {}).get(
                 "EC2ResourceDetails",
                 {},
             ) or {}
 
-            utilization = (
-                current.get(
-                    "ResourceUtilization"
-                )
-                or {}
-            ).get(
+            utilization = (current.get("ResourceUtilization") or {}).get(
                 "EC2ResourceUtilization",
                 {},
             ) or {}
 
-            raw_action = recommendation.get(
-                "RightsizingType"
-            )
+            raw_action = recommendation.get("RightsizingType")
 
             if raw_action == "Terminate":
                 action = "Terminate"
 
-                detail = (
-                    recommendation.get(
-                        "TerminateRecommendationDetail"
-                    )
-                    or {}
-                )
+                detail = recommendation.get("TerminateRecommendationDetail") or {}
 
                 savings = self._float(
-                    detail.get(
-                        "EstimatedMonthlySavings"
-                    ),
+                    detail.get("EstimatedMonthlySavings"),
                     None,
                 )
 
@@ -609,28 +526,15 @@ class AwsRecommendationsService:
             else:
                 action = "Resize"
 
-                modify_detail = (
-                    recommendation.get(
-                        "ModifyRecommendationDetail"
-                    )
-                    or {}
-                )
+                modify_detail = recommendation.get("ModifyRecommendationDetail") or {}
 
-                targets = (
-                    modify_detail.get(
-                        "TargetInstances"
-                    )
-                    or []
-                )
+                targets = modify_detail.get("TargetInstances") or []
 
                 target = next(
                     (
                         item
                         for item in targets
-                        if isinstance(item, dict)
-                        and item.get(
-                            "DefaultTargetInstance"
-                        )
+                        if isinstance(item, dict) and item.get("DefaultTargetInstance")
                     ),
                     (
                         targets[0]
@@ -643,24 +547,15 @@ class AwsRecommendationsService:
                     ),
                 )
 
-                target_details = (
-                    target.get(
-                        "ResourceDetails"
-                    )
-                    or {}
-                ).get(
+                target_details = (target.get("ResourceDetails") or {}).get(
                     "EC2ResourceDetails",
                     {},
                 ) or {}
 
-                target_type = target_details.get(
-                    "InstanceType"
-                )
+                target_type = target_details.get("InstanceType")
 
                 savings = self._float(
-                    target.get(
-                        "EstimatedMonthlySavings"
-                    ),
+                    target.get("EstimatedMonthlySavings"),
                     None,
                 )
 
@@ -669,57 +564,31 @@ class AwsRecommendationsService:
 
             results.append(
                 {
-                    "resource_id": current.get(
-                        "ResourceId"
-                    ),
-
-                    "resource_name": current.get(
-                        "InstanceName"
-                    ),
-
-                    "region": current_details.get(
-                        "Region"
-                    ),
-
+                    "resource_id": current.get("ResourceId"),
+                    "resource_name": current.get("InstanceName"),
+                    "region": current_details.get("Region"),
                     "action": action,
-
-                    "current_instance_type": (
-                        current_details.get(
-                            "InstanceType"
-                        )
-                    ),
-
+                    "current_instance_type": (current_details.get("InstanceType")),
                     "target_instance_type": target_type,
-
                     "current_monthly_cost": self._float(
-                        current.get(
-                            "MonthlyCost"
-                        ),
+                        current.get("MonthlyCost"),
                         None,
                     ),
-
                     "estimated_monthly_savings": round(
                         savings,
                         2,
                     ),
-
                     "max_cpu_utilization_pct": self._float(
-                        utilization.get(
-                            "MaxCpuUtilizationPercentage"
-                        ),
+                        utilization.get("MaxCpuUtilizationPercentage"),
                         None,
                     ),
-
                     "currency": self.CURRENCY,
-
                     "source": "AWS Cost Explorer",
                 }
             )
 
         results.sort(
-            key=lambda row: row[
-                "estimated_monthly_savings"
-            ],
+            key=lambda row: row["estimated_monthly_savings"],
             reverse=True,
         )
 
@@ -753,15 +622,10 @@ class AwsRecommendationsService:
             if metric.get("name") != name:
                 continue
 
-            if (
-                statistic is not None
-                and metric.get("statistic") != statistic
-            ):
+            if statistic is not None and metric.get("statistic") != statistic:
                 continue
 
-            value = metric.get(
-                "value"
-            )
+            value = metric.get("value")
 
             if isinstance(
                 value,
@@ -788,22 +652,15 @@ class AwsRecommendationsService:
 
         while True:
 
-            request: dict[str, Any] = {
-                "maxResults": (
-                    self.COMPUTE_OPTIMIZER_PAGE_SIZE
-                )
-            }
+            request: dict[str, Any] = {"maxResults": (self.COMPUTE_OPTIMIZER_PAGE_SIZE)}
 
             if next_token:
                 request["nextToken"] = next_token
 
             try:
 
-                response = (
-                    self.compute_optimizer
-                    .get_ec2_instance_recommendations(
-                        **request
-                    )
+                response = self.compute_optimizer.get_ec2_instance_recommendations(
+                    **request
                 )
 
             except Exception as exc:
@@ -833,9 +690,7 @@ class AwsRecommendationsService:
                 ):
                     continue
 
-                finding = recommendation.get(
-                    "finding"
-                )
+                finding = recommendation.get("finding")
 
                 # Compute Optimizer returns Optimized resources too.
                 # They are not cost opportunities and should not be
@@ -858,9 +713,7 @@ class AwsRecommendationsService:
 
                 # Rank 1 is the preferred/top recommendation.
                 valid_options = [
-                    option
-                    for option in options
-                    if isinstance(option, dict)
+                    option for option in options if isinstance(option, dict)
                 ]
 
                 if not valid_options:
@@ -873,39 +726,24 @@ class AwsRecommendationsService:
                         if self._safe_int(
                             option.get("rank"),
                             0,
-                        ) == 1
+                        )
+                        == 1
                     ),
                     valid_options[0],
                 )
 
-                savings = (
-                    top_option.get(
-                        "savingsOpportunity"
-                    )
-                    or {}
-                )
+                savings = top_option.get("savingsOpportunity") or {}
 
                 savings_after_discounts = (
-                    top_option.get(
-                        "savingsOpportunityAfterDiscounts"
-                    )
-                    or {}
+                    top_option.get("savingsOpportunityAfterDiscounts") or {}
                 )
 
-                on_demand_savings = (
-                    self._money_value(
-                        savings.get(
-                            "estimatedMonthlySavings"
-                        )
-                    )
+                on_demand_savings = self._money_value(
+                    savings.get("estimatedMonthlySavings")
                 )
 
-                discounted_savings = (
-                    self._money_value(
-                        savings_after_discounts.get(
-                            "estimatedMonthlySavings"
-                        )
-                    )
+                discounted_savings = self._money_value(
+                    savings_after_discounts.get("estimatedMonthlySavings")
                 )
 
                 # Prefer the after-discount value when AWS provides it.
@@ -915,10 +753,7 @@ class AwsRecommendationsService:
                     else on_demand_savings
                 )
 
-                if (
-                    effective_savings is None
-                    or effective_savings <= 0
-                ):
+                if effective_savings is None or effective_savings <= 0:
                     continue
 
                 projected_metrics = (
@@ -939,16 +774,9 @@ class AwsRecommendationsService:
 
                 results.append(
                     {
-                        "resource_id": recommendation.get(
-                            "instanceArn"
-                        ),
-
-                        "resource_name": recommendation.get(
-                            "instanceName"
-                        ),
-
+                        "resource_id": recommendation.get("instanceArn"),
+                        "resource_name": recommendation.get("instanceName"),
                         "finding": finding,
-
                         "finding_reason_codes": (
                             recommendation.get(
                                 "findingReasonCodes",
@@ -956,59 +784,33 @@ class AwsRecommendationsService:
                             )
                             or []
                         ),
-
                         "current_instance_type": (
-                            recommendation.get(
-                                "currentInstanceType"
-                            )
+                            recommendation.get("currentInstanceType")
                         ),
-
-                        "recommended_instance_type": (
-                            top_option.get(
-                                "instanceType"
-                            )
-                        ),
-
+                        "recommended_instance_type": (top_option.get("instanceType")),
                         "rank": self._safe_int(
-                            top_option.get(
-                                "rank"
-                            ),
+                            top_option.get("rank"),
                             1,
                         ),
-
-                        "migration_effort": (
-                            top_option.get(
-                                "migrationEffort"
-                            )
-                        ),
-
+                        "migration_effort": (top_option.get("migrationEffort")),
                         "current_performance_risk": (
                             self._float(
-                                recommendation.get(
-                                    "currentPerformanceRisk"
-                                ),
+                                recommendation.get("currentPerformanceRisk"),
                                 None,
                             )
                         ),
-
                         "recommended_performance_risk": (
                             self._float(
-                                top_option.get(
-                                    "performanceRisk"
-                                ),
+                                top_option.get("performanceRisk"),
                                 None,
                             )
                         ),
-
                         "lookback_period_days": (
                             self._float(
-                                recommendation.get(
-                                    "lookBackPeriodInDays"
-                                ),
+                                recommendation.get("lookBackPeriodInDays"),
                                 None,
                             )
                         ),
-
                         "max_cpu_utilization_pct": (
                             self._compute_optimizer_metric(
                                 current_metrics,
@@ -1016,7 +818,6 @@ class AwsRecommendationsService:
                                 "Maximum",
                             )
                         ),
-
                         "avg_cpu_utilization_pct": (
                             self._compute_optimizer_metric(
                                 current_metrics,
@@ -1024,7 +825,6 @@ class AwsRecommendationsService:
                                 "Average",
                             )
                         ),
-
                         "projected_cpu_utilization_pct": (
                             self._compute_optimizer_metric(
                                 projected_metrics,
@@ -1032,12 +832,10 @@ class AwsRecommendationsService:
                                 "Maximum",
                             )
                         ),
-
                         "estimated_monthly_savings": round(
                             effective_savings,
                             2,
                         ),
-
                         "on_demand_estimated_monthly_savings": (
                             round(
                                 on_demand_savings,
@@ -1046,7 +844,6 @@ class AwsRecommendationsService:
                             if on_demand_savings is not None
                             else None
                         ),
-
                         "after_discounts_estimated_monthly_savings": (
                             round(
                                 discounted_savings,
@@ -1055,7 +852,6 @@ class AwsRecommendationsService:
                             if discounted_savings is not None
                             else None
                         ),
-
                         "estimated_savings_pct": (
                             self._float(
                                 savings_after_discounts.get(
@@ -1065,13 +861,10 @@ class AwsRecommendationsService:
                             )
                             if discounted_savings is not None
                             else self._float(
-                                savings.get(
-                                    "savingsOpportunityPercentage"
-                                ),
+                                savings.get("savingsOpportunityPercentage"),
                                 None,
                             )
                         ),
-
                         "currency": (
                             self._money_currency(
                                 (
@@ -1079,44 +872,30 @@ class AwsRecommendationsService:
                                         "estimatedMonthlySavings"
                                     )
                                     if discounted_savings is not None
-                                    else savings.get(
-                                        "estimatedMonthlySavings"
-                                    )
+                                    else savings.get("estimatedMonthlySavings")
                                 ),
                                 self.CURRENCY,
                             )
                         ),
-
                         "last_refresh_timestamp": (
-                            recommendation.get(
-                                "lastRefreshTimestamp"
-                            ).isoformat()
+                            recommendation.get("lastRefreshTimestamp").isoformat()
                             if isinstance(
-                                recommendation.get(
-                                    "lastRefreshTimestamp"
-                                ),
+                                recommendation.get("lastRefreshTimestamp"),
                                 datetime,
                             )
-                            else recommendation.get(
-                                "lastRefreshTimestamp"
-                            )
+                            else recommendation.get("lastRefreshTimestamp")
                         ),
-
                         "source": "AWS Compute Optimizer",
                     }
                 )
 
-            next_token = response.get(
-                "nextToken"
-            )
+            next_token = response.get("nextToken")
 
             if not next_token:
                 break
 
         results.sort(
-            key=lambda row: row[
-                "estimated_monthly_savings"
-            ],
+            key=lambda row: row["estimated_monthly_savings"],
             reverse=True,
         )
 
@@ -1132,115 +911,62 @@ class AwsRecommendationsService:
         force_refresh: bool = False,
     ) -> dict[str, Any]:
 
-        cache_key = _cache_key(
-            self.CACHE_KEY
-        )
+        cache_key = _cache_key(self.CACHE_KEY)
 
         if not force_refresh:
 
-            cached = _cache_get(
-                cache_key
-            )
+            cached = _cache_get(cache_key)
 
             if cached is not None:
                 return cached
 
-        savings_plans, savings_plan_errors = (
-            self._savings_plans()
-        )
+        savings_plans, savings_plan_errors = self._savings_plans()
 
-        reservations, reservation_errors = (
-            self._reservations()
-        )
+        reservations, reservation_errors = self._reservations()
 
-        rightsizing, rightsizing_errors = (
-            self._rightsizing()
-        )
+        rightsizing, rightsizing_errors = self._rightsizing()
 
-        compute_optimizer, compute_optimizer_errors = (
-            self._compute_optimizer()
-        )
+        compute_optimizer, compute_optimizer_errors = self._compute_optimizer()
 
         result = {
             "source": "aws_native_recommendations",
-
             "currency": self.CURRENCY,
-
             "savings_plans": savings_plans,
-
             "reservations": reservations,
-
             "rightsizing": rightsizing,
-
             "compute_optimizer": compute_optimizer,
-
             # IMPORTANT:
             # Do not sum all engines together because their
             # savings opportunities may overlap.
             "estimated_monthly_savings": {
-                "savings_plans": self._sum_savings(
-                    savings_plans
-                ),
-
-                "reservations": self._sum_savings(
-                    reservations
-                ),
-
-                "cost_explorer_rightsizing": (
-                    self._sum_savings(
-                        rightsizing
-                    )
-                ),
-
-                "compute_optimizer": (
-                    self._sum_savings(
-                        compute_optimizer
-                    )
-                ),
+                "savings_plans": self._sum_savings(savings_plans),
+                "reservations": self._sum_savings(reservations),
+                "cost_explorer_rightsizing": (self._sum_savings(rightsizing)),
+                "compute_optimizer": (self._sum_savings(compute_optimizer)),
             },
-
             "errors": (
                 savings_plan_errors
                 + reservation_errors
                 + rightsizing_errors
                 + compute_optimizer_errors
             ),
-
             "engine_status": {
                 "savings_plans": (
-                    "error"
-                    if savings_plan_errors
-                    and not savings_plans
-                    else "ok"
+                    "error" if savings_plan_errors and not savings_plans else "ok"
                 ),
-
                 "reservations": (
-                    "error"
-                    if reservation_errors
-                    and not reservations
-                    else "ok"
+                    "error" if reservation_errors and not reservations else "ok"
                 ),
-
                 "cost_explorer_rightsizing": (
-                    "error"
-                    if rightsizing_errors
-                    and not rightsizing
-                    else "ok"
+                    "error" if rightsizing_errors and not rightsizing else "ok"
                 ),
-
                 "compute_optimizer": (
                     "error"
-                    if compute_optimizer_errors
-                    and not compute_optimizer
+                    if compute_optimizer_errors and not compute_optimizer
                     else "ok"
                 ),
             },
-
-            "retrieved_at": (
-                datetime.now(
-                    timezone.utc
-                ).isoformat()
-            ),
+            "retrieved_at": (datetime.now(timezone.utc).isoformat()),
         }
 
         today = date.today()

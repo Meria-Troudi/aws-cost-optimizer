@@ -143,9 +143,7 @@ class VpcEndpointAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._resource(context).get("collection_status")
-        )
+        return cls._dict(cls._resource(context).get("collection_status"))
 
     @classmethod
     def _endpoint_type(
@@ -155,14 +153,9 @@ class VpcEndpointAnalyzer(Analyzer):
 
         configuration = cls._configuration(context)
 
-        identity = cls._dict(
-            cls._resource(context).get("identity")
-        )
+        identity = cls._dict(cls._resource(context).get("identity"))
 
-        value = (
-            configuration.get("endpoint_type")
-            or identity.get("endpoint_type")
-        )
+        value = configuration.get("endpoint_type") or identity.get("endpoint_type")
 
         if value is None:
             return None
@@ -191,14 +184,9 @@ class VpcEndpointAnalyzer(Analyzer):
 
         configuration = cls._configuration(context)
 
-        identity = cls._dict(
-            cls._resource(context).get("identity")
-        )
+        identity = cls._dict(cls._resource(context).get("identity"))
 
-        value = (
-            configuration.get("state")
-            or identity.get("state")
-        )
+        value = configuration.get("state") or identity.get("state")
 
         if value is None:
             return None
@@ -215,14 +203,9 @@ class VpcEndpointAnalyzer(Analyzer):
 
         configuration = cls._configuration(context)
 
-        identity = cls._dict(
-            cls._resource(context).get("identity")
-        )
+        identity = cls._dict(cls._resource(context).get("identity"))
 
-        value = (
-            configuration.get("service_name")
-            or identity.get("service_name")
-        )
+        value = configuration.get("service_name") or identity.get("service_name")
 
         if value is None:
             return None
@@ -281,9 +264,7 @@ class VpcEndpointAnalyzer(Analyzer):
         endpoint_type = cls._endpoint_type(context)
 
         if endpoint_type == "Gateway":
-            return (
-                status.get("gateway_route_context") == "ok"
-            )
+            return status.get("gateway_route_context") == "ok"
 
         return True
 
@@ -295,9 +276,7 @@ class VpcEndpointAnalyzer(Analyzer):
 
         status = cls._collection_status(context)
 
-        return (
-            status.get("network_interfaces") == "ok"
-        )
+        return status.get("network_interfaces") == "ok"
 
     # ------------------------------------------------------------------
     # Finding 1: non-operational endpoint
@@ -315,9 +294,8 @@ class VpcEndpointAnalyzer(Analyzer):
 
         configuration = self._configuration(context)
 
-        failure_reason = (
-            configuration.get("last_error")
-            or configuration.get("failure_reason")
+        failure_reason = configuration.get("last_error") or configuration.get(
+            "failure_reason"
         )
 
         statements = [
@@ -325,9 +303,7 @@ class VpcEndpointAnalyzer(Analyzer):
                 name="endpoint_state",
                 value=state,
                 description="Current VPC endpoint state.",
-                source=[
-                    "AWS VPC endpoint configuration"
-                ],
+                source=["AWS VPC endpoint configuration"],
                 observed=True,
             )
         ]
@@ -339,9 +315,7 @@ class VpcEndpointAnalyzer(Analyzer):
                     name="failure_reason",
                     value=failure_reason,
                     description="Reported endpoint failure reason.",
-                    source=[
-                        "AWS VPC endpoint configuration"
-                    ],
+                    source=["AWS VPC endpoint configuration"],
                     observed=True,
                 )
             )
@@ -352,10 +326,7 @@ class VpcEndpointAnalyzer(Analyzer):
             title="VPC endpoint is not operational",
             severity="medium",
             confidence="high",
-            reason=(
-                f"The VPC endpoint is currently in "
-                f"the '{state}' state."
-            ),
+            reason=(f"The VPC endpoint is currently in " f"the '{state}' state."),
             statements=statements,
             metadata={
                 "state": state,
@@ -382,23 +353,13 @@ class VpcEndpointAnalyzer(Analyzer):
 
         topology = self._topology(context)
 
-        route_tables = self._dict(
-            topology.get("route_tables")
-        )
+        route_tables = self._dict(topology.get("route_tables"))
 
-        gateway = self._dict(
-            topology.get("gateway_endpoint")
-        )
+        gateway = self._dict(topology.get("gateway_endpoint"))
 
-        configured = self._string_list(
-            route_tables.get(
-                "configured_route_table_ids"
-            )
-        )
+        configured = self._string_list(route_tables.get("configured_route_table_ids"))
 
-        covered = self._string_list(
-            gateway.get("route_table_ids")
-        )
+        covered = self._string_list(gateway.get("route_table_ids"))
 
         if not configured:
             return None
@@ -408,12 +369,8 @@ class VpcEndpointAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "vpc_endpoint_gateway_missing_route"
-            ),
-            title=(
-                "Gateway endpoint has no observed route coverage"
-            ),
+            finding_type=("vpc_endpoint_gateway_missing_route"),
+            title=("Gateway endpoint has no observed route coverage"),
             severity="medium",
             confidence="high",
             reason=(
@@ -426,12 +383,9 @@ class VpcEndpointAnalyzer(Analyzer):
                     name="configured_route_tables",
                     value=configured,
                     description=(
-                        "Route tables associated with the "
-                        "gateway endpoint."
+                        "Route tables associated with the " "gateway endpoint."
                     ),
-                    source=[
-                        "AWS VPC endpoint configuration"
-                    ],
+                    source=["AWS VPC endpoint configuration"],
                     observed=True,
                 ),
                 self._statement(
@@ -441,17 +395,13 @@ class VpcEndpointAnalyzer(Analyzer):
                         "Configured route tables with an observed "
                         "route targeting the gateway endpoint."
                     ),
-                    source=[
-                        "AWS VPC route topology"
-                    ],
+                    source=["AWS VPC route topology"],
                     observed=True,
                 ),
             ],
             metadata={
                 "service_name": self._service_name(context),
-                "configured_route_table_count": len(
-                    configured
-                ),
+                "configured_route_table_count": len(configured),
                 "covered_route_table_count": 0,
             },
         )
@@ -473,23 +423,13 @@ class VpcEndpointAnalyzer(Analyzer):
 
         topology = self._topology(context)
 
-        route_tables = self._dict(
-            topology.get("route_tables")
-        )
+        route_tables = self._dict(topology.get("route_tables"))
 
-        gateway = self._dict(
-            topology.get("gateway_endpoint")
-        )
+        gateway = self._dict(topology.get("gateway_endpoint"))
 
-        configured = self._string_list(
-            route_tables.get(
-                "configured_route_table_ids"
-            )
-        )
+        configured = self._string_list(route_tables.get("configured_route_table_ids"))
 
-        covered = self._string_list(
-            gateway.get("route_table_ids")
-        )
+        covered = self._string_list(gateway.get("route_table_ids"))
 
         if not configured:
             return None
@@ -497,9 +437,7 @@ class VpcEndpointAnalyzer(Analyzer):
         configured_set = set(configured)
         covered_set = set(covered)
 
-        missing = sorted(
-            configured_set - covered_set
-        )
+        missing = sorted(configured_set - covered_set)
 
         if not missing:
             return None
@@ -511,12 +449,8 @@ class VpcEndpointAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "vpc_endpoint_gateway_partial_route_coverage"
-            ),
-            title=(
-                "Gateway endpoint has partial route coverage"
-            ),
+            finding_type=("vpc_endpoint_gateway_partial_route_coverage"),
+            title=("Gateway endpoint has partial route coverage"),
             severity="low",
             confidence="high",
             reason=(
@@ -529,20 +463,11 @@ class VpcEndpointAnalyzer(Analyzer):
                 self._statement(
                     name="route_table_coverage",
                     value={
-                        "configured": len(
-                            configured_set
-                        ),
-                        "covered": len(
-                            covered_set
-                        ),
-                        "missing": len(
-                            missing
-                        ),
+                        "configured": len(configured_set),
+                        "covered": len(covered_set),
+                        "missing": len(missing),
                     },
-                    description=(
-                        "Observed gateway endpoint "
-                        "route-table coverage."
-                    ),
+                    description=("Observed gateway endpoint " "route-table coverage."),
                     source=[
                         "AWS VPC endpoint configuration",
                         "AWS VPC route topology",
@@ -557,20 +482,14 @@ class VpcEndpointAnalyzer(Analyzer):
                         "an observed route targeting "
                         "the endpoint."
                     ),
-                    source=[
-                        "AWS VPC route topology"
-                    ],
+                    source=["AWS VPC route topology"],
                     observed=True,
                 ),
             ],
             metadata={
                 "service_name": self._service_name(context),
-                "configured_route_table_count": len(
-                    configured_set
-                ),
-                "covered_route_table_count": len(
-                    covered_set
-                ),
+                "configured_route_table_count": len(configured_set),
+                "covered_route_table_count": len(covered_set),
                 "uncovered_route_table_ids": missing,
             },
         )
@@ -598,24 +517,16 @@ class VpcEndpointAnalyzer(Analyzer):
 
         configuration = self._configuration(context)
 
-        configured_ids = self._string_list(
-            configuration.get(
-                "network_interface_ids"
-            )
-        )
+        configured_ids = self._string_list(configuration.get("network_interface_ids"))
 
         if not configured_ids:
             return None
 
         resource = self._resource(context)
 
-        network_interfaces = self._dict(
-            resource.get("network_interfaces")
-        )
+        network_interfaces = self._dict(resource.get("network_interfaces"))
 
-        observed_resources = (
-            network_interfaces.get("resources")
-        )
+        observed_resources = network_interfaces.get("resources")
 
         if not isinstance(
             observed_resources,
@@ -634,13 +545,9 @@ class VpcEndpointAnalyzer(Analyzer):
         configured_set = set(configured_ids)
         observed_set = set(observed_ids)
 
-        missing = sorted(
-            configured_set - observed_set
-        )
+        missing = sorted(configured_set - observed_set)
 
-        unexpected = sorted(
-            observed_set - configured_set
-        )
+        unexpected = sorted(observed_set - configured_set)
 
         if not missing and not unexpected:
             return None
@@ -677,12 +584,8 @@ class VpcEndpointAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "vpc_endpoint_interface_eni_mismatch"
-            ),
-            title=(
-                "Interface endpoint ENI inventory mismatch"
-            ),
+            finding_type=("vpc_endpoint_interface_eni_mismatch"),
+            title=("Interface endpoint ENI inventory mismatch"),
             severity="medium",
             confidence="high",
             reason=reason,
@@ -690,74 +593,44 @@ class VpcEndpointAnalyzer(Analyzer):
                 self._statement(
                     name="configured_network_interfaces",
                     value={
-                        "count": len(
-                            configured_set
-                        ),
-                        "ids": sorted(
-                            configured_set
-                        ),
+                        "count": len(configured_set),
+                        "ids": sorted(configured_set),
                     },
-                    description=(
-                        "Network interfaces configured "
-                        "for the endpoint."
-                    ),
-                    source=[
-                        "AWS VPC endpoint configuration"
-                    ],
+                    description=("Network interfaces configured " "for the endpoint."),
+                    source=["AWS VPC endpoint configuration"],
                     observed=True,
                 ),
                 self._statement(
                     name="observed_network_interfaces",
                     value={
-                        "count": len(
-                            observed_set
-                        ),
-                        "ids": sorted(
-                            observed_set
-                        ),
+                        "count": len(observed_set),
+                        "ids": sorted(observed_set),
                     },
-                    description=(
-                        "Network interfaces returned "
-                        "by inventory."
-                    ),
-                    source=[
-                        "AWS EC2 network-interface inventory"
-                    ],
+                    description=("Network interfaces returned " "by inventory."),
+                    source=["AWS EC2 network-interface inventory"],
                     observed=True,
                 ),
                 self._statement(
                     name="missing_network_interfaces",
                     value=missing,
-                    description=(
-                        "Configured endpoint ENIs not "
-                        "found in inventory."
-                    ),
-                    source=[
-                        "AWS EC2 network-interface inventory"
-                    ],
+                    description=("Configured endpoint ENIs not " "found in inventory."),
+                    source=["AWS EC2 network-interface inventory"],
                     observed=True,
                 ),
                 self._statement(
                     name="unexpected_network_interfaces",
                     value=unexpected,
                     description=(
-                        "Observed ENIs not present in "
-                        "the endpoint configuration."
+                        "Observed ENIs not present in " "the endpoint configuration."
                     ),
-                    source=[
-                        "AWS EC2 network-interface inventory"
-                    ],
+                    source=["AWS EC2 network-interface inventory"],
                     observed=True,
                 ),
             ],
             metadata={
                 "service_name": self._service_name(context),
-                "configured_eni_count": len(
-                    configured_set
-                ),
-                "observed_eni_count": len(
-                    observed_set
-                ),
+                "configured_eni_count": len(configured_set),
+                "observed_eni_count": len(observed_set),
                 "missing_eni_ids": missing,
                 "unexpected_eni_ids": unexpected,
                 "mismatch_type": mismatch_type,
@@ -788,26 +661,17 @@ class VpcEndpointAnalyzer(Analyzer):
         billing schemas can evolve between collectors.
         """
 
-        billing = _safe_dict(
-            context.billing()
-        )
+        billing = _safe_dict(context.billing())
 
         if not billing:
             return None
 
-        resource_id = (
-            context.resource_id
-            or self._resource(context).get(
-                "resource_id"
-            )
-        )
+        resource_id = context.resource_id or self._resource(context).get("resource_id")
 
         if not resource_id:
             return None
 
-        reconciliation = self._billing_reconciliation(
-            billing
-        )
+        reconciliation = self._billing_reconciliation(billing)
 
         if reconciliation is None:
             return None
@@ -822,17 +686,11 @@ class VpcEndpointAnalyzer(Analyzer):
 
         cost = reconciliation.get("cost")
 
-        usage_type = reconciliation.get(
-            "usage_type"
-        )
+        usage_type = reconciliation.get("usage_type")
 
-        billing_resource_id = reconciliation.get(
-            "resource_id"
-        )
+        billing_resource_id = reconciliation.get("resource_id")
 
-        period = reconciliation.get(
-            "period"
-        )
+        period = reconciliation.get("period")
 
         if status == "historical_only":
 
@@ -850,8 +708,7 @@ class VpcEndpointAnalyzer(Analyzer):
         else:
 
             title = (
-                "VPC endpoint billing cannot be reconciled "
-                "with the current resource"
+                "VPC endpoint billing cannot be reconciled " "with the current resource"
             )
 
             reason = (
@@ -864,23 +721,15 @@ class VpcEndpointAnalyzer(Analyzer):
             self._statement(
                 name="current_resource_id",
                 value=resource_id,
-                description=(
-                    "Currently discovered VPC endpoint."
-                ),
-                source=[
-                    "AWS VPC endpoint inventory"
-                ],
+                description=("Currently discovered VPC endpoint."),
+                source=["AWS VPC endpoint inventory"],
                 observed=True,
             ),
             self._statement(
                 name="billing_reconciliation_status",
                 value=status,
-                description=(
-                    "Billing-to-resource reconciliation result."
-                ),
-                source=[
-                    "AWS billing evidence"
-                ],
+                description=("Billing-to-resource reconciliation result."),
+                source=["AWS billing evidence"],
                 observed=True,
             ),
         ]
@@ -892,12 +741,9 @@ class VpcEndpointAnalyzer(Analyzer):
                     name="billing_resource_id",
                     value=billing_resource_id,
                     description=(
-                        "Resource identifier associated with "
-                        "the billing evidence."
+                        "Resource identifier associated with " "the billing evidence."
                     ),
-                    source=[
-                        "AWS billing evidence"
-                    ],
+                    source=["AWS billing evidence"],
                     observed=True,
                 )
             )
@@ -909,12 +755,9 @@ class VpcEndpointAnalyzer(Analyzer):
                     name="billing_usage_type",
                     value=usage_type,
                     description=(
-                        "Billing usage type associated with "
-                        "the endpoint charge."
+                        "Billing usage type associated with " "the endpoint charge."
                     ),
-                    source=[
-                        "AWS billing evidence"
-                    ],
+                    source=["AWS billing evidence"],
                     observed=True,
                 )
             )
@@ -929,9 +772,7 @@ class VpcEndpointAnalyzer(Analyzer):
                         "Billing cost represented by the "
                         "reconciled billing evidence."
                     ),
-                    source=[
-                        "AWS billing evidence"
-                    ],
+                    source=["AWS billing evidence"],
                     observed=True,
                 )
             )
@@ -942,12 +783,8 @@ class VpcEndpointAnalyzer(Analyzer):
                 self._statement(
                     name="billing_period",
                     value=period,
-                    description=(
-                        "Billing observation period."
-                    ),
-                    source=[
-                        "AWS billing evidence"
-                    ],
+                    description=("Billing observation period."),
+                    source=["AWS billing evidence"],
                     observed=True,
                 )
             )
@@ -971,12 +808,8 @@ class VpcEndpointAnalyzer(Analyzer):
                 "usage_type": usage_type,
                 "cost": cost,
                 "period": period,
-                "service_name": self._service_name(
-                    context
-                ),
-                "endpoint_type": self._endpoint_type(
-                    context
-                ),
+                "service_name": self._service_name(context),
+                "endpoint_type": self._endpoint_type(context),
             },
         )
 
@@ -1017,23 +850,17 @@ class VpcEndpointAnalyzer(Analyzer):
         from cost alone.
         """
 
-        reconciliation = billing.get(
-            "reconciliation"
-        )
+        reconciliation = billing.get("reconciliation")
 
         if isinstance(
             reconciliation,
             dict,
         ):
 
-            status = reconciliation.get(
-                "status"
-            )
+            status = reconciliation.get("status")
 
             if status is None:
-                status = reconciliation.get(
-                    "reconciliation_status"
-                )
+                status = reconciliation.get("reconciliation_status")
 
             if status is None:
                 return None
@@ -1041,41 +868,23 @@ class VpcEndpointAnalyzer(Analyzer):
             return {
                 "status": str(status).strip().lower(),
                 "resource_id": (
-                    reconciliation.get(
-                        "resource_id"
-                    )
-                    or reconciliation.get(
-                        "billed_resource_id"
-                    )
+                    reconciliation.get("resource_id")
+                    or reconciliation.get("billed_resource_id")
                 ),
                 "usage_type": (
-                    reconciliation.get(
-                        "usage_type"
-                    )
-                    or reconciliation.get(
-                        "usage_type_group"
-                    )
+                    reconciliation.get("usage_type")
+                    or reconciliation.get("usage_type_group")
                 ),
                 "cost": (
                     reconciliation.get("cost")
-                    if reconciliation.get("cost")
-                    is not None
-                    else reconciliation.get(
-                        "amount"
-                    )
+                    if reconciliation.get("cost") is not None
+                    else reconciliation.get("amount")
                 ),
-                "period": reconciliation.get(
-                    "period"
-                ),
+                "period": reconciliation.get("period"),
             }
 
-        status = (
-            billing.get(
-                "reconciliation_status"
-            )
-            or billing.get(
-                "resource_reconciliation_status"
-            )
+        status = billing.get("reconciliation_status") or billing.get(
+            "resource_reconciliation_status"
         )
 
         if status is None:
@@ -1084,25 +893,17 @@ class VpcEndpointAnalyzer(Analyzer):
         return {
             "status": str(status).strip().lower(),
             "resource_id": (
-                billing.get("resource_id")
-                or billing.get(
-                    "billed_resource_id"
-                )
+                billing.get("resource_id") or billing.get("billed_resource_id")
             ),
             "usage_type": (
-                billing.get("usage_type")
-                or billing.get(
-                    "usage_type_group"
-                )
+                billing.get("usage_type") or billing.get("usage_type_group")
             ),
             "cost": (
                 billing.get("cost")
                 if billing.get("cost") is not None
                 else billing.get("amount")
             ),
-            "period": billing.get(
-                "period"
-            ),
+            "period": billing.get("period"),
         }
 
     # ------------------------------------------------------------------
@@ -1125,32 +926,16 @@ class VpcEndpointAnalyzer(Analyzer):
         return Finding(
             finding_type=finding_type,
             title=title,
-            resource_type=(
-                context.resource_type
-                or self.RESOURCE_TYPE
-            ),
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
+            resource_type=(context.resource_type or self.RESOURCE_TYPE),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
             analyzer_version=self.version,
-            severity=str(
-                severity
-            ).lower(),
-            confidence=str(
-                confidence
-            ).lower(),
+            severity=str(severity).lower(),
+            confidence=str(confidence).lower(),
             reason=reason,
             conditions=statements,
-            evidence=self._build_evidence(
-                context
-            ),
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
+            evidence=self._build_evidence(context),
+            observation_period=(self._observation_period(context)),
             metadata=dict(metadata),
             recommendation_eligible=False,
             impact={},
@@ -1165,42 +950,31 @@ class VpcEndpointAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Evidence:
 
-        configuration = self._configuration(
-            context
-        )
+        configuration = self._configuration(context)
 
-        topology = self._topology(
-            context
-        )
+        topology = self._topology(context)
 
-        collection_status = (
-            self._collection_status(
-                context
-            )
-        )
+        collection_status = self._collection_status(context)
 
-        metrics = {
-            name: context.metric_summary(name)
-            for name in context.metrics()
-        }
+        metrics = {name: context.metric_summary(name) for name in context.metrics()}
 
         return Evidence(
             metrics=metrics,
-
             configuration={
                 key: value
                 for key, value in configuration.items()
-                if key not in {
+                if key
+                not in {
                     "policy_document",
                     "dns_entries",
                     "tags",
                 }
             },
-
             topology={
                 key: value
                 for key, value in topology.items()
-                if key in {
+                if key
+                in {
                     "status",
                     "collection_status",
                     "route_tables",
@@ -1211,61 +985,30 @@ class VpcEndpointAnalyzer(Analyzer):
                     "availability_zones",
                 }
             },
-
             resource={
                 "resource_id": context.resource_id,
                 "resource_type": context.resource_type,
                 "region": context.region,
-                "service_name": self._service_name(
-                    context
-                ),
-                "endpoint_type": self._endpoint_type(
-                    context
-                ),
-                "state": self._state(
-                    context
-                ),
+                "service_name": self._service_name(context),
+                "endpoint_type": self._endpoint_type(context),
+                "state": self._state(context),
             },
-
             derived={
-                "endpoint_type": self._endpoint_type(
-                    context
-                ),
-                "service_name": self._service_name(
-                    context
-                ),
-                "state": self._state(
-                    context
-                ),
+                "endpoint_type": self._endpoint_type(context),
+                "service_name": self._service_name(context),
+                "state": self._state(context),
                 "collection_status": collection_status,
             },
-
-            billing=_safe_dict(
-                context.billing()
-            ),
-
+            billing=_safe_dict(context.billing()),
             data_quality={
-                "topology_available": (
-                    topology.get("status")
-                    == "ok"
-                ),
+                "topology_available": (topology.get("status") == "ok"),
                 "relationship_data_available": (
-                    collection_status.get(
-                        "relationships"
-                    )
-                    == "ok"
+                    collection_status.get("relationships") == "ok"
                 ),
                 "network_interfaces_available": (
-                    collection_status.get(
-                        "network_interfaces"
-                    )
-                    == "ok"
+                    collection_status.get("network_interfaces") == "ok"
                 ),
-                "analysis_complete": (
-                    collection_status.get(
-                        "complete_for_analysis"
-                    )
-                ),
+                "analysis_complete": (collection_status.get("complete_for_analysis")),
             },
         )
 
@@ -1278,23 +1021,11 @@ class VpcEndpointAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> ObservationPeriod | None:
 
-        cloudwatch = _safe_dict(
-            context.cloudwatch()
-        )
+        cloudwatch = _safe_dict(context.cloudwatch())
 
-        start = (
-            cloudwatch.get("start")
-            or cloudwatch.get(
-                "metric_start"
-            )
-        )
+        start = cloudwatch.get("start") or cloudwatch.get("metric_start")
 
-        end = (
-            cloudwatch.get("end")
-            or cloudwatch.get(
-                "metric_end"
-            )
-        )
+        end = cloudwatch.get("end") or cloudwatch.get("metric_end")
 
         if start or end:
 
@@ -1314,9 +1045,7 @@ class VpcEndpointAnalyzer(Analyzer):
         return ObservationPeriod(
             start=value.get("start"),
             end=value.get("end"),
-            duration_seconds=value.get(
-                "duration_seconds"
-            ),
+            duration_seconds=value.get("duration_seconds"),
         )
 
     # ------------------------------------------------------------------
@@ -1384,8 +1113,4 @@ def _safe_dict(
     value: Any,
 ) -> dict[str, Any]:
 
-    return (
-        value
-        if isinstance(value, dict)
-        else {}
-    )
+    return value if isinstance(value, dict) else {}

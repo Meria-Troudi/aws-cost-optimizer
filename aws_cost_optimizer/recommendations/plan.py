@@ -100,17 +100,11 @@ def humanize_step(
 
     if "_" in text:
         words = [
-            part
-            for part in (
-                fragment.strip()
-                for fragment in text.split("_")
-            )
-            if part
+            part for part in (fragment.strip() for fragment in text.split("_")) if part
         ]
 
         rendered = [
-            _render_word(word, first=(index == 0))
-            for index, word in enumerate(words)
+            _render_word(word, first=(index == 0)) for index, word in enumerate(words)
         ]
 
         return " ".join(part for part in rendered if part)
@@ -118,8 +112,7 @@ def humanize_step(
     words = text.split()
 
     rendered = [
-        _render_word(word, first=(index == 0))
-        for index, word in enumerate(words)
+        _render_word(word, first=(index == 0)) for index, word in enumerate(words)
     ]
 
     return " ".join(part for part in rendered if part)
@@ -162,9 +155,7 @@ def build_plan(
             continue
 
         humanized = [
-            humanize_step(str(entry))
-            for entry in entries
-            if str(entry or "").strip()
+            humanize_step(str(entry)) for entry in entries if str(entry or "").strip()
         ]
 
         if humanized:

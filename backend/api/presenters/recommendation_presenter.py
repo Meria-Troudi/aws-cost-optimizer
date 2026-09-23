@@ -96,7 +96,9 @@ def present_recommendation(
     # Deterministic plan for the parse fallback: prefer the stored plan,
     # then rebuild from the catalog definition if the key still resolves (the
     # stored plan may predate the current catalog).
-    plan_source = plan if plan.get("validation_steps") or plan.get("possible_actions") else {}
+    plan_source = (
+        plan if plan.get("validation_steps") or plan.get("possible_actions") else {}
+    )
     if not plan_source:
         definition = get_definition(str(rec.recommendation_key or "").strip())
         if definition is not None:

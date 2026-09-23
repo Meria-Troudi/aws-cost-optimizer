@@ -135,7 +135,6 @@ from ...evidence import Evidence
 from ...finding import Finding, ObservationPeriod
 from ...registry import register
 
-
 # ============================================================================
 # AWS WAF PRICING CONSTANTS
 # ============================================================================
@@ -191,9 +190,7 @@ TITLES = {
     "waf_high_wcu": "WAF WCU Cost Exposure",
     "waf_high_rule_count": "High WAF Customer Rule Count",
     "waf_rule_no_observed_activity": "WAF Rule With No Observed Activity",
-    "waf_managed_rule_group_cost_exposure": (
-        "WAF Managed Rule Group Cost Exposure"
-    ),
+    "waf_managed_rule_group_cost_exposure": ("WAF Managed Rule Group Cost Exposure"),
     "waf_captcha_cost_exposure": "WAF CAPTCHA Cost Exposure",
     "waf_challenge_cost_exposure": "WAF Challenge Cost Exposure",
     "waf_body_inspection_cost_exposure": (
@@ -287,9 +284,7 @@ class WAFAnalyzer(Analyzer):
         if not self.supports(context):
             return []
 
-        evidence = _dict(
-            context.optimization_evidence()
-        )
+        evidence = _dict(context.optimization_evidence())
 
         if not evidence:
             return []
@@ -342,45 +337,35 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get("configuration")
-        )
+        return _dict(evidence.get("configuration"))
 
     @staticmethod
     def _relationships(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get("relationships")
-        )
+        return _dict(evidence.get("relationships"))
 
     @staticmethod
     def _traffic(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get("traffic")
-        )
+        return _dict(evidence.get("traffic"))
 
     @staticmethod
     def _cloudwatch(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get("cloudwatch")
-        )
+        return _dict(evidence.get("cloudwatch"))
 
     @staticmethod
     def _quality(
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return _dict(
-            evidence.get("data_quality")
-        )
+        return _dict(evidence.get("data_quality"))
 
     # ========================================================================
     # TELEMETRY SEMANTICS
@@ -405,29 +390,20 @@ class WAFAnalyzer(Analyzer):
 
         if metric_key is not None:
 
-            raw_metric_name = cls._METRIC_OBSERVATION_KEYS.get(
-                metric_key
-            )
+            raw_metric_name = cls._METRIC_OBSERVATION_KEYS.get(metric_key)
 
             if raw_metric_name is None:
                 return False
 
-            observation = _dict(
-                traffic.get("metric_observation")
-            )
+            observation = _dict(traffic.get("metric_observation"))
 
-            return (
-                observation.get(raw_metric_name) is True
-            )
+            return observation.get(raw_metric_name) is True
 
         # ---------------------------------------------------------------
         # Overall telemetry
         # ---------------------------------------------------------------
 
-        return (
-            traffic.get("available") is True
-            and traffic.get("complete") is True
-        )
+        return traffic.get("available") is True and traffic.get("complete") is True
 
     # ========================================================================
     # UNUSED WEB ACL
@@ -439,22 +415,11 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        relationships = self._relationships(
-            evidence
-        )
+        relationships = self._relationships(evidence)
 
-        protected_count = _number(
-            relationships.get(
-                "protected_resource_count"
-            )
-        )
+        protected_count = _number(relationships.get("protected_resource_count"))
 
-        association_complete = (
-            relationships.get(
-                "association_complete"
-            )
-            is True
-        )
+        association_complete = relationships.get("association_complete") is True
 
         if protected_count is None:
             return None
@@ -484,8 +449,7 @@ class WAFAnalyzer(Analyzer):
                     name="protected_resource_count",
                     value=0,
                     description=(
-                        "Number of resources confirmed as protected "
-                        "by this Web ACL."
+                        "Number of resources confirmed as protected " "by this Web ACL."
                     ),
                     source=["AWS WAF associations"],
                     unit="resources",
@@ -493,9 +457,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="association_complete",
                     value=True,
-                    description=(
-                        "Association discovery completed successfully."
-                    ),
+                    description=("Association discovery completed successfully."),
                     source=["AWS WAF"],
                     unit="boolean",
                 ),
@@ -512,9 +474,7 @@ class WAFAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "web_acl_monthly_charge_exposure": (
-                    AWS_WAF_WEB_ACL_MONTHLY_PRICE
-                ),
+                "web_acl_monthly_charge_exposure": (AWS_WAF_WEB_ACL_MONTHLY_PRICE),
             },
         )
 
@@ -528,22 +488,14 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        traffic = self._traffic(
-            evidence
-        )
+        traffic = self._traffic(evidence)
 
-        request_volume = _number(
-            traffic.get(
-                "request_volume"
-            )
-        )
+        request_volume = _number(traffic.get("request_volume"))
 
         if request_volume is None:
             return None
 
-        if not self._telemetry_complete(
-            traffic
-        ):
+        if not self._telemetry_complete(traffic):
             return None
 
         threshold = self._threshold(
@@ -572,23 +524,15 @@ class WAFAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="request_volume",
-                    value=round(
-                        request_volume
-                    ),
-                    description=(
-                        "Complete observed Web ACL request volume."
-                    ),
+                    value=round(request_volume),
+                    description=("Complete observed Web ACL request volume."),
                     source=["CloudWatch"],
                     unit="requests",
                 ),
                 _statement(
                     name="threshold",
-                    value=round(
-                        threshold
-                    ),
-                    description=(
-                        "Configured request-volume review threshold."
-                    ),
+                    value=round(threshold),
+                    description=("Configured request-volume review threshold."),
                     source=["Analysis profile"],
                     unit="requests",
                 ),
@@ -596,8 +540,7 @@ class WAFAnalyzer(Analyzer):
                     name="base_request_price_per_million",
                     value=AWS_WAF_REQUEST_PRICE_PER_MILLION,
                     description=(
-                        "Base AWS WAF request charge per million "
-                        "requests."
+                        "Base AWS WAF request charge per million " "requests."
                     ),
                     source=["AWS WAF pricing"],
                     unit="USD / million requests",
@@ -615,25 +558,13 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        traffic = self._traffic(
-            evidence
-        )
+        traffic = self._traffic(evidence)
 
-        capacity = _number(
-            configuration.get(
-                "capacity_wcu"
-            )
-        )
+        capacity = _number(configuration.get("capacity_wcu"))
 
-        request_volume = _number(
-            traffic.get(
-                "request_volume"
-            )
-        )
+        request_volume = _number(traffic.get("request_volume"))
 
         if capacity is None:
             return None
@@ -641,9 +572,7 @@ class WAFAnalyzer(Analyzer):
         if capacity <= AWS_WAF_INCLUDED_WCU:
             return None
 
-        if not self._telemetry_complete(
-            traffic
-        ):
+        if not self._telemetry_complete(traffic):
             return None
 
         if request_volume is None or request_volume <= 0:
@@ -660,24 +589,15 @@ class WAFAnalyzer(Analyzer):
             capacity - AWS_WAF_INCLUDED_WCU,
         )
 
-        charge_blocks = math.ceil(
-            excess_wcu / AWS_WAF_WCU_BLOCK
-        )
+        charge_blocks = math.ceil(excess_wcu / AWS_WAF_WCU_BLOCK)
 
-        incremental_price_per_million = (
-            charge_blocks
-            * AWS_WAF_WCU_PRICE_PER_MILLION
-        )
+        incremental_price_per_million = charge_blocks * AWS_WAF_WCU_PRICE_PER_MILLION
 
         estimated_incremental_charge = (
             request_volume / 1_000_000
         ) * incremental_price_per_million
 
-        severity = (
-            "medium"
-            if capacity > threshold
-            else "low"
-        )
+        severity = "medium" if capacity > threshold else "low"
 
         return self._finding(
             context=context,
@@ -697,9 +617,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="capacity_wcu",
                     value=capacity,
-                    description=(
-                        "Current Web ACL WCU requirement."
-                    ),
+                    description=("Current Web ACL WCU requirement."),
                     source=["AWS WAF"],
                     unit="WCU",
                 ),
@@ -716,9 +634,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="excess_wcu",
                     value=excess_wcu,
-                    description=(
-                        "WCU above the included allocation."
-                    ),
+                    description=("WCU above the included allocation."),
                     source=["AWS WAF"],
                     unit="WCU",
                 ),
@@ -726,8 +642,7 @@ class WAFAnalyzer(Analyzer):
                     name="charge_blocks",
                     value=charge_blocks,
                     description=(
-                        "500-WCU pricing blocks above the "
-                        "included allocation."
+                        "500-WCU pricing blocks above the " "included allocation."
                     ),
                     source=["AWS WAF pricing"],
                     unit="blocks",
@@ -748,9 +663,7 @@ class WAFAnalyzer(Analyzer):
                 ),
                 _statement(
                     name="observed_request_volume",
-                    value=round(
-                        request_volume
-                    ),
+                    value=round(request_volume),
                     description=(
                         "Complete observed request volume used "
                         "to contextualize WCU exposure."
@@ -780,12 +693,8 @@ class WAFAnalyzer(Analyzer):
                 "included_wcu": AWS_WAF_INCLUDED_WCU,
                 "excess_wcu": excess_wcu,
                 "charge_blocks": charge_blocks,
-                "incremental_price_per_million": (
-                    incremental_price_per_million
-                ),
-                "estimated_incremental_charge": (
-                    estimated_incremental_charge
-                ),
+                "incremental_price_per_million": (incremental_price_per_million),
+                "estimated_incremental_charge": (estimated_incremental_charge),
             },
         )
 
@@ -799,42 +708,25 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        customer_rule_count = _number(
-            configuration.get(
-                "customer_rule_count"
-            )
-        )
+        customer_rule_count = _number(configuration.get("customer_rule_count"))
 
         # Do NOT use generic rule_count for pricing unless the collector
         # explicitly declares that it represents customer-created rules.
         if customer_rule_count is None:
 
-            rule_count = _number(
-                configuration.get(
-                    "rule_count"
-                )
+            rule_count = _number(configuration.get("rule_count"))
+
+            rule_count_semantics = (
+                str(configuration.get("rule_count_semantics") or "").strip().lower()
             )
 
-            rule_count_semantics = str(
-                configuration.get(
-                    "rule_count_semantics"
-                )
-                or ""
-            ).strip().lower()
-
-            if (
-                rule_count is not None
-                and rule_count_semantics
-                in {
-                    "customer_rules",
-                    "customer_created_rules",
-                    "billable_customer_rules",
-                }
-            ):
+            if rule_count is not None and rule_count_semantics in {
+                "customer_rules",
+                "customer_created_rules",
+                "billable_customer_rules",
+            }:
                 customer_rule_count = rule_count
 
         if customer_rule_count is None:
@@ -849,10 +741,7 @@ class WAFAnalyzer(Analyzer):
         if customer_rule_count <= threshold:
             return None
 
-        monthly_rule_charge = (
-            customer_rule_count
-            * AWS_WAF_CUSTOMER_RULE_MONTHLY_PRICE
-        )
+        monthly_rule_charge = customer_rule_count * AWS_WAF_CUSTOMER_RULE_MONTHLY_PRICE
 
         return self._finding(
             context=context,
@@ -872,9 +761,7 @@ class WAFAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="customer_rule_count",
-                    value=int(
-                        customer_rule_count
-                    ),
+                    value=int(customer_rule_count),
                     description=(
                         "Customer-created rules in the Web ACL. "
                         "Managed-rule-group internal rules are "
@@ -885,13 +772,8 @@ class WAFAnalyzer(Analyzer):
                 ),
                 _statement(
                     name="threshold",
-                    value=int(
-                        threshold
-                    ),
-                    description=(
-                        "Configured customer-rule-count "
-                        "review threshold."
-                    ),
+                    value=int(threshold),
+                    description=("Configured customer-rule-count " "review threshold."),
                     source=["Analysis profile"],
                     unit="rules",
                 ),
@@ -910,12 +792,8 @@ class WAFAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "customer_rule_count": int(
-                    customer_rule_count
-                ),
-                "customer_rule_monthly_charge_exposure": (
-                    monthly_rule_charge
-                ),
+                "customer_rule_count": int(customer_rule_count),
+                "customer_rule_monthly_charge_exposure": (monthly_rule_charge),
             },
         )
 
@@ -929,23 +807,13 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        cloudwatch = self._cloudwatch(
-            evidence
-        )
+        cloudwatch = self._cloudwatch(evidence)
 
-        rules = _list(
-            configuration.get(
-                "rules"
-            )
-        )
+        rules = _list(configuration.get("rules"))
 
-        rule_metrics = cloudwatch.get(
-            "rule_metrics"
-        )
+        rule_metrics = cloudwatch.get("rule_metrics")
 
         if not isinstance(
             rule_metrics,
@@ -963,32 +831,17 @@ class WAFAnalyzer(Analyzer):
             ):
                 continue
 
-            if rule.get(
-                "cloudwatch_metrics_enabled"
-            ) is not True:
+            if rule.get("cloudwatch_metrics_enabled") is not True:
                 continue
 
-            rule_name = str(
-                rule.get(
-                    "name"
-                )
-                or ""
-            ).strip()
+            rule_name = str(rule.get("name") or "").strip()
 
-            metric_name = str(
-                rule.get(
-                    "metric_name"
-                )
-                or rule_name
-                or ""
-            ).strip()
+            metric_name = str(rule.get("metric_name") or rule_name or "").strip()
 
             if not metric_name:
                 continue
 
-            metric_values = rule_metrics.get(
-                metric_name
-            )
+            metric_values = rule_metrics.get(metric_name)
 
             if not isinstance(
                 metric_values,
@@ -1006,53 +859,34 @@ class WAFAnalyzer(Analyzer):
                 ):
                     continue
 
-                if item.get(
-                    "has_data"
-                ) is not True:
+                if item.get("has_data") is not True:
                     continue
 
                 value = _number(
-                    item.get(
-                        "value"
-                    )
-                    if item.get(
-                        "value"
-                    ) is not None
-                    else item.get(
-                        "total"
-                    )
+                    item.get("value")
+                    if item.get("value") is not None
+                    else item.get("total")
                 )
 
                 if value is None:
                     continue
 
-                observed_values.append(
-                    value
-                )
+                observed_values.append(value)
 
             if not observed_values:
                 continue
 
-            if not all(
-                value == 0
-                for value in observed_values
-            ):
+            if not all(value == 0 for value in observed_values):
                 continue
 
             candidates.append(
                 {
                     "name": rule_name,
                     "metric_name": metric_name,
-                    "statement_type": rule.get(
-                        "statement_type"
-                    ),
-                    "action": rule.get(
-                        "action"
-                    ),
+                    "statement_type": rule.get("statement_type"),
+                    "action": rule.get("action"),
                     "cloudwatch_metrics_enabled": True,
-                    "observed_datapoints": len(
-                        observed_values
-                    ),
+                    "observed_datapoints": len(observed_values),
                 }
             )
 
@@ -1098,21 +932,11 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        managed_count = _number(
-            configuration.get(
-                "managed_rule_group_count"
-            )
-        )
+        managed_count = _number(configuration.get("managed_rule_group_count"))
 
-        groups = _list(
-            configuration.get(
-                "managed_rule_groups"
-            )
-        )
+        groups = _list(configuration.get("managed_rule_groups"))
 
         if managed_count is None:
 
@@ -1140,54 +964,26 @@ class WAFAnalyzer(Analyzer):
             ):
                 continue
 
-            name = str(
-                group.get(
-                    "name"
-                )
-                or ""
-            ).strip()
+            name = str(group.get("name") or "").strip()
 
             if name:
-                names.append(
-                    name
-                )
+                names.append(name)
 
-            source = str(
-                group.get(
-                    "source"
-                )
-                or ""
-            ).strip().lower()
+            source = str(group.get("source") or "").strip().lower()
 
-            if (
-                source == "aws_marketplace"
-                or group.get(
-                    "marketplace"
-                )
-                is True
-            ):
+            if source == "aws_marketplace" or group.get("marketplace") is True:
                 if name:
-                    marketplace_groups.append(
-                        name
-                    )
+                    marketplace_groups.append(name)
 
-            if (
-                source
-                in {
-                    "aws",
-                    "aws_managed",
-                    "aws_managed_rules",
-                }
-            ):
+            if source in {
+                "aws",
+                "aws_managed",
+                "aws_managed_rules",
+            }:
                 if name:
-                    aws_managed_groups.append(
-                        name
-                    )
+                    aws_managed_groups.append(name)
 
-        monthly_rule_group_charge = (
-            managed_count
-            * AWS_WAF_RULE_GROUP_MONTHLY_PRICE
-        )
+        monthly_rule_group_charge = managed_count * AWS_WAF_RULE_GROUP_MONTHLY_PRICE
 
         return self._finding(
             context=context,
@@ -1206,22 +1002,15 @@ class WAFAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="managed_rule_group_count",
-                    value=int(
-                        managed_count
-                    ),
-                    description=(
-                        "Managed rule groups configured "
-                        "on the Web ACL."
-                    ),
+                    value=int(managed_count),
+                    description=("Managed rule groups configured " "on the Web ACL."),
                     source=["AWS WAF"],
                     unit="rule groups",
                 ),
                 _statement(
                     name="managed_rule_groups",
                     value=names,
-                    description=(
-                        "Configured managed rule-group names."
-                    ),
+                    description=("Configured managed rule-group names."),
                     source=["AWS WAF"],
                 ),
                 _statement(
@@ -1241,10 +1030,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="aws_managed_groups",
                     value=aws_managed_groups,
-                    description=(
-                        "Managed rule groups identified as "
-                        "AWS-provided."
-                    ),
+                    description=("Managed rule groups identified as " "AWS-provided."),
                     source=["AWS WAF configuration"],
                 ),
                 _statement(
@@ -1259,15 +1045,9 @@ class WAFAnalyzer(Analyzer):
                 ),
             ],
             metadata={
-                "managed_rule_group_count": int(
-                    managed_count
-                ),
-                "monthly_rule_group_charge": (
-                    monthly_rule_group_charge
-                ),
-                "marketplace_groups_detected": (
-                    marketplace_groups
-                ),
+                "managed_rule_group_count": int(managed_count),
+                "monthly_rule_group_charge": (monthly_rule_group_charge),
+                "marketplace_groups_detected": (marketplace_groups),
             },
         )
 
@@ -1281,25 +1061,13 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        traffic = self._traffic(
-            evidence
-        )
+        traffic = self._traffic(evidence)
 
-        rule_count = _number(
-            configuration.get(
-                "captcha_rule_count"
-            )
-        )
+        rule_count = _number(configuration.get("captcha_rule_count"))
 
-        attempts = _number(
-            traffic.get(
-                "captcha_attempts"
-            )
-        )
+        attempts = _number(traffic.get("captcha_attempts"))
 
         if rule_count is None or rule_count <= 0:
             return None
@@ -1322,9 +1090,7 @@ class WAFAnalyzer(Analyzer):
         if attempts < threshold:
             return None
 
-        estimated_charge = (
-            attempts / 1000.0
-        ) * AWS_WAF_CAPTCHA_PRICE_PER_1000
+        estimated_charge = (attempts / 1000.0) * AWS_WAF_CAPTCHA_PRICE_PER_1000
 
         return self._finding(
             context=context,
@@ -1343,32 +1109,22 @@ class WAFAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="captcha_rule_count",
-                    value=int(
-                        rule_count
-                    ),
-                    description=(
-                        "CAPTCHA rules configured in the Web ACL."
-                    ),
+                    value=int(rule_count),
+                    description=("CAPTCHA rules configured in the Web ACL."),
                     source=["AWS WAF"],
                     unit="rules",
                 ),
                 _statement(
                     name="captcha_attempts",
-                    value=round(
-                        attempts
-                    ),
-                    description=(
-                        "Complete observed CAPTCHA attempts."
-                    ),
+                    value=round(attempts),
+                    description=("Complete observed CAPTCHA attempts."),
                     source=["CloudWatch"],
                     unit="attempts",
                 ),
                 _statement(
                     name="price_per_1000_attempts",
                     value=AWS_WAF_CAPTCHA_PRICE_PER_1000,
-                    description=(
-                        "AWS WAF CAPTCHA charge per 1,000 attempts."
-                    ),
+                    description=("AWS WAF CAPTCHA charge per 1,000 attempts."),
                     source=["AWS WAF pricing"],
                     unit="USD / 1,000 attempts",
                 ),
@@ -1401,25 +1157,13 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        traffic = self._traffic(
-            evidence
-        )
+        traffic = self._traffic(evidence)
 
-        rule_count = _number(
-            configuration.get(
-                "challenge_rule_count"
-            )
-        )
+        rule_count = _number(configuration.get("challenge_rule_count"))
 
-        requests = _number(
-            traffic.get(
-                "challenge_requests"
-            )
-        )
+        requests = _number(traffic.get("challenge_requests"))
 
         if rule_count is None or rule_count <= 0:
             return None
@@ -1460,20 +1204,14 @@ class WAFAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="challenge_rule_count",
-                    value=int(
-                        rule_count
-                    ),
-                    description=(
-                        "Challenge rules configured in the Web ACL."
-                    ),
+                    value=int(rule_count),
+                    description=("Challenge rules configured in the Web ACL."),
                     source=["AWS WAF"],
                     unit="rules",
                 ),
                 _statement(
                     name="challenge_requests",
-                    value=round(
-                        requests
-                    ),
+                    value=round(requests),
                     description=(
                         "Observed CloudWatch ChallengeRequests. "
                         "This is not necessarily the exact "
@@ -1506,38 +1244,18 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        traffic = self._traffic(
-            evidence
-        )
+        traffic = self._traffic(evidence)
 
-        body = _dict(
-            configuration.get(
-                "body_inspection"
-            )
-        )
+        body = _dict(configuration.get("body_inspection"))
 
-        maximum_kb = _number(
-            body.get(
-                "maximum_configured_kb"
-            )
-        )
+        maximum_kb = _number(body.get("maximum_configured_kb"))
 
-        default_kb = _number(
-            body.get(
-                "default_inspection_kb"
-            )
-        )
+        default_kb = _number(body.get("default_inspection_kb"))
 
         if default_kb is None:
-            default_kb = _number(
-                configuration.get(
-                    "default_body_inspection_kb"
-                )
-            )
+            default_kb = _number(configuration.get("default_body_inspection_kb"))
 
         if maximum_kb is None or default_kb is None:
             return None
@@ -1545,47 +1263,23 @@ class WAFAnalyzer(Analyzer):
         if maximum_kb <= default_kb:
             return None
 
-        if not self._telemetry_complete(
-            traffic
-        ):
+        if not self._telemetry_complete(traffic):
             return None
 
-        request_volume = _number(
-            traffic.get(
-                "request_volume"
-            )
-        )
+        request_volume = _number(traffic.get("request_volume"))
 
         if request_volume is None or request_volume <= 0:
             return None
 
-        additional_kb = (
-            maximum_kb
-            - default_kb
-        )
+        additional_kb = maximum_kb - default_kb
 
-        additional_blocks = math.ceil(
-            additional_kb
-            / AWS_WAF_EXTRA_BODY_BLOCK_KB
-        )
+        additional_blocks = math.ceil(additional_kb / AWS_WAF_EXTRA_BODY_BLOCK_KB)
 
-        price_per_million = (
-            additional_blocks
-            * AWS_WAF_EXTRA_BODY_PRICE_PER_MILLION
-        )
+        price_per_million = additional_blocks * AWS_WAF_EXTRA_BODY_PRICE_PER_MILLION
 
-        oversized_requests = _number(
-            traffic.get(
-                "oversized_body_request_volume"
-            )
-        )
+        oversized_requests = _number(traffic.get("oversized_body_request_volume"))
 
-        oversized_exact = (
-            traffic.get(
-                "oversized_body_request_volume_exact"
-            )
-            is True
-        )
+        oversized_exact = traffic.get("oversized_body_request_volume_exact") is True
 
         estimated_period_charge: Optional[float] = None
 
@@ -1595,11 +1289,7 @@ class WAFAnalyzer(Analyzer):
             and oversized_exact
         ):
 
-            estimated_period_charge = (
-                oversized_requests
-                / 1_000_000
-                * price_per_million
-            )
+            estimated_period_charge = oversized_requests / 1_000_000 * price_per_million
 
         return self._finding(
             context=context,
@@ -1620,10 +1310,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="maximum_configured_kb",
                     value=maximum_kb,
-                    description=(
-                        "Maximum configured request-body "
-                        "inspection size."
-                    ),
+                    description=("Maximum configured request-body " "inspection size."),
                     source=["AWS WAF"],
                     unit="KiB",
                 ),
@@ -1676,8 +1363,7 @@ class WAFAnalyzer(Analyzer):
                     name="oversized_request_volume_exact",
                     value=oversized_exact,
                     description=(
-                        "Whether oversized request volume "
-                        "is complete and exact."
+                        "Whether oversized request volume " "is complete and exact."
                     ),
                     source=["WAF collector"],
                     unit="boolean",
@@ -1707,18 +1393,10 @@ class WAFAnalyzer(Analyzer):
             metadata={
                 "additional_inspection_kb": additional_kb,
                 "additional_blocks": additional_blocks,
-                "additional_price_per_million": (
-                    price_per_million
-                ),
-                "oversized_request_volume": (
-                    oversized_requests
-                ),
-                "oversized_request_volume_exact": (
-                    oversized_exact
-                ),
-                "estimated_period_charge": (
-                    estimated_period_charge
-                ),
+                "additional_price_per_million": (price_per_million),
+                "oversized_request_volume": (oversized_requests),
+                "oversized_request_volume_exact": (oversized_exact),
+                "estimated_period_charge": (estimated_period_charge),
             },
         )
 
@@ -1732,28 +1410,16 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
-        traffic = self._traffic(
-            evidence
-        )
+        traffic = self._traffic(evidence)
 
         premium = {
             str(value).strip().lower()
-            for value in _list(
-                configuration.get(
-                    "premium_features"
-                )
-            )
+            for value in _list(configuration.get("premium_features"))
         }
 
-        managed_groups = _list(
-            configuration.get(
-                "managed_rule_groups"
-            )
-        )
+        managed_groups = _list(configuration.get("managed_rule_groups"))
 
         bot_groups = [
             group
@@ -1763,32 +1429,19 @@ class WAFAnalyzer(Analyzer):
                     group,
                     dict,
                 )
-                and str(
-                    group.get(
-                        "name"
-                    )
-                    or ""
-                ).strip()
+                and str(group.get("name") or "").strip()
                 == "AWSManagedRulesBotControlRuleSet"
             )
         ]
 
-        if (
-            "bot_control" not in premium
-            and not bot_groups
-        ):
+        if "bot_control" not in premium and not bot_groups:
             return None
 
         # ---------------------------------------------------------------
         # Determine Bot Control level
         # ---------------------------------------------------------------
 
-        bot_mode = str(
-            configuration.get(
-                "bot_control_level"
-            )
-            or ""
-        ).strip().lower()
+        bot_mode = str(configuration.get("bot_control_level") or "").strip().lower()
 
         if bot_mode not in {
             "common",
@@ -1803,15 +1456,15 @@ class WAFAnalyzer(Analyzer):
                 ):
                     continue
 
-                level = str(
-                    group.get(
-                        "inspection_level"
+                level = (
+                    str(
+                        group.get("inspection_level")
+                        or group.get("bot_control_level")
+                        or ""
                     )
-                    or group.get(
-                        "bot_control_level"
-                    )
-                    or ""
-                ).strip().lower()
+                    .strip()
+                    .lower()
+                )
 
                 if level in {
                     "common",
@@ -1835,40 +1488,23 @@ class WAFAnalyzer(Analyzer):
 
         if bot_mode == "common":
 
-            free_requests = (
-                AWS_WAF_COMMON_BOT_FREE_REQUESTS
-            )
+            free_requests = AWS_WAF_COMMON_BOT_FREE_REQUESTS
 
-            request_price = (
-                AWS_WAF_COMMON_BOT_PRICE_PER_MILLION
-            )
+            request_price = AWS_WAF_COMMON_BOT_PRICE_PER_MILLION
 
         elif bot_mode == "targeted":
 
-            free_requests = (
-                AWS_WAF_TARGETED_BOT_FREE_REQUESTS
-            )
+            free_requests = AWS_WAF_TARGETED_BOT_FREE_REQUESTS
 
-            request_price = (
-                AWS_WAF_TARGETED_BOT_PRICE_PER_MILLION
-            )
+            request_price = AWS_WAF_TARGETED_BOT_PRICE_PER_MILLION
 
         # ---------------------------------------------------------------
         # Exact usage evidence
         # ---------------------------------------------------------------
 
-        bot_requests = _number(
-            traffic.get(
-                "bot_control_requests"
-            )
-        )
+        bot_requests = _number(traffic.get("bot_control_requests"))
 
-        bot_requests_exact = (
-            traffic.get(
-                "bot_control_requests_exact"
-            )
-            is True
-        )
+        bot_requests_exact = traffic.get("bot_control_requests_exact") is True
 
         billable_requests: Optional[float] = None
         estimated_request_charge: Optional[float] = None
@@ -1885,11 +1521,7 @@ class WAFAnalyzer(Analyzer):
                 bot_requests - free_requests,
             )
 
-            estimated_request_charge = (
-                billable_requests
-                / 1_000_000
-                * request_price
-            )
+            estimated_request_charge = billable_requests / 1_000_000 * request_price
 
         # ---------------------------------------------------------------
         # Severity
@@ -1897,10 +1529,7 @@ class WAFAnalyzer(Analyzer):
 
         severity = "low"
 
-        if (
-            estimated_request_charge is not None
-            and estimated_request_charge >= 100
-        ):
+        if estimated_request_charge is not None and estimated_request_charge >= 100:
             severity = "medium"
 
         return self._finding(
@@ -1921,12 +1550,9 @@ class WAFAnalyzer(Analyzer):
             statements=[
                 _statement(
                     name="bot_control_rule_group_count",
-                    value=len(
-                        bot_groups
-                    ),
+                    value=len(bot_groups),
                     description=(
-                        "Bot Control managed rule groups "
-                        "configured on the Web ACL."
+                        "Bot Control managed rule groups " "configured on the Web ACL."
                     ),
                     source=["AWS WAF"],
                     unit="rule groups",
@@ -1934,17 +1560,14 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="bot_control_level",
                     value=bot_mode,
-                    description=(
-                        "Bot Control inspection level."
-                    ),
+                    description=("Bot Control inspection level."),
                     source=["AWS WAF"],
                 ),
                 _statement(
                     name="monthly_subscription_price",
                     value=AWS_WAF_BOT_CONTROL_MONTHLY_PRICE,
                     description=(
-                        "Bot Control monthly subscription "
-                        "charge per Web ACL."
+                        "Bot Control monthly subscription " "charge per Web ACL."
                     ),
                     source=["AWS WAF pricing"],
                     unit="USD/month",
@@ -1952,9 +1575,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="free_requests",
                     value=free_requests,
-                    description=(
-                        "Applicable free-request allowance."
-                    ),
+                    description=("Applicable free-request allowance."),
                     source=["AWS WAF pricing"],
                     unit="requests/month",
                 ),
@@ -1982,8 +1603,7 @@ class WAFAnalyzer(Analyzer):
                     name="bot_control_requests_exact",
                     value=bot_requests_exact,
                     description=(
-                        "Whether Bot Control request volume "
-                        "is complete and exact."
+                        "Whether Bot Control request volume " "is complete and exact."
                     ),
                     source=["WAF collector"],
                     unit="boolean",
@@ -2026,15 +1646,11 @@ class WAFAnalyzer(Analyzer):
             metadata={
                 "bot_control_level": bot_mode,
                 "bot_control_requests": bot_requests,
-                "bot_control_requests_exact": (
-                    bot_requests_exact
-                ),
+                "bot_control_requests_exact": (bot_requests_exact),
                 "free_requests": free_requests,
                 "request_price_per_million": request_price,
                 "billable_requests": billable_requests,
-                "estimated_request_charge": (
-                    estimated_request_charge
-                ),
+                "estimated_request_charge": (estimated_request_charge),
             },
         )
 
@@ -2048,17 +1664,11 @@ class WAFAnalyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Optional[Finding]:
 
-        configuration = self._configuration(
-            evidence
-        )
+        configuration = self._configuration(evidence)
 
         premium = {
             str(value).strip().lower()
-            for value in _list(
-                configuration.get(
-                    "premium_features"
-                )
-            )
+            for value in _list(configuration.get("premium_features"))
         }
 
         fraud_features = sorted(
@@ -2081,24 +1691,13 @@ class WAFAnalyzer(Analyzer):
         # Fraud Control pricing is tiered and should not be guessed.
         # ---------------------------------------------------------------
 
-        fraud_requests = _number(
-            self._traffic(evidence).get(
-                "fraud_control_requests"
-            )
-        )
+        fraud_requests = _number(self._traffic(evidence).get("fraud_control_requests"))
 
         fraud_requests_exact = (
-            self._traffic(evidence).get(
-                "fraud_control_requests_exact"
-            )
-            is True
+            self._traffic(evidence).get("fraud_control_requests_exact") is True
         )
 
-        request_charge = _number(
-            configuration.get(
-                "fraud_control_request_charge"
-            )
-        )
+        request_charge = _number(configuration.get("fraud_control_request_charge"))
 
         return self._finding(
             context=context,
@@ -2120,10 +1719,7 @@ class WAFAnalyzer(Analyzer):
                 _statement(
                     name="fraud_control_features",
                     value=fraud_features,
-                    description=(
-                        "Fraud Control features detected "
-                        "in the Web ACL."
-                    ),
+                    description=("Fraud Control features detected " "in the Web ACL."),
                     source=["AWS WAF"],
                 ),
                 _statement(
@@ -2138,10 +1734,7 @@ class WAFAnalyzer(Analyzer):
                 ),
                 _statement(
                     name="subscription_charge_exposure",
-                    value=(
-                        len(fraud_features)
-                        * AWS_WAF_FRAUD_CONTROL_MONTHLY_PRICE
-                    ),
+                    value=(len(fraud_features) * AWS_WAF_FRAUD_CONTROL_MONTHLY_PRICE),
                     description=(
                         "Gross recurring subscription charge "
                         "associated with the detected Fraud "
@@ -2164,8 +1757,7 @@ class WAFAnalyzer(Analyzer):
                     name="fraud_control_requests_exact",
                     value=fraud_requests_exact,
                     description=(
-                        "Whether Fraud Control request volume "
-                        "is complete and exact."
+                        "Whether Fraud Control request volume " "is complete and exact."
                     ),
                     source=["WAF collector"],
                     unit="boolean",
@@ -2185,13 +1777,10 @@ class WAFAnalyzer(Analyzer):
             metadata={
                 "fraud_control_features": fraud_features,
                 "subscription_charge_exposure": (
-                    len(fraud_features)
-                    * AWS_WAF_FRAUD_CONTROL_MONTHLY_PRICE
+                    len(fraud_features) * AWS_WAF_FRAUD_CONTROL_MONTHLY_PRICE
                 ),
                 "fraud_control_requests": fraud_requests,
-                "fraud_control_requests_exact": (
-                    fraud_requests_exact
-                ),
+                "fraud_control_requests_exact": (fraud_requests_exact),
                 "request_charge": request_charge,
             },
         )
@@ -2208,15 +1797,9 @@ class WAFAnalyzer(Analyzer):
     ) -> float:
 
         candidates = (
-            context.resource.get(
-                "analyzer_config"
-            ),
-            context.resource.get(
-                "analysis_profile"
-            ),
-            context.resource.get(
-                "optimization_profile"
-            ),
+            context.resource.get("analyzer_config"),
+            context.resource.get("analysis_profile"),
+            context.resource.get("optimization_profile"),
         )
 
         for candidate in candidates:
@@ -2227,37 +1810,21 @@ class WAFAnalyzer(Analyzer):
             ):
                 continue
 
-            direct = _number(
-                candidate.get(
-                    name
-                )
-            )
+            direct = _number(candidate.get(name))
 
-            if (
-                direct is not None
-                and direct >= 0
-            ):
+            if direct is not None and direct >= 0:
                 return direct
 
-            waf = candidate.get(
-                "waf"
-            )
+            waf = candidate.get("waf")
 
             if isinstance(
                 waf,
                 dict,
             ):
 
-                nested = _number(
-                    waf.get(
-                        name
-                    )
-                )
+                nested = _number(waf.get(name))
 
-                if (
-                    nested is not None
-                    and nested >= 0
-                ):
+                if nested is not None and nested >= 0:
                     return nested
 
         return default
@@ -2287,38 +1854,22 @@ class WAFAnalyzer(Analyzer):
                 finding_type,
                 finding_type,
             ),
-            resource_type=(
-                context.resource_type
-                or "waf_web_acl"
-            ),
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
+            resource_type=(context.resource_type or "waf_web_acl"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
             analyzer_version=self.version,
-            severity=str(
-                severity
-            ).lower(),
-            confidence=str(
-                confidence
-            ).lower(),
+            severity=str(severity).lower(),
+            confidence=str(confidence).lower(),
             reason=reason,
             conditions=statements,
             evidence=self._build_evidence(
                 context,
                 evidence,
             ),
-            observation_period=(
-                self._observation_period(
-                    context
-                )
-            ),
+            observation_period=(self._observation_period(context)),
             metadata={
                 "region": context.region,
-                "recommendation_eligible": (
-                    recommendation_eligible
-                ),
+                "recommendation_eligible": (recommendation_eligible),
                 **(
                     metadata
                     if isinstance(
@@ -2328,12 +1879,8 @@ class WAFAnalyzer(Analyzer):
                     else {}
                 ),
             },
-            recommendation_eligible=(
-                recommendation_eligible
-            ),
-            cost_optimization_type=(
-                cost_optimization_type
-            ),
+            recommendation_eligible=(recommendation_eligible),
+            cost_optimization_type=(cost_optimization_type),
             impact={},
         )
 
@@ -2348,31 +1895,15 @@ class WAFAnalyzer(Analyzer):
 
         try:
 
-            cloudwatch = _dict(
-                context.cloudwatch()
-            )
+            cloudwatch = _dict(context.cloudwatch())
 
         except Exception:
 
             cloudwatch = {}
 
-        start = (
-            cloudwatch.get(
-                "start"
-            )
-            or cloudwatch.get(
-                "metric_start"
-            )
-        )
+        start = cloudwatch.get("start") or cloudwatch.get("metric_start")
 
-        end = (
-            cloudwatch.get(
-                "end"
-            )
-            or cloudwatch.get(
-                "metric_end"
-            )
-        )
+        end = cloudwatch.get("end") or cloudwatch.get("metric_end")
 
         if start or end:
 
@@ -2389,15 +1920,9 @@ class WAFAnalyzer(Analyzer):
         ):
 
             return ObservationPeriod(
-                start=value.get(
-                    "start"
-                ),
-                end=value.get(
-                    "end"
-                ),
-                duration_seconds=value.get(
-                    "duration_seconds"
-                ),
+                start=value.get("start"),
+                end=value.get("end"),
+                duration_seconds=value.get("duration_seconds"),
             )
 
         return None
@@ -2444,11 +1969,7 @@ class WAFAnalyzer(Analyzer):
 
             try:
 
-                metrics[str(name)] = (
-                    context.metric_summary(
-                        name
-                    )
-                )
+                metrics[str(name)] = context.metric_summary(name)
 
             except Exception:
 
@@ -2456,29 +1977,13 @@ class WAFAnalyzer(Analyzer):
 
         return Evidence(
             metrics=metrics,
-            configuration=_dict(
-                optimization_evidence.get(
-                    "configuration"
-                )
-            ),
+            configuration=_dict(optimization_evidence.get("configuration")),
             topology={},
-            resource=_dict(
-                optimization_evidence.get(
-                    "resource"
-                )
-            ),
+            resource=_dict(optimization_evidence.get("resource")),
             derived={
-                "traffic": self._traffic(
-                    optimization_evidence
-                ),
-                "cloudwatch": self._cloudwatch(
-                    optimization_evidence
-                ),
+                "traffic": self._traffic(optimization_evidence),
+                "cloudwatch": self._cloudwatch(optimization_evidence),
             },
-            billing=_dict(
-                context.billing()
-            ),
-            data_quality=self._quality(
-                optimization_evidence
-            ),
+            billing=_dict(context.billing()),
+            data_quality=self._quality(optimization_evidence),
         )

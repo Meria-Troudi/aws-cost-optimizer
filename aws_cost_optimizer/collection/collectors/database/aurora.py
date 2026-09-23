@@ -340,7 +340,6 @@ class AuroraClusterCollector(BaseCollector):
                 "cluster_create_time": self._isoformat(raw.get("ClusterCreateTime")),
             },
             "storage": {
-              
                 "storage_type": (
                     str(raw.get("StorageType") or "").strip().lower()
                     if raw.get("StorageType")
@@ -352,7 +351,6 @@ class AuroraClusterCollector(BaseCollector):
                 "io_optimized": (
                     str(raw.get("StorageType") or "").strip().lower() == "aurora-iopt1"
                 ),
-              
                 "api_allocated_storage_gib": raw.get("AllocatedStorage"),
                 "storage_encrypted": raw.get("StorageEncrypted"),
                 "storage_encryption_type": raw.get("StorageEncryptionType"),

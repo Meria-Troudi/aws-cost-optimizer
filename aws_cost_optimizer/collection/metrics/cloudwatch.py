@@ -449,6 +449,7 @@ class CloudWatchMetricCollector:
             return canonical
 
         raise ValueError(f"Unsupported CloudWatch statistic: {statistic}")
+
     @classmethod
     def _normalize_requested_period(
         cls,
@@ -502,6 +503,7 @@ class CloudWatchMetricCollector:
         seconds: int,
     ) -> int:
         return ((seconds + cls.MINUTE - 1) // cls.MINUTE) * cls.MINUTE
+
     @classmethod
     def _build_common_metadata(
         cls,
@@ -554,6 +556,7 @@ class CloudWatchMetricCollector:
             "expected_datapoints": expected_datapoints,
             "request_count": request_count,
         }
+
     @classmethod
     def _calculate_chunk_duration(
         cls,
@@ -646,6 +649,7 @@ class CloudWatchMetricCollector:
                 "error": str(exc),
                 "request_count": request_count,
             }
+
     def _build_result(
         self,
         common: Dict[str, Any],
@@ -870,6 +874,7 @@ class CloudWatchMetricCollector:
         )
 
         return result
+
     @classmethod
     def _select_metric_value(
         cls,
@@ -991,6 +996,7 @@ class CloudWatchMetricCollector:
                 CloudWatchMetricCollector._normalize_datetime(point["Timestamp"])
             ),
         )
+
     @staticmethod
     def _round(
         value: Optional[float],

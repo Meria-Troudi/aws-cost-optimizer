@@ -510,11 +510,7 @@ def _build_reconciliation_finding(
                 # matched to (e.g. endpoint_type/source for a VPC
                 # endpoint). Used by the summary presentation to make
                 # the non-attribution explicit and defensible.
-                "current_resource_id": (
-                    resource_ids[0]
-                    if resource_ids
-                    else "unknown"
-                ),
+                "current_resource_id": (resource_ids[0] if resource_ids else "unknown"),
                 "current_configuration": (
                     evidence_source.get(
                         "configuration",

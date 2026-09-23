@@ -47,7 +47,6 @@ from ...financial import calculate_savings
 from ...finding import Finding, ObservationPeriod
 from ...registry import register
 
-
 # ============================================================================
 # DEFAULT POLICY
 # ============================================================================
@@ -61,7 +60,6 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
         "low_connections_average": 10.0,
         "recommendation_eligible": True,
     },
-
     "reader_autoscaling": {
         "enabled": True,
         "minimum_readers": 1,
@@ -71,7 +69,6 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
         "minimum_observation_days": 14.0,
         "recommendation_eligible": True,
     },
-
     "reader_utilization": {
         "enabled": True,
         "connections_max": 2.0,
@@ -82,13 +79,11 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
         "minimum_observation_days": 14.0,
         "recommendation_eligible": False,
     },
-
     "reader_count": {
         "enabled": True,
         "minimum_readers": 1,
         "recommendation_eligible": False,
     },
-
     "idle": {
         "enabled": True,
         "minimum_observation_days": 14.0,
@@ -99,36 +94,30 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
         "write_iops_max": 1.0,
         "recommendation_eligible": False,
     },
-
     "serverless_capacity": {
         "enabled": True,
         "high_capacity_utilization_percent": 80.0,
         "recommendation_eligible": False,
     },
-
     "backup_retention": {
         "enabled": True,
         "review_threshold_days": 14,
         "recommendation_eligible": False,
     },
-
     "global_database": {
         "enabled": True,
         "recommendation_eligible": False,
     },
-
     "serverless_v1": {
         "enabled": True,
         "recommendation_eligible": False,
     },
-
     "io_optimized_review": {
         "enabled": True,
         "minimum_observation_days": 14.0,
         "minimum_read_write_iops": 1000.0,
         "recommendation_eligible": False,
     },
-
     "stopped_cluster": {
         "enabled": True,
         "recommendation_eligible": True,
@@ -141,44 +130,24 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
 # ============================================================================
 
 TITLES: dict[str, str] = {
-    "aurora_serverless_v2_cost_opportunity":
-        "Provisioned Aurora Cluster With Sustained Low Workload",
-
-    "aurora_reader_autoscaling_cost_opportunity":
-        "Aurora Reader With Sustained Workload Without Auto Scaling",
-
-    "aurora_io_optimized_high_io":
-        "Aurora Standard Storage With High I/O Activity",
-
-    "aurora_no_observed_activity":
-        "Aurora Cluster With Very Low Activity",
-
-    "aurora_reader_underutilized":
-        "Lightly Utilized Aurora Reader",
-
-    "aurora_reader_capacity_excess":
-        "Aurora Cluster Has Additional Reader Capacity",
-
-    "aurora_serverless_capacity_pressure":
-        "Aurora Serverless v2 With High ACU Utilization",
-
-    "aurora_backup_retention_excess":
-        "Aurora Backup Retention Exceeds Configured Threshold",
-
-    "aurora_global_database":
-        "Aurora Cluster Is Part of a Global Database",
-
-    "aurora_serverless_v1_detected":
-        "Aurora Cluster Uses Serverless v1",
-
-    "aurora_stopped_cluster":
-        "Stopped Aurora Cluster — Amazon RDS",
+    "aurora_serverless_v2_cost_opportunity": "Provisioned Aurora Cluster With Sustained Low Workload",
+    "aurora_reader_autoscaling_cost_opportunity": "Aurora Reader With Sustained Workload Without Auto Scaling",
+    "aurora_io_optimized_high_io": "Aurora Standard Storage With High I/O Activity",
+    "aurora_no_observed_activity": "Aurora Cluster With Very Low Activity",
+    "aurora_reader_underutilized": "Lightly Utilized Aurora Reader",
+    "aurora_reader_capacity_excess": "Aurora Cluster Has Additional Reader Capacity",
+    "aurora_serverless_capacity_pressure": "Aurora Serverless v2 With High ACU Utilization",
+    "aurora_backup_retention_excess": "Aurora Backup Retention Exceeds Configured Threshold",
+    "aurora_global_database": "Aurora Cluster Is Part of a Global Database",
+    "aurora_serverless_v1_detected": "Aurora Cluster Uses Serverless v1",
+    "aurora_stopped_cluster": "Stopped Aurora Cluster — Amazon RDS",
 }
 
 
 # ============================================================================
 # GENERIC HELPERS
 # ============================================================================
+
 
 def _dict(value: Any) -> dict[str, Any]:
     """Return value when it is a dictionary, otherwise an empty dictionary."""
@@ -225,6 +194,7 @@ def _boolean(value: Any) -> bool | None:
 # ANALYZER
 # ============================================================================
 
+
 @register
 class AuroraAnalyzer(Analyzer):
 
@@ -263,11 +233,9 @@ class AuroraAnalyzer(Analyzer):
         checks = (
             # Lifecycle must be checked first.
             self._check_stopped_cluster,
-
             # Primary optimization opportunities.
             self._check_serverless_v2_cost_opportunity,
             self._check_reader_autoscaling_cost_opportunity,
-
             # Diagnostic / review findings.
             self._check_reader_underutilization,
             self._check_reader_count_review,
@@ -370,36 +338,28 @@ class AuroraAnalyzer(Analyzer):
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            cls._configuration(context).get("cluster")
-        )
+        return cls._dict(cls._configuration(context).get("cluster"))
 
     @classmethod
     def _backup(
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            cls._configuration(context).get("backup")
-        )
+        return cls._dict(cls._configuration(context).get("backup"))
 
     @classmethod
     def _serverless_v2(
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            cls._configuration(context).get("serverless_v2")
-        )
+        return cls._dict(cls._configuration(context).get("serverless_v2"))
 
     @classmethod
     def _serverless_v1(
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            cls._configuration(context).get("serverless_v1")
-        )
+        return cls._dict(cls._configuration(context).get("serverless_v1"))
 
     # ======================================================================
     # RELATIONSHIPS
@@ -410,9 +370,7 @@ class AuroraAnalyzer(Analyzer):
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            context.resource.get("relationships")
-        )
+        return cls._dict(context.resource.get("relationships"))
 
     @classmethod
     def _reader_instances(
@@ -422,9 +380,7 @@ class AuroraAnalyzer(Analyzer):
 
         return [
             str(value)
-            for value in _list(
-                cls._relationships(context).get("reader_instances")
-            )
+            for value in _list(cls._relationships(context).get("reader_instances"))
             if value
         ]
 
@@ -436,16 +392,12 @@ class AuroraAnalyzer(Analyzer):
 
         relationships = cls._relationships(context)
 
-        explicit = _number(
-            relationships.get("reader_count")
-        )
+        explicit = _number(relationships.get("reader_count"))
 
         if explicit is not None:
             return max(0, int(explicit))
 
-        return len(
-            cls._reader_instances(context)
-        )
+        return len(cls._reader_instances(context))
 
     # ======================================================================
     # CLOUDWATCH
@@ -456,9 +408,7 @@ class AuroraAnalyzer(Analyzer):
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            context.cloudwatch()
-        )
+        return cls._dict(context.cloudwatch())
 
     @classmethod
     def _group(
@@ -467,9 +417,7 @@ class AuroraAnalyzer(Analyzer):
         name: str,
     ) -> dict[str, Any]:
 
-        return cls._dict(
-            cls._cloudwatch(context).get(name)
-        )
+        return cls._dict(cls._cloudwatch(context).get(name))
 
     @classmethod
     def _metrics(
@@ -498,11 +446,7 @@ class AuroraAnalyzer(Analyzer):
             group,
         ).get(name)
 
-        return (
-            metric
-            if isinstance(metric, dict)
-            else {}
-        )
+        return metric if isinstance(metric, dict) else {}
 
     # ======================================================================
     # METRIC VALIDATION
@@ -519,17 +463,12 @@ class AuroraAnalyzer(Analyzer):
         if metric.get("has_data") is not True:
             return False
 
-        status = str(
-            metric.get("status") or "ok"
-        ).strip().lower()
+        status = str(metric.get("status") or "ok").strip().lower()
 
         if status == "error":
             return False
 
-        return (
-            metric.get("average") is not None
-            or metric.get("value") is not None
-        )
+        return metric.get("average") is not None or metric.get("value") is not None
 
     @classmethod
     def _metric_value(
@@ -541,9 +480,7 @@ class AuroraAnalyzer(Analyzer):
         if not cls._metric_observed(metric):
             return None
 
-        return _number(
-            metric.get(field)
-        )
+        return _number(metric.get(field))
 
     @classmethod
     def _metric_ready(
@@ -568,10 +505,13 @@ class AuroraAnalyzer(Analyzer):
             return False
 
         if require_maximum:
-            if cls._metric_value(
-                metric,
-                "maximum",
-            ) is None:
+            if (
+                cls._metric_value(
+                    metric,
+                    "maximum",
+                )
+                is None
+            ):
                 return False
 
         return True
@@ -588,21 +528,13 @@ class AuroraAnalyzer(Analyzer):
         name: str,
     ) -> dict[str, Any]:
 
-        instances = cls._dict(
-            cls._cloudwatch(context).get("instances")
-        )
+        instances = cls._dict(cls._cloudwatch(context).get("instances"))
 
-        instance = cls._dict(
-            instances.get(instance_id)
-        )
+        instance = cls._dict(instances.get(instance_id))
 
-        metrics = cls._dict(
-            instance.get("metrics")
-        )
+        metrics = cls._dict(instance.get("metrics"))
 
-        return cls._dict(
-            metrics.get(name)
-        )
+        return cls._dict(metrics.get(name))
 
     # ======================================================================
     # OBSERVATION PERIOD
@@ -622,14 +554,8 @@ class AuroraAnalyzer(Analyzer):
         cloudwatch = cls._cloudwatch(context)
 
         return {
-            "start": (
-                cloudwatch.get("analysis_start")
-                or cloudwatch.get("start")
-            ),
-            "end": (
-                cloudwatch.get("analysis_end")
-                or cloudwatch.get("end")
-            ),
+            "start": (cloudwatch.get("analysis_start") or cloudwatch.get("start")),
+            "end": (cloudwatch.get("analysis_end") or cloudwatch.get("end")),
         }
 
     @classmethod
@@ -669,9 +595,7 @@ class AuroraAnalyzer(Analyzer):
                 )
             )
 
-            duration = (
-                end_dt - start_dt
-            ).total_seconds()
+            duration = (end_dt - start_dt).total_seconds()
 
             if duration < 0:
                 return None
@@ -742,9 +666,7 @@ class AuroraAnalyzer(Analyzer):
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return _dict(
-            context.billing()
-        )
+        return _dict(context.billing())
 
     @classmethod
     def _billing_status(
@@ -754,9 +676,7 @@ class AuroraAnalyzer(Analyzer):
 
         billing = cls._billing(context)
 
-        scope = str(
-            billing.get("attribution_scope") or ""
-        ).strip().lower()
+        scope = str(billing.get("attribution_scope") or "").strip().lower()
 
         if scope == "resource":
             return "resource_attributed"
@@ -799,23 +719,13 @@ class AuroraAnalyzer(Analyzer):
         if not billing:
             return None
 
-        scope = str(
-            billing.get("attribution_scope") or ""
-        ).strip().lower()
+        scope = str(billing.get("attribution_scope") or "").strip().lower()
 
-        resource_attributed = billing.get(
-            "resource_cost_attributed"
-        )
+        resource_attributed = billing.get("resource_cost_attributed")
 
-        claimable = _number(
-            billing.get(
-                "claimable_resource_cost"
-            )
-        )
+        claimable = _number(billing.get("claimable_resource_cost"))
 
-        amount = _number(
-            billing.get("amount")
-        )
+        amount = _number(billing.get("amount"))
 
         if (
             scope == "resource"
@@ -857,9 +767,7 @@ class AuroraAnalyzer(Analyzer):
 
         cluster = self._cluster(context)
 
-        status = str(
-            cluster.get("status") or ""
-        ).strip().lower()
+        status = str(cluster.get("status") or "").strip().lower()
 
         if status != "stopped":
             return None
@@ -869,81 +777,47 @@ class AuroraAnalyzer(Analyzer):
         observations = self._observations(context)
         relationships = self._relationships(context)
 
-        backup_obs = _dict(
-            observations.get("backup")
-        )
+        backup_obs = _dict(observations.get("backup"))
 
-        automated_backup_obs = _dict(
-            observations.get("automated_backup")
-        )
+        automated_backup_obs = _dict(observations.get("automated_backup"))
 
-        lifecycle = _dict(
-            observations.get("lifecycle")
-        )
+        lifecycle = _dict(observations.get("lifecycle"))
 
-        manual_snapshot_count = _number(
-            backup_obs.get("manual_count")
-        )
+        manual_snapshot_count = _number(backup_obs.get("manual_count"))
 
-        automated_snapshot_count = _number(
-            backup_obs.get("automated_count")
-        )
+        automated_snapshot_count = _number(backup_obs.get("automated_count"))
 
         automated_backup_resource_count = _number(
             automated_backup_obs.get("backup_count")
         )
 
-        retention_days = _number(
-            backup.get("backup_retention_days")
-        )
+        retention_days = _number(backup.get("backup_retention_days"))
 
-        deletion_protection = configuration.get(
-            "deletion_protection"
-        )
+        deletion_protection = configuration.get("deletion_protection")
 
-        writer_count = _number(
-            relationships.get("writer_count")
-        ) or 0.0
+        writer_count = _number(relationships.get("writer_count")) or 0.0
 
-        reader_count = _number(
-            relationships.get("reader_count")
-        ) or 0.0
+        reader_count = _number(relationships.get("reader_count")) or 0.0
 
         member_count = writer_count + reader_count
 
-        events = _list(
-            lifecycle.get("events")
-        )
+        events = _list(lifecycle.get("events"))
 
         stop_events = [
             event
             for event in events
-            if (
-                isinstance(event, dict)
-                and event.get("event_name") == "StopDBCluster"
-            )
+            if (isinstance(event, dict) and event.get("event_name") == "StopDBCluster")
         ]
 
         start_events = [
             event
             for event in events
-            if (
-                isinstance(event, dict)
-                and event.get("event_name") == "StartDBCluster"
-            )
+            if (isinstance(event, dict) and event.get("event_name") == "StartDBCluster")
         ]
 
-        last_stop = (
-            stop_events[-1]
-            if stop_events
-            else None
-        )
+        last_stop = stop_events[-1] if stop_events else None
 
-        last_start = (
-            start_events[-1]
-            if start_events
-            else None
-        )
+        last_start = start_events[-1] if start_events else None
 
         statements: list[EvidenceStatement] = [
             self._statement(
@@ -951,16 +825,12 @@ class AuroraAnalyzer(Analyzer):
                 value=cluster.get("identifier"),
                 description="Aurora DB cluster identifier.",
                 source=["RDS.DescribeDBClusters"],
-                observed=(
-                    cluster.get("identifier") is not None
-                ),
+                observed=(cluster.get("identifier") is not None),
             ),
             self._statement(
                 name="cluster_status",
                 value="stopped",
-                description=(
-                    "Current Aurora DB cluster lifecycle state."
-                ),
+                description=("Current Aurora DB cluster lifecycle state."),
                 source=["RDS.DescribeDBClusters"],
                 observed=True,
             ),
@@ -972,8 +842,7 @@ class AuroraAnalyzer(Analyzer):
                     name="backup_retention_days",
                     value=int(retention_days),
                     description=(
-                        "Configured Aurora automated "
-                        "backup retention period."
+                        "Configured Aurora automated " "backup retention period."
                     ),
                     source=["RDS.DescribeDBClusters"],
                     observed=True,
@@ -986,10 +855,7 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="manual_snapshot_count",
                     value=int(manual_snapshot_count),
-                    description=(
-                        "Current manual Aurora cluster "
-                        "snapshot count."
-                    ),
+                    description=("Current manual Aurora cluster " "snapshot count."),
                     source=["RDS.DescribeDBClusterSnapshots"],
                     observed=True,
                     unit="snapshots",
@@ -1001,10 +867,7 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="automated_snapshot_count",
                     value=int(automated_snapshot_count),
-                    description=(
-                        "Current automated Aurora cluster "
-                        "snapshot count."
-                    ),
+                    description=("Current automated Aurora cluster " "snapshot count."),
                     source=["RDS.DescribeDBClusterSnapshots"],
                     observed=True,
                     unit="snapshots",
@@ -1015,16 +878,11 @@ class AuroraAnalyzer(Analyzer):
             statements.append(
                 self._statement(
                     name="automated_backup_resource_count",
-                    value=int(
-                        automated_backup_resource_count
-                    ),
+                    value=int(automated_backup_resource_count),
                     description=(
-                        "Automated backup resources retained "
-                        "for this cluster."
+                        "Automated backup resources retained " "for this cluster."
                     ),
-                    source=[
-                        "RDS.DescribeDBClusterAutomatedBackups"
-                    ],
+                    source=["RDS.DescribeDBClusterAutomatedBackups"],
                     observed=True,
                     unit="backups",
                 )
@@ -1035,13 +893,10 @@ class AuroraAnalyzer(Analyzer):
                 name="deletion_protection",
                 value=deletion_protection,
                 description=(
-                    "Whether deletion protection is enabled "
-                    "for the Aurora cluster."
+                    "Whether deletion protection is enabled " "for the Aurora cluster."
                 ),
                 source=["RDS.DescribeDBClusters"],
-                observed=(
-                    deletion_protection is not None
-                ),
+                observed=(deletion_protection is not None),
             )
         )
 
@@ -1050,8 +905,7 @@ class AuroraAnalyzer(Analyzer):
                 name="member_count",
                 value=int(member_count),
                 description=(
-                    "Number of DB instances currently "
-                    "associated with the cluster."
+                    "Number of DB instances currently " "associated with the cluster."
                 ),
                 source=["RDS.DescribeDBClusters"],
                 observed=True,
@@ -1062,9 +916,7 @@ class AuroraAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type="aurora_stopped_cluster",
-            title=TITLES[
-                "aurora_stopped_cluster"
-            ],
+            title=TITLES["aurora_stopped_cluster"],
             severity="medium",
             confidence="high",
             reason=(
@@ -1081,15 +933,9 @@ class AuroraAnalyzer(Analyzer):
                 "category": "lifecycle_optimization",
                 "cluster_status": "stopped",
                 "backup_retention_days": retention_days,
-                "manual_snapshot_count": (
-                    manual_snapshot_count
-                ),
-                "automated_snapshot_count": (
-                    automated_snapshot_count
-                ),
-                "automated_backup_resource_count": (
-                    automated_backup_resource_count
-                ),
+                "manual_snapshot_count": (manual_snapshot_count),
+                "automated_snapshot_count": (automated_snapshot_count),
+                "automated_backup_resource_count": (automated_backup_resource_count),
                 "deletion_protection": deletion_protection,
                 "member_count": member_count,
                 "last_stop_event": last_stop,
@@ -1126,16 +972,12 @@ class AuroraAnalyzer(Analyzer):
 
         cluster = self._cluster(context)
 
-        if str(
-            cluster.get("status") or ""
-        ).lower() != "available":
+        if str(cluster.get("status") or "").lower() != "available":
             return None
 
         serverless = self._serverless_v2(context)
 
-        enabled = _boolean(
-            serverless.get("enabled")
-        )
+        enabled = _boolean(serverless.get("enabled"))
 
         if enabled is True:
             return None
@@ -1180,9 +1022,7 @@ class AuroraAnalyzer(Analyzer):
             cpu,
             "maximum",
         )
-        connections_average = self._metric_value(
-            connections
-        )
+        connections_average = self._metric_value(connections)
 
         if any(
             value is None
@@ -1220,12 +1060,8 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_serverless_v2_cost_opportunity"
-            ),
-            title=TITLES[
-                "aurora_serverless_v2_cost_opportunity"
-            ],
+            finding_type=("aurora_serverless_v2_cost_opportunity"),
+            title=TITLES["aurora_serverless_v2_cost_opportunity"],
             severity="medium",
             confidence="high",
             reason=(
@@ -1253,9 +1089,7 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="current_capacity_model",
                     value="provisioned",
-                    description=(
-                        "Current Aurora capacity model."
-                    ),
+                    description=("Current Aurora capacity model."),
                     source=["RDS.DescribeDBClusters"],
                     observed=True,
                 ),
@@ -1263,8 +1097,7 @@ class AuroraAnalyzer(Analyzer):
                     name="serverless_v2_enabled",
                     value=False,
                     description=(
-                        "Aurora Serverless v2 is not currently "
-                        "configured."
+                        "Aurora Serverless v2 is not currently " "configured."
                     ),
                     source=["RDS.DescribeDBClusters"],
                     observed=True,
@@ -1272,15 +1105,10 @@ class AuroraAnalyzer(Analyzer):
             ],
             metadata={
                 "category": "capacity_optimization",
-                "optimization": (
-                    "evaluate_aurora_serverless_v2"
-                ),
-                "billing_status": (
-                    self._billing_status(context)
-                ),
+                "optimization": ("evaluate_aurora_serverless_v2"),
+                "billing_status": (self._billing_status(context)),
                 "billing_is_not_resource_attributed": (
-                    self._current_resource_cost(context)
-                    is None
+                    self._current_resource_cost(context) is None
                 ),
                 "observation_days": observation_days,
                 "cpu_average_percent": cpu_average,
@@ -1319,9 +1147,7 @@ class AuroraAnalyzer(Analyzer):
 
         cluster = self._cluster(context)
 
-        if str(
-            cluster.get("status") or ""
-        ).lower() != "available":
+        if str(cluster.get("status") or "").lower() != "available":
             return None
 
         reader_count = self._reader_count(context)
@@ -1349,16 +1175,12 @@ class AuroraAnalyzer(Analyzer):
 
         relationships = self._relationships(context)
 
-        autoscaling = _dict(
-            relationships.get("reader_autoscaling")
-        )
+        autoscaling = _dict(relationships.get("reader_autoscaling"))
 
         if autoscaling.get("status") == "error":
             return None
 
-        configured = _boolean(
-            autoscaling.get("configured")
-        )
+        configured = _boolean(autoscaling.get("configured"))
 
         if configured is not False:
             return None
@@ -1395,9 +1217,7 @@ class AuroraAnalyzer(Analyzer):
             cpu,
             "maximum",
         )
-        connection_average = self._metric_value(
-            connections
-        )
+        connection_average = self._metric_value(connections)
 
         if any(
             value is None
@@ -1409,60 +1229,38 @@ class AuroraAnalyzer(Analyzer):
         ):
             return None
 
-        average_cpu_trigger = (
-            cpu_average
-            >= float(
-                policy.get(
-                    "reader_cpu_average_min_percent",
-                    20.0,
-                )
+        average_cpu_trigger = cpu_average >= float(
+            policy.get(
+                "reader_cpu_average_min_percent",
+                20.0,
             )
         )
 
-        peak_cpu_trigger = (
-            cpu_maximum
-            >= float(
-                policy.get(
-                    "reader_cpu_maximum_min_percent",
-                    50.0,
-                )
+        peak_cpu_trigger = cpu_maximum >= float(
+            policy.get(
+                "reader_cpu_maximum_min_percent",
+                50.0,
             )
         )
 
-        connections_trigger = (
-            connection_average
-            >= float(
-                policy.get(
-                    "reader_connections_average_min",
-                    5.0,
-                )
+        connections_trigger = connection_average >= float(
+            policy.get(
+                "reader_connections_average_min",
+                5.0,
             )
         )
 
-        sustained_demand = (
-            average_cpu_trigger
-            and connections_trigger
-        )
+        sustained_demand = average_cpu_trigger and connections_trigger
 
-        peak_plus_connections = (
-            peak_cpu_trigger
-            and connections_trigger
-        )
+        peak_plus_connections = peak_cpu_trigger and connections_trigger
 
-        if not (
-            sustained_demand
-            or peak_plus_connections
-        ):
+        if not (sustained_demand or peak_plus_connections):
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_reader_autoscaling_cost_opportunity"
-            ),
-            title=TITLES[
-                "aurora_reader_autoscaling_cost_opportunity"
-            ],
+            finding_type=("aurora_reader_autoscaling_cost_opportunity"),
+            title=TITLES["aurora_reader_autoscaling_cost_opportunity"],
             severity="medium",
             confidence="high",
             reason=(
@@ -1478,12 +1276,8 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="reader_count",
                     value=reader_count,
-                    description=(
-                        "Current Aurora reader count."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Current Aurora reader count."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                     unit="readers",
                 ),
@@ -1501,23 +1295,16 @@ class AuroraAnalyzer(Analyzer):
                     name="reader_autoscaling_configured",
                     value=False,
                     description=(
-                        "Aurora Reader Auto Scaling is not "
-                        "currently configured."
+                        "Aurora Reader Auto Scaling is not " "currently configured."
                     ),
-                    source=[
-                        "Application Auto Scaling"
-                    ],
+                    source=["Application Auto Scaling"],
                     observed=True,
                 ),
             ],
             metadata={
                 "category": "reader_capacity_optimization",
-                "optimization": (
-                    "enable_aurora_reader_autoscaling"
-                ),
-                "billing_status": (
-                    self._billing_status(context)
-                ),
+                "optimization": ("enable_aurora_reader_autoscaling"),
+                "billing_status": (self._billing_status(context)),
                 "observation_days": observation_days,
                 "reader_count": reader_count,
                 "cpu_average_percent": cpu_average,
@@ -1607,9 +1394,7 @@ class AuroraAnalyzer(Analyzer):
                 cpu,
                 "maximum",
             )
-            connection_average = self._metric_value(
-                connections
-            )
+            connection_average = self._metric_value(connections)
             rx_average = self._metric_value(rx)
             tx_average = self._metric_value(tx)
 
@@ -1682,9 +1467,7 @@ class AuroraAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type="aurora_reader_underutilized",
-            title=TITLES[
-                "aurora_reader_underutilized"
-            ],
+            title=TITLES["aurora_reader_underutilized"],
             severity="low",
             confidence="high",
             reason=(
@@ -1697,9 +1480,7 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="underutilized_readers",
                     value=candidates,
-                    description=(
-                        "Aurora readers with low observed workload."
-                    ),
+                    description=("Aurora readers with low observed workload."),
                     source=[
                         "RDS",
                         "CloudWatch",
@@ -1749,9 +1530,7 @@ class AuroraAnalyzer(Analyzer):
 
         reader_instances = self._reader_instances(context)
 
-        explicit_count = _number(
-            relationships.get("reader_count")
-        )
+        explicit_count = _number(relationships.get("reader_count"))
 
         if explicit_count is None and not reader_instances:
             return None
@@ -1774,9 +1553,7 @@ class AuroraAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type="aurora_reader_capacity_excess",
-            title=TITLES[
-                "aurora_reader_capacity_excess"
-            ],
+            title=TITLES["aurora_reader_capacity_excess"],
             severity="low",
             confidence="high",
             reason=(
@@ -1789,12 +1566,8 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="reader_count",
                     value=reader_count,
-                    description=(
-                        "Current Aurora reader count."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Current Aurora reader count."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                     unit="readers",
                 )
@@ -1858,9 +1631,7 @@ class AuroraAnalyzer(Analyzer):
                 context,
                 "cluster",
                 name,
-                require_maximum=(
-                    name == "CPUUtilization"
-                ),
+                require_maximum=(name == "CPUUtilization"),
             ):
                 return None
 
@@ -1870,26 +1641,18 @@ class AuroraAnalyzer(Analyzer):
                 name,
             )
 
-        cpu_average = self._metric_value(
-            metrics["CPUUtilization"]
-        )
+        cpu_average = self._metric_value(metrics["CPUUtilization"])
 
         cpu_maximum = self._metric_value(
             metrics["CPUUtilization"],
             "maximum",
         )
 
-        connections = self._metric_value(
-            metrics["DatabaseConnections"]
-        )
+        connections = self._metric_value(metrics["DatabaseConnections"])
 
-        read_iops = self._metric_value(
-            metrics["VolumeReadIOPs"]
-        )
+        read_iops = self._metric_value(metrics["VolumeReadIOPs"])
 
-        write_iops = self._metric_value(
-            metrics["VolumeWriteIOPs"]
-        )
+        write_iops = self._metric_value(metrics["VolumeWriteIOPs"])
 
         if any(
             value is None
@@ -1946,9 +1709,7 @@ class AuroraAnalyzer(Analyzer):
         return self._finding(
             context=context,
             finding_type="aurora_no_observed_activity",
-            title=TITLES[
-                "aurora_no_observed_activity"
-            ],
+            title=TITLES["aurora_no_observed_activity"],
             severity="medium",
             confidence="high",
             reason=(
@@ -2017,9 +1778,7 @@ class AuroraAnalyzer(Analyzer):
 
         serverless = self._serverless_v2(context)
 
-        if _boolean(
-            serverless.get("enabled")
-        ) is not True:
+        if _boolean(serverless.get("enabled")) is not True:
             return None
 
         metric = self._metric(
@@ -2048,12 +1807,8 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_serverless_capacity_pressure"
-            ),
-            title=TITLES[
-                "aurora_serverless_capacity_pressure"
-            ],
+            finding_type=("aurora_serverless_capacity_pressure"),
+            title=TITLES["aurora_serverless_capacity_pressure"],
             severity="medium",
             confidence="high",
             reason=(
@@ -2071,12 +1826,8 @@ class AuroraAnalyzer(Analyzer):
             metadata={
                 "category": "serverless_capacity",
                 "acu_utilization_percent": utilization,
-                "min_capacity": (
-                    serverless.get("min_capacity")
-                ),
-                "max_capacity": (
-                    serverless.get("max_capacity")
-                ),
+                "min_capacity": (serverless.get("min_capacity")),
+                "max_capacity": (serverless.get("max_capacity")),
             },
             recommendation_eligible=bool(
                 policy.get(
@@ -2095,11 +1846,7 @@ class AuroraAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> Finding | None:
 
-        policy = _dict(
-            self._policy(context).get(
-                "io_optimized_review"
-            )
-        )
+        policy = _dict(self._policy(context).get("io_optimized_review"))
 
         if not policy.get("enabled", True):
             return None
@@ -2115,15 +1862,9 @@ class AuroraAnalyzer(Analyzer):
         if not self._available_cluster(context):
             return None
 
-        storage = _dict(
-            self._configuration(context).get(
-                "storage"
-            )
-        )
+        storage = _dict(self._configuration(context).get("storage"))
 
-        storage_type = str(
-            storage.get("storage_type") or ""
-        ).strip().lower()
+        storage_type = str(storage.get("storage_type") or "").strip().lower()
 
         if storage_type != "aurora":
             return None
@@ -2161,9 +1902,7 @@ class AuroraAnalyzer(Analyzer):
         if read_iops is None or write_iops is None:
             return None
 
-        total_iops = (
-            read_iops + write_iops
-        )
+        total_iops = read_iops + write_iops
 
         threshold = float(
             policy.get(
@@ -2177,12 +1916,8 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_io_optimized_high_io"
-            ),
-            title=TITLES[
-                "aurora_io_optimized_high_io"
-            ],
+            finding_type=("aurora_io_optimized_high_io"),
+            title=TITLES["aurora_io_optimized_high_io"],
             severity="low",
             confidence="medium",
             reason=(
@@ -2207,20 +1942,14 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="storage_type",
                     value=storage_type,
-                    description=(
-                        "Current Aurora storage configuration."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Current Aurora storage configuration."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 ),
             ],
             metadata={
                 "category": "storage_cost_review",
-                "optimization": (
-                    "evaluate_aurora_io_optimized"
-                ),
+                "optimization": ("evaluate_aurora_io_optimized"),
                 "storage_type": storage_type,
                 "observation_days": observation_days,
                 "read_iops": read_iops,
@@ -2255,11 +1984,7 @@ class AuroraAnalyzer(Analyzer):
         if not policy.get("enabled", True):
             return None
 
-        retention = _number(
-            self._backup(context).get(
-                "backup_retention_days"
-            )
-        )
+        retention = _number(self._backup(context).get("backup_retention_days"))
 
         if retention is None:
             return None
@@ -2279,12 +2004,8 @@ class AuroraAnalyzer(Analyzer):
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_backup_retention_excess"
-            ),
-            title=TITLES[
-                "aurora_backup_retention_excess"
-            ],
+            finding_type=("aurora_backup_retention_excess"),
+            title=TITLES["aurora_backup_retention_excess"],
             severity="low",
             confidence="high",
             reason=(
@@ -2297,12 +2018,8 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="backup_retention_days",
                     value=int(retention),
-                    description=(
-                        "Configured Aurora backup retention."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Configured Aurora backup retention."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                     unit="days",
                 )
@@ -2340,23 +2057,15 @@ class AuroraAnalyzer(Analyzer):
         if not policy.get("enabled", True):
             return None
 
-        identifier = self._relationships(
-            context
-        ).get(
-            "global_cluster_identifier"
-        )
+        identifier = self._relationships(context).get("global_cluster_identifier")
 
         if not identifier:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_global_database"
-            ),
-            title=TITLES[
-                "aurora_global_database"
-            ],
+            finding_type=("aurora_global_database"),
+            title=TITLES["aurora_global_database"],
             severity="info",
             confidence="high",
             reason=(
@@ -2369,12 +2078,8 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="global_cluster_identifier",
                     value=identifier,
-                    description=(
-                        "Aurora Global Database identifier."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Aurora Global Database identifier."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 )
             ],
@@ -2410,23 +2115,15 @@ class AuroraAnalyzer(Analyzer):
         if not policy.get("enabled", True):
             return None
 
-        configuration = self._serverless_v1(
-            context
-        )
+        configuration = self._serverless_v1(context)
 
-        if _boolean(
-            configuration.get("enabled")
-        ) is not True:
+        if _boolean(configuration.get("enabled")) is not True:
             return None
 
         return self._finding(
             context=context,
-            finding_type=(
-                "aurora_serverless_v1_detected"
-            ),
-            title=TITLES[
-                "aurora_serverless_v1_detected"
-            ],
+            finding_type=("aurora_serverless_v1_detected"),
+            title=TITLES["aurora_serverless_v1_detected"],
             severity="low",
             confidence="high",
             reason=(
@@ -2438,12 +2135,8 @@ class AuroraAnalyzer(Analyzer):
                 self._statement(
                     name="serverless_v1",
                     value=configuration,
-                    description=(
-                        "Aurora Serverless v1 configuration."
-                    ),
-                    source=[
-                        "RDS.DescribeDBClusters"
-                    ],
+                    description=("Aurora Serverless v1 configuration."),
+                    source=["RDS.DescribeDBClusters"],
                     observed=True,
                 )
             ],
@@ -2467,9 +2160,7 @@ class AuroraAnalyzer(Analyzer):
         cls,
         context: AnalysisContext,
     ) -> dict[str, Any]:
-        return cls._dict(
-            context.observations()
-        )
+        return cls._dict(context.observations())
 
     # ======================================================================
     # EVIDENCE
@@ -2492,19 +2183,10 @@ class AuroraAnalyzer(Analyzer):
         return cls._statement(
             name=name,
             value=metric,
-            description=(
-                f"Observed Aurora {name} metric."
-            ),
-            source=[
-                "CloudWatch.AWS/RDS"
-            ],
-            evidence_keys=[
-                "observations.cloudwatch."
-                f"{group}.metrics.{name}"
-            ],
-            observed=(
-                cls._metric_observed(metric)
-            ),
+            description=(f"Observed Aurora {name} metric."),
+            source=["CloudWatch.AWS/RDS"],
+            evidence_keys=["observations.cloudwatch." f"{group}.metrics.{name}"],
+            observed=(cls._metric_observed(metric)),
         )
 
     @staticmethod
@@ -2524,9 +2206,7 @@ class AuroraAnalyzer(Analyzer):
             value=value,
             description=description,
             source=list(source),
-            evidence_keys=list(
-                evidence_keys or []
-            ),
+            evidence_keys=list(evidence_keys or []),
             unit=unit,
             observed=observed,
         )
@@ -2553,67 +2233,43 @@ class AuroraAnalyzer(Analyzer):
         # Add current resource-attributed cost only when it is
         # defensible. This keeps the financial layer consistent
         # across every detector.
-        resource_cost = self._current_resource_cost(
-            context
-        )
+        resource_cost = self._current_resource_cost(context)
 
         enriched_metadata = dict(metadata)
 
         if resource_cost is not None:
-            enriched_metadata[
-                "current_monthly_resource_cost"
-            ] = resource_cost
+            enriched_metadata["current_monthly_resource_cost"] = resource_cost
 
-        enriched_metadata[
-            "billing_status"
-        ] = self._billing_status(context)
+        enriched_metadata["billing_status"] = self._billing_status(context)
 
         return Finding(
             finding_type=finding_type,
             title=title,
-            resource_type=(
-                context.resource_type
-                or "aurora_cluster"
-            ),
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
+            resource_type=(context.resource_type or "aurora_cluster"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
             analyzer_version=self.version,
-            severity=str(
-                severity
-            ).lower(),
-            confidence=str(
-                confidence
-            ).lower(),
+            severity=str(severity).lower(),
+            confidence=str(confidence).lower(),
             reason=reason,
             conditions=statements,
             evidence=self._build_evidence(
                 context,
                 enriched_metadata,
             ),
-            observation_period=(
-                self._observation_period(context)
-            ),
+            observation_period=(self._observation_period(context)),
             metadata={
                 **enriched_metadata,
                 "region": context.region,
-                "recommendation_eligible": (
-                    recommendation_eligible
-                ),
+                "recommendation_eligible": (recommendation_eligible),
             },
-            recommendation_eligible=(
-                recommendation_eligible
-            ),
+            recommendation_eligible=(recommendation_eligible),
             impact=self._build_impact(
                 context,
                 enriched_metadata,
                 cost_optimization_type,
             ),
-            cost_optimization_type=(
-                cost_optimization_type
-            ),
+            cost_optimization_type=(cost_optimization_type),
             aggregation_scope="resource",
         )
 
@@ -2629,19 +2285,11 @@ class AuroraAnalyzer(Analyzer):
         cost_optimization_type: str = "review",
     ) -> dict[str, Any]:
 
-        cost = _number(
-            metadata.get(
-                "current_monthly_resource_cost"
-            )
-        )
+        cost = _number(metadata.get("current_monthly_resource_cost"))
 
         billing = cls._billing(context)
 
-        scope = str(
-            billing.get(
-                "attribution_scope"
-            ) or ""
-        ).strip().lower()
+        scope = str(billing.get("attribution_scope") or "").strip().lower()
 
         # No defensible resource attribution:
         # do not invent a savings amount.
@@ -2652,9 +2300,7 @@ class AuroraAnalyzer(Analyzer):
                 "monthly_savings": None,
                 "annual_savings": None,
                 "confidence": None,
-                "attribution_scope": (
-                    scope or None
-                ),
+                "attribution_scope": (scope or None),
                 "savings_available": False,
             }
 
@@ -2662,10 +2308,7 @@ class AuroraAnalyzer(Analyzer):
             cost,
             confidence=None,
             attribution_scope=scope,
-            full_elimination=(
-                cost_optimization_type
-                == "elimination"
-            ),
+            full_elimination=(cost_optimization_type == "elimination"),
         )
 
         return {
@@ -2685,48 +2328,26 @@ class AuroraAnalyzer(Analyzer):
         metadata: dict[str, Any],
     ) -> Evidence:
 
-        cloudwatch = self._cloudwatch(
-            context
-        )
+        cloudwatch = self._cloudwatch(context)
 
-        configuration = self._configuration(
-            context
-        )
+        configuration = self._configuration(context)
 
-        relationships = self._relationships(
-            context
-        )
+        relationships = self._relationships(context)
 
         return Evidence(
             metrics=self._metrics(
                 context,
                 "cluster",
             ),
-            configuration=dict(
-                configuration
-            ),
-            topology=dict(
-                context.topology()
-                or {}
-            ),
-            billing=dict(
-                context.billing()
-                or {}
-            ),
+            configuration=dict(configuration),
+            topology=dict(context.topology() or {}),
+            billing=dict(context.billing() or {}),
             resource={
                 "resource_id": context.resource_id,
                 "resource_type": context.resource_type,
                 "region": context.region,
-                "cluster_identifier": (
-                    self._cluster(context).get(
-                        "identifier"
-                    )
-                ),
-                "engine": (
-                    self._cluster(context).get(
-                        "engine"
-                    )
-                ),
+                "cluster_identifier": (self._cluster(context).get("identifier")),
+                "engine": (self._cluster(context).get("engine")),
             },
             derived={
                 "relationships": relationships,
@@ -2734,18 +2355,14 @@ class AuroraAnalyzer(Analyzer):
                 **metadata,
             },
             data_quality={
-                "cloudwatch_status": (
-                    cloudwatch.get("status")
-                ),
+                "cloudwatch_status": (cloudwatch.get("status")),
                 "cloudwatch_data_quality": (
                     cloudwatch.get(
                         "data_quality",
                         {},
                     )
                 ),
-                "billing_status": (
-                    self._billing_status(context)
-                ),
+                "billing_status": (self._billing_status(context)),
             },
         )
 
@@ -2766,24 +2383,14 @@ class AuroraAnalyzer(Analyzer):
             return ObservationPeriod(
                 start=value.get("start"),
                 end=value.get("end"),
-                duration_seconds=value.get(
-                    "duration_seconds"
-                ),
+                duration_seconds=value.get("duration_seconds"),
             )
 
-        cloudwatch = cls._cloudwatch(
-            context
-        )
+        cloudwatch = cls._cloudwatch(context)
 
-        start = (
-            cloudwatch.get("analysis_start")
-            or cloudwatch.get("start")
-        )
+        start = cloudwatch.get("analysis_start") or cloudwatch.get("start")
 
-        end = (
-            cloudwatch.get("analysis_end")
-            or cloudwatch.get("end")
-        )
+        end = cloudwatch.get("analysis_end") or cloudwatch.get("end")
 
         if not start and not end:
             return None
@@ -2822,9 +2429,7 @@ class AuroraAnalyzer(Analyzer):
 
                 duration_seconds = max(
                     0.0,
-                    (
-                        end_dt - start_dt
-                    ).total_seconds(),
+                    (end_dt - start_dt).total_seconds(),
                 )
 
             except (
@@ -2850,10 +2455,6 @@ class AuroraAnalyzer(Analyzer):
     ) -> bool:
 
         return (
-            str(
-                cls._cluster(context).get(
-                    "status"
-                ) or ""
-            ).strip().lower()
+            str(cls._cluster(context).get("status") or "").strip().lower()
             == "available"
         )

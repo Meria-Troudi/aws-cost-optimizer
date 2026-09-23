@@ -61,10 +61,7 @@ def explain_pending_for_scan(
     pending_ids = [
         recommendation.id
         for recommendation in recommendations
-        if not (
-            getattr(recommendation, "ai_explanation", None)
-            or ""
-        ).strip()
+        if not (getattr(recommendation, "ai_explanation", None) or "").strip()
     ]
 
     if not pending_ids:

@@ -30,7 +30,9 @@ class CollectionProfile:
         dir_path = Path(__file__).parent / "collection_profiles"
 
         if not dir_path.is_dir():
-            raise FileNotFoundError(f"Collection profiles directory not found: {dir_path}")
+            raise FileNotFoundError(
+                f"Collection profiles directory not found: {dir_path}"
+            )
 
         profiles: dict[str, dict[str, Any]] = {}
 

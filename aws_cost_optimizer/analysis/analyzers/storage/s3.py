@@ -55,9 +55,7 @@ class S3Analyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        resource_type = (
-            context.resource_type or ""
-        ).lower()
+        resource_type = (context.resource_type or "").lower()
 
         return resource_type in {
             "s3",
@@ -111,9 +109,7 @@ class S3Analyzer(Analyzer):
 
         resource = context.resource or {}
 
-        data = resource.get(
-            "optimization_evidence"
-        )
+        data = resource.get("optimization_evidence")
 
         if isinstance(data, dict) and data:
             return data
@@ -125,11 +121,7 @@ class S3Analyzer(Analyzer):
         value: Any,
     ) -> dict[str, Any]:
 
-        return (
-            value
-            if isinstance(value, dict)
-            else {}
-        )
+        return value if isinstance(value, dict) else {}
 
     def _bucket_name(
         self,
@@ -137,51 +129,35 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> str:
 
-        configuration = self._dict(
-            evidence.get("configuration")
-        )
+        configuration = self._dict(evidence.get("configuration"))
 
-        bucket_name = configuration.get(
-            "bucket_name"
-        )
+        bucket_name = configuration.get("bucket_name")
 
-        if (
-            isinstance(bucket_name, str)
-            and bucket_name.strip()
-        ):
+        if isinstance(bucket_name, str) and bucket_name.strip():
             return bucket_name
 
-        return (
-            context.resource_id
-            or "unknown"
-        )
+        return context.resource_id or "unknown"
 
     def _storage_section(
         self,
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return self._dict(
-            evidence.get("storage")
-        )
+        return self._dict(evidence.get("storage"))
 
     def _requests_section(
         self,
         evidence: dict[str, Any],
     ) -> dict[str, Any]:
 
-        return self._dict(
-            evidence.get("requests")
-        )
+        return self._dict(evidence.get("requests"))
 
     def _storage_complete(
         self,
         evidence: dict[str, Any],
     ) -> bool:
 
-        storage = self._storage_section(
-            evidence
-        )
+        storage = self._storage_section(evidence)
 
         return (
             storage.get("available") is True
@@ -194,9 +170,7 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> bool:
 
-        requests = self._requests_section(
-            evidence
-        )
+        requests = self._requests_section(evidence)
 
         return (
             requests.get("available") is True
@@ -209,14 +183,10 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> float | None:
 
-        storage = self._storage_section(
-            evidence
-        )
+        storage = self._storage_section(evidence)
 
         # Preferred representation.
-        classes_bytes = storage.get(
-            "classes_bytes"
-        )
+        classes_bytes = storage.get("classes_bytes")
 
         if isinstance(classes_bytes, dict):
 
@@ -229,28 +199,20 @@ class S3Analyzer(Analyzer):
                     and not isinstance(value, bool)
                     and value >= 0
                 ):
-                    values.append(
-                        float(value)
-                    )
+                    values.append(float(value))
 
             if values:
-                return sum(values) / (
-                    1024 ** 3
-                )
+                return sum(values) / (1024**3)
 
         # Fallback to aggregate bucket size.
-        bucket_size = storage.get(
-            "bucket_size_bytes"
-        )
+        bucket_size = storage.get("bucket_size_bytes")
 
         if (
             isinstance(bucket_size, (int, float))
             and not isinstance(bucket_size, bool)
             and bucket_size >= 0
         ):
-            return float(bucket_size) / (
-                1024 ** 3
-            )
+            return float(bucket_size) / (1024**3)
 
         return None
 
@@ -259,18 +221,12 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> float | None:
 
-        requests = self._requests_section(
-            evidence
-        )
+        requests = self._requests_section(evidence)
 
         total = requests.get("total")
         get_count = requests.get("get")
 
-        if (
-            not isinstance(total, (int, float))
-            or isinstance(total, bool)
-            or total <= 0
-        ):
+        if not isinstance(total, (int, float)) or isinstance(total, bool) or total <= 0:
             return None
 
         if (
@@ -293,49 +249,31 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Finding | None:
 
-        configuration = self._dict(
-            evidence.get("configuration")
-        )
+        configuration = self._dict(evidence.get("configuration"))
 
-        lifecycle_enabled = configuration.get(
-            "lifecycle_enabled"
-        )
+        lifecycle_enabled = configuration.get("lifecycle_enabled")
 
         # Unknown != disabled.
         if lifecycle_enabled is not False:
             return None
 
-        if not self._storage_complete(
-            evidence
-        ):
+        if not self._storage_complete(evidence):
             return None
 
-        storage = self._storage_section(
-            evidence
-        )
+        storage = self._storage_section(evidence)
 
-        size_gib = self._storage_size_gib(
-            evidence
-        )
+        size_gib = self._storage_size_gib(evidence)
 
         # Do not report a lifecycle opportunity
         # when we have complete telemetry proving
         # there is no stored data.
-        if (
-            storage.get("zero") is True
-            and (
-                size_gib is None
-                or size_gib <= 0
-            )
-        ):
+        if storage.get("zero") is True and (size_gib is None or size_gib <= 0):
             return None
 
         # Missing request telemetry is not zero traffic: the
         # s3_apply_lifecycle_policy route requires an observed access
         # pattern, so no finding is produced without it.
-        if not self._requests_complete(
-            evidence
-        ):
+        if not self._requests_complete(evidence):
             return None
 
         bucket = self._bucket_name(
@@ -357,31 +295,21 @@ class S3Analyzer(Analyzer):
                     "No S3 lifecycle configuration is "
                     "currently configured for the bucket."
                 ),
-                source=[
-                    "S3 GetBucketLifecycleConfiguration"
-                ],
-                evidence_keys=[
-                    "configuration.lifecycle_enabled"
-                ],
+                source=["S3 GetBucketLifecycleConfiguration"],
+                evidence_keys=["configuration.lifecycle_enabled"],
             ),
             EvidenceStatement(
                 name="storage usage",
                 value=size_gib,
                 unit="GiB",
                 description=storage_description,
-                source=[
-                    "CloudWatch S3 Storage Metrics"
-                ],
-                evidence_keys=[
-                    "storage.bucket_size_bytes"
-                ],
+                source=["CloudWatch S3 Storage Metrics"],
+                evidence_keys=["storage.bucket_size_bytes"],
                 observed=True,
             ),
         ]
 
-        requests = self._requests_section(
-            evidence
-        )
+        requests = self._requests_section(evidence)
 
         total = requests.get("total")
 
@@ -389,16 +317,9 @@ class S3Analyzer(Analyzer):
             EvidenceStatement(
                 name="request activity",
                 value=total,
-                description=(
-                    "Request telemetry is available "
-                    "for the bucket."
-                ),
-                source=[
-                    "CloudWatch S3 Request Metrics"
-                ],
-                evidence_keys=[
-                    "requests.total"
-                ],
+                description=("Request telemetry is available " "for the bucket."),
+                source=["CloudWatch S3 Request Metrics"],
+                evidence_keys=["requests.total"],
                 observed=True,
             )
         )
@@ -406,10 +327,7 @@ class S3Analyzer(Analyzer):
         return Finding(
             finding_type="s3_lifecycle_missing",
             title="S3 bucket is missing a lifecycle policy",
-            resource_type=(
-                context.resource_type
-                or "s3_bucket"
-            ),
+            resource_type=(context.resource_type or "s3_bucket"),
             resource_id=bucket,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -461,19 +379,13 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Finding | None:
 
-        configuration = self._dict(
-            evidence.get("configuration")
-        )
+        configuration = self._dict(evidence.get("configuration"))
 
         uploads_configuration = self._dict(
-            configuration.get(
-                "incomplete_multipart_uploads"
-            )
+            configuration.get("incomplete_multipart_uploads")
         )
 
-        multipart = self._dict(
-            evidence.get("multipart_uploads")
-        )
+        multipart = self._dict(evidence.get("multipart_uploads"))
 
         upload_count = None
 
@@ -481,9 +393,7 @@ class S3Analyzer(Analyzer):
             # Explicit inventory shape: status "ok" means the upload
             # listing succeeded; "error" or anything unknown means the
             # inventory is not trustworthy, so no conclusion is drawn.
-            status = str(
-                uploads_configuration.get("status") or ""
-            ).strip().lower()
+            status = str(uploads_configuration.get("status") or "").strip().lower()
 
             if status != "ok":
                 return None
@@ -506,9 +416,7 @@ class S3Analyzer(Analyzer):
             if multipart.get("complete") is not True:
                 return None
 
-            candidate = multipart.get(
-                "incomplete_upload_count"
-            )
+            candidate = multipart.get("incomplete_upload_count")
 
             if (
                 isinstance(candidate, int)
@@ -528,19 +436,14 @@ class S3Analyzer(Analyzer):
             evidence,
         )
 
-        bytes_pending = multipart.get(
-            "pending_bytes"
-        )
+        bytes_pending = multipart.get("pending_bytes")
 
         if (
             isinstance(bytes_pending, (int, float))
             and not isinstance(bytes_pending, bool)
             and bytes_pending >= 0
         ):
-            pending_gib = (
-                float(bytes_pending)
-                / (1024 ** 3)
-            )
+            pending_gib = float(bytes_pending) / (1024**3)
 
             description = (
                 f"{upload_count} incomplete multipart "
@@ -552,8 +455,7 @@ class S3Analyzer(Analyzer):
             pending_gib = None
 
             description = (
-                f"{upload_count} incomplete multipart "
-                "upload(s) were observed."
+                f"{upload_count} incomplete multipart " "upload(s) were observed."
             )
 
         conditions = [
@@ -565,9 +467,7 @@ class S3Analyzer(Analyzer):
                     "S3 ListMultipartUploads",
                     "S3 ListParts",
                 ],
-                evidence_keys=[
-                    "multipart_uploads.incomplete_upload_count"
-                ],
+                evidence_keys=["multipart_uploads.incomplete_upload_count"],
                 observed=True,
             ),
             EvidenceStatement(
@@ -578,12 +478,8 @@ class S3Analyzer(Analyzer):
                     "retrieved successfully and incomplete "
                     "uploads were observed."
                 ),
-                source=[
-                    "S3 ListMultipartUploads"
-                ],
-                evidence_keys=[
-                    "configuration.incomplete_multipart_uploads"
-                ],
+                source=["S3 ListMultipartUploads"],
+                evidence_keys=["configuration.incomplete_multipart_uploads"],
                 observed=True,
             ),
         ]
@@ -598,25 +494,16 @@ class S3Analyzer(Analyzer):
                         "Uploaded multipart parts remain "
                         "associated with incomplete uploads."
                     ),
-                    source=[
-                        "S3 ListParts"
-                    ],
-                    evidence_keys=[
-                        "multipart_uploads.pending_bytes"
-                    ],
+                    source=["S3 ListParts"],
+                    evidence_keys=["multipart_uploads.pending_bytes"],
                     observed=True,
                 )
             )
 
         return Finding(
             finding_type="s3_incomplete_multipart_uploads",
-            title=(
-                "S3 bucket has incomplete multipart uploads"
-            ),
-            resource_type=(
-                context.resource_type
-                or "s3_bucket"
-            ),
+            title=("S3 bucket has incomplete multipart uploads"),
+            resource_type=(context.resource_type or "s3_bucket"),
             resource_id=bucket,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -661,28 +548,18 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Finding | None:
 
-        configuration = self._dict(
-            evidence.get("configuration")
-        )
+        configuration = self._dict(evidence.get("configuration"))
 
-        if configuration.get(
-            "intelligent_tiering_enabled"
-        ) is not False:
+        if configuration.get("intelligent_tiering_enabled") is not False:
             return None
 
-        if not self._storage_complete(
-            evidence
-        ):
+        if not self._storage_complete(evidence):
             return None
 
-        if not self._requests_complete(
-            evidence
-        ):
+        if not self._requests_complete(evidence):
             return None
 
-        ratio = self._get_request_ratio(
-            evidence
-        )
+        ratio = self._get_request_ratio(evidence)
 
         if ratio is None:
             return None
@@ -690,9 +567,7 @@ class S3Analyzer(Analyzer):
         if ratio >= self.LOW_GET_RATIO_THRESHOLD:
             return None
 
-        size_gib = self._storage_size_gib(
-            evidence
-        )
+        size_gib = self._storage_size_gib(evidence)
 
         if size_gib is None or size_gib <= 0:
             return None
@@ -712,26 +587,16 @@ class S3Analyzer(Analyzer):
                     "The bucket is not currently configured "
                     "with S3 Intelligent-Tiering."
                 ),
-                source=[
-                    "S3 ListBucketIntelligentTieringConfigurations"
-                ],
-                evidence_keys=[
-                    "configuration.intelligent_tiering_enabled"
-                ],
+                source=["S3 ListBucketIntelligentTieringConfigurations"],
+                evidence_keys=["configuration.intelligent_tiering_enabled"],
             ),
             EvidenceStatement(
                 name="storage size",
                 value=size_gib,
                 unit="GiB",
-                description=(
-                    "Stored data is present in the bucket."
-                ),
-                source=[
-                    "CloudWatch S3 Storage Metrics"
-                ],
-                evidence_keys=[
-                    "storage.bucket_size_bytes"
-                ],
+                description=("Stored data is present in the bucket."),
+                source=["CloudWatch S3 Storage Metrics"],
+                evidence_keys=["storage.bucket_size_bytes"],
                 observed=True,
             ),
             EvidenceStatement(
@@ -741,9 +606,7 @@ class S3Analyzer(Analyzer):
                     f"GET requests represent approximately "
                     f"{percentage:.2f}% of observed requests."
                 ),
-                source=[
-                    "CloudWatch S3 Request Metrics"
-                ],
+                source=["CloudWatch S3 Request Metrics"],
                 evidence_keys=[
                     "requests.get",
                     "requests.total",
@@ -754,13 +617,8 @@ class S3Analyzer(Analyzer):
 
         return Finding(
             finding_type="s3_intelligent_tiering_candidate",
-            title=(
-                "S3 bucket may be a candidate for Intelligent-Tiering"
-            ),
-            resource_type=(
-                context.resource_type
-                or "s3_bucket"
-            ),
+            title=("S3 bucket may be a candidate for Intelligent-Tiering"),
+            resource_type=(context.resource_type or "s3_bucket"),
             resource_id=bucket,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -814,18 +672,12 @@ class S3Analyzer(Analyzer):
     ) -> Finding | None:
 
         storage_classes = self._dict(
-            self._storage_section(
-                evidence
-            ).get("classes_bytes")
+            self._storage_section(evidence).get("classes_bytes")
         )
 
-        standard_bytes = self._numeric(
-            storage_classes.get("STANDARD")
-        )
+        standard_bytes = self._numeric(storage_classes.get("STANDARD"))
 
-        ia_bytes = self._numeric(
-            storage_classes.get("STANDARD_IA")
-        )
+        ia_bytes = self._numeric(storage_classes.get("STANDARD_IA"))
 
         # We need class-level evidence.
         if standard_bytes is None:
@@ -834,19 +686,12 @@ class S3Analyzer(Analyzer):
         if ia_bytes is not None and ia_bytes > 0:
             return None
 
-        if not self._storage_complete(
-            evidence
-        ):
+        if not self._storage_complete(evidence):
             return None
 
-        standard_gib = (
-            standard_bytes / (1024 ** 3)
-        )
+        standard_gib = standard_bytes / (1024**3)
 
-        if (
-            standard_gib
-            < self.STANDARD_IA_MIN_STORAGE_GIB
-        ):
+        if standard_gib < self.STANDARD_IA_MIN_STORAGE_GIB:
             return None
 
         bucket = self._bucket_name(
@@ -863,12 +708,8 @@ class S3Analyzer(Analyzer):
                     "The bucket has observed storage in "
                     "the S3 STANDARD storage class."
                 ),
-                source=[
-                    "CloudWatch S3 Storage Metrics"
-                ],
-                evidence_keys=[
-                    "storage.classes_bytes.STANDARD"
-                ],
+                source=["CloudWatch S3 Storage Metrics"],
+                evidence_keys=["storage.classes_bytes.STANDARD"],
                 observed=True,
             ),
             EvidenceStatement(
@@ -879,25 +720,16 @@ class S3Analyzer(Analyzer):
                     "No STANDARD_IA storage was observed "
                     "in the collected storage-class telemetry."
                 ),
-                source=[
-                    "CloudWatch S3 Storage Metrics"
-                ],
-                evidence_keys=[
-                    "storage.classes_bytes.STANDARD_IA"
-                ],
+                source=["CloudWatch S3 Storage Metrics"],
+                evidence_keys=["storage.classes_bytes.STANDARD_IA"],
                 observed=True,
             ),
         ]
 
         return Finding(
             finding_type="s3_standard_ia_candidate",
-            title=(
-                "S3 bucket may contain data suitable for Standard-IA"
-            ),
-            resource_type=(
-                context.resource_type
-                or "s3_bucket"
-            ),
+            title=("S3 bucket may contain data suitable for Standard-IA"),
+            resource_type=(context.resource_type or "s3_bucket"),
             resource_id=bucket,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -950,21 +782,15 @@ class S3Analyzer(Analyzer):
     ) -> Finding | None:
 
         storage_classes = self._dict(
-            self._storage_section(
-                evidence
-            ).get("classes_bytes")
+            self._storage_section(evidence).get("classes_bytes")
         )
 
-        standard_bytes = self._numeric(
-            storage_classes.get("STANDARD")
-        )
+        standard_bytes = self._numeric(storage_classes.get("STANDARD"))
 
         if standard_bytes is None:
             return None
 
-        if not self._storage_complete(
-            evidence
-        ):
+        if not self._storage_complete(evidence):
             return None
 
         archive_classes = (
@@ -973,19 +799,12 @@ class S3Analyzer(Analyzer):
         )
 
         archive_bytes = sum(
-            self._numeric(
-                storage_classes.get(name)
-            ) or 0
-            for name in archive_classes
+            self._numeric(storage_classes.get(name)) or 0 for name in archive_classes
         )
 
-        standard_gib = (
-            standard_bytes / (1024 ** 3)
-        )
+        standard_gib = standard_bytes / (1024**3)
 
-        archive_gib = (
-            archive_bytes / (1024 ** 3)
-        )
+        archive_gib = archive_bytes / (1024**3)
 
         # If a meaningful amount is already archived,
         # this detector has no evidence that STANDARD
@@ -993,10 +812,7 @@ class S3Analyzer(Analyzer):
         if archive_gib > 0:
             return None
 
-        if (
-            standard_gib
-            < self.GLACIER_MIN_STORAGE_GIB
-        ):
+        if standard_gib < self.GLACIER_MIN_STORAGE_GIB:
             return None
 
         bucket = self._bucket_name(
@@ -1013,12 +829,8 @@ class S3Analyzer(Analyzer):
                     "Data is currently observed in STANDARD "
                     "rather than an archive storage class."
                 ),
-                source=[
-                    "CloudWatch S3 Storage Metrics"
-                ],
-                evidence_keys=[
-                    "storage.classes_bytes.STANDARD"
-                ],
+                source=["CloudWatch S3 Storage Metrics"],
+                evidence_keys=["storage.classes_bytes.STANDARD"],
                 observed=True,
             ),
             EvidenceStatement(
@@ -1029,9 +841,7 @@ class S3Analyzer(Analyzer):
                     "No GLACIER or DEEP_ARCHIVE storage was "
                     "observed in the collected telemetry."
                 ),
-                source=[
-                    "CloudWatch S3 Storage Metrics"
-                ],
+                source=["CloudWatch S3 Storage Metrics"],
                 evidence_keys=[
                     "storage.classes_bytes.GLACIER",
                     "storage.classes_bytes.DEEP_ARCHIVE",
@@ -1042,13 +852,8 @@ class S3Analyzer(Analyzer):
 
         return Finding(
             finding_type="s3_glacier_candidate",
-            title=(
-                "S3 bucket may contain data suitable for archival storage"
-            ),
-            resource_type=(
-                context.resource_type
-                or "s3_bucket"
-            ),
+            title=("S3 bucket may contain data suitable for archival storage"),
+            resource_type=(context.resource_type or "s3_bucket"),
             resource_id=bucket,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -1099,42 +904,27 @@ class S3Analyzer(Analyzer):
         evidence: dict[str, Any],
     ) -> Finding | None:
 
-        replication = self._dict(
-            evidence.get("replication")
-        )
+        replication = self._dict(evidence.get("replication"))
 
-        configuration = self._dict(
-            evidence.get("configuration")
-        )
+        configuration = self._dict(evidence.get("configuration"))
 
-        enabled = replication.get(
-            "enabled"
-        )
+        enabled = replication.get("enabled")
 
         if enabled is not True:
-            enabled = configuration.get(
-                "replication_enabled"
-            )
+            enabled = configuration.get("replication_enabled")
 
         if enabled is not True:
             return None
 
-        rule_count = replication.get(
-            "rule_count"
-        )
+        rule_count = replication.get("rule_count")
 
         if not isinstance(
             rule_count,
             int,
         ):
-            rule_count = configuration.get(
-                "replication_rule_count"
-            )
+            rule_count = configuration.get("replication_rule_count")
 
-        if (
-            not isinstance(rule_count, int)
-            or rule_count <= 1
-        ):
+        if not isinstance(rule_count, int) or rule_count <= 1:
             return None
 
         bucket = self._bucket_name(
@@ -1146,42 +936,26 @@ class S3Analyzer(Analyzer):
             EvidenceStatement(
                 name="replication enabled",
                 value=True,
-                description=(
-                    "S3 replication is configured for the bucket."
-                ),
-                source=[
-                    "S3 GetBucketReplication"
-                ],
-                evidence_keys=[
-                    "replication.enabled"
-                ],
+                description=("S3 replication is configured for the bucket."),
+                source=["S3 GetBucketReplication"],
+                evidence_keys=["replication.enabled"],
             ),
             EvidenceStatement(
                 name="replication rules",
                 value=rule_count,
                 description=(
-                    f"{rule_count} replication rules are "
-                    "currently configured."
+                    f"{rule_count} replication rules are " "currently configured."
                 ),
-                source=[
-                    "S3 GetBucketReplication"
-                ],
-                evidence_keys=[
-                    "replication.rule_count"
-                ],
+                source=["S3 GetBucketReplication"],
+                evidence_keys=["replication.rule_count"],
                 observed=True,
             ),
         ]
 
         return Finding(
             finding_type="s3_replication_cost_exposure",
-            title=(
-                "S3 bucket has multiple replication rules"
-            ),
-            resource_type=(
-                context.resource_type
-                or "s3_bucket"
-            ),
+            title=("S3 bucket has multiple replication rules"),
+            resource_type=(context.resource_type or "s3_bucket"),
             resource_id=bucket,
             analyzer=self.name,
             analyzer_version=self.version,
@@ -1289,7 +1063,6 @@ class S3Analyzer(Analyzer):
 
     @staticmethod
     def _numeric(
-
         value: Any,
     ) -> float | None:
 

@@ -73,7 +73,6 @@ from ....evidence import Evidence
 from ....finding import Finding
 from ....registry import register
 
-
 # =====================================================================
 # CONSTANTS
 # =====================================================================
@@ -93,6 +92,7 @@ DEFAULT_MEANINGFUL_TRAFFIC_GIB = 1.0
 # =====================================================================
 # GENERIC HELPERS
 # =====================================================================
+
 
 def _dict(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
@@ -132,22 +132,19 @@ def _state(value: Any) -> str:
 # CONTEXT
 # =====================================================================
 
+
 def _relationships(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.resource.get("relationships")
-    )
+    return _dict(context.resource.get("relationships"))
 
 
 def _cloudwatch(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        context.cloudwatch()
-    )
+    return _dict(context.cloudwatch())
 
 
 def _billing(
@@ -164,16 +161,13 @@ def _collection_status(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    return _dict(
-        _relationships(context).get(
-            "collection_status"
-        )
-    )
+    return _dict(_relationships(context).get("collection_status"))
 
 
 # =====================================================================
 # ATTACHMENTS
 # =====================================================================
+
 
 def _attachments(
     context: AnalysisContext,
@@ -184,11 +178,7 @@ def _attachments(
     values = relationships.get("attachments")
 
     if isinstance(values, list):
-        return [
-            item
-            for item in values
-            if isinstance(item, dict)
-        ]
+        return [item for item in values if isinstance(item, dict)]
 
     # Compatibility fallback for older collectors.
     result: list[dict[str, Any]] = []
@@ -203,11 +193,7 @@ def _attachments(
         if not isinstance(values, list):
             continue
 
-        result.extend(
-            item
-            for item in values
-            if isinstance(item, dict)
-        )
+        result.extend(item for item in values if isinstance(item, dict))
 
     return result
 
@@ -215,7 +201,6 @@ def _attachments(
 def _active_attachments(
     context: AnalysisContext,
 ) -> list[dict[str, Any]]:
-
     """
     Return attachments that are currently able to participate
     in traffic analysis.
@@ -230,9 +215,7 @@ def _active_attachments(
     return [
         attachment
         for attachment in _attachments(context)
-        if _state(
-            attachment.get("state")
-        ) == "available"
+        if _state(attachment.get("state")) == "available"
     ]
 
 
@@ -242,9 +225,7 @@ def _attachment_id(
 
     value = (
         attachment.get("attachment_id")
-        or attachment.get(
-            "transit_gateway_attachment_id"
-        )
+        or attachment.get("transit_gateway_attachment_id")
         or attachment.get("id")
     )
 
@@ -257,6 +238,7 @@ def _attachment_id(
 # =====================================================================
 # CLOUDWATCH STRUCTURE
 # =====================================================================
+
 
 def _attachment_metrics(
     context: AnalysisContext,
@@ -282,6 +264,7 @@ def _attachment_metrics(
 # METRIC HELPERS
 # =====================================================================
 
+
 def _metric_total(
     metric: Any,
 ) -> float | None:
@@ -294,9 +277,7 @@ def _metric_total(
             "sum",
             "value",
         ):
-            value = _non_negative(
-                metric.get(key)
-            )
+            value = _non_negative(metric.get(key))
 
             if value is not None:
                 return value
@@ -317,10 +298,7 @@ def _metric_has_data(
     if metric.get("has_data") is True:
         return True
 
-    return (
-        _metric_total(metric)
-        is not None
-    )
+    return _metric_total(metric) is not None
 
 
 def _metric_complete(
@@ -336,24 +314,18 @@ def _metric_complete(
 
     # Otherwise require actual metric data and successful
     # collection status.
-    return (
-        metric.get("has_data") is True
-        and
-        _state(
-            metric.get("status")
-        ) == "ok"
-    )
+    return metric.get("has_data") is True and _state(metric.get("status")) == "ok"
 
 
 # =====================================================================
 # ATTACHMENT TRAFFIC
 # =====================================================================
 
+
 def _attachment_traffic(
     context: AnalysisContext,
     attachment_id: str,
 ) -> dict[str, Any] | None:
-
     """
     Return normalized traffic evidence for one attachment.
 
@@ -387,13 +359,9 @@ def _attachment_traffic(
         return None
 
     # Both metrics must be complete.
-    bytes_in_complete = _metric_complete(
-        bytes_in_metric
-    )
+    bytes_in_complete = _metric_complete(bytes_in_metric)
 
-    bytes_out_complete = _metric_complete(
-        bytes_out_metric
-    )
+    bytes_out_complete = _metric_complete(bytes_out_metric)
 
     if not bytes_in_complete:
         return None
@@ -401,13 +369,9 @@ def _attachment_traffic(
     if not bytes_out_complete:
         return None
 
-    bytes_in = _metric_total(
-        bytes_in_metric
-    )
+    bytes_in = _metric_total(bytes_in_metric)
 
-    bytes_out = _metric_total(
-        bytes_out_metric
-    )
+    bytes_out = _metric_total(bytes_out_metric)
 
     # Complete does not allow us to invent a zero if the collector
     # did not provide a usable value.
@@ -417,37 +381,22 @@ def _attachment_traffic(
     if bytes_out is None:
         return None
 
-    observed_bytes = (
-        bytes_in
-        +
-        bytes_out
-    )
+    observed_bytes = bytes_in + bytes_out
 
     return {
         "bytes_in": bytes_in,
         "bytes_out": bytes_out,
-
-        "observed_bytes":
-            observed_bytes,
-
-        "observed_gib":
-            observed_bytes / (1024 ** 3),
-
-        "complete":
-            True,
-
-        "bytes_in_complete":
-            True,
-
-        "bytes_out_complete":
-            True,
+        "observed_bytes": observed_bytes,
+        "observed_gib": observed_bytes / (1024**3),
+        "complete": True,
+        "bytes_in_complete": True,
+        "bytes_out_complete": True,
     }
 
 
 def _collect_attachment_traffic(
     context: AnalysisContext,
 ) -> list[dict[str, Any]] | None:
-
     """
     Collect complete traffic evidence for every active attachment.
 
@@ -464,9 +413,7 @@ def _collect_attachment_traffic(
 
     for attachment in active:
 
-        attachment_id = _attachment_id(
-            attachment
-        )
+        attachment_id = _attachment_id(attachment)
 
         if not attachment_id:
             return None
@@ -483,43 +430,16 @@ def _collect_attachment_traffic(
 
         rows.append(
             {
-                "attachment_id":
-                    attachment_id,
-
-                "resource_id":
-                    attachment.get(
-                        "resource_id"
-                    ),
-
-                "resource_type":
-                    attachment.get(
-                        "resource_type"
-                    ),
-
-                "classification":
-                    attachment.get(
-                        "classification"
-                    ),
-
-                "state":
-                    attachment.get(
-                        "state"
-                    ),
-
-                "bytes_in":
-                    traffic["bytes_in"],
-
-                "bytes_out":
-                    traffic["bytes_out"],
-
-                "observed_bytes":
-                    traffic["observed_bytes"],
-
-                "observed_gib":
-                    traffic["observed_gib"],
-
-                "traffic_complete":
-                    True,
+                "attachment_id": attachment_id,
+                "resource_id": attachment.get("resource_id"),
+                "resource_type": attachment.get("resource_type"),
+                "classification": attachment.get("classification"),
+                "state": attachment.get("state"),
+                "bytes_in": traffic["bytes_in"],
+                "bytes_out": traffic["bytes_out"],
+                "observed_bytes": traffic["observed_bytes"],
+                "observed_gib": traffic["observed_gib"],
+                "traffic_complete": True,
             }
         )
 
@@ -530,18 +450,13 @@ def _total_attachment_traffic_gib(
     rows: list[dict[str, Any]],
 ) -> float:
 
-    return sum(
-        _non_negative(
-            row.get("observed_gib")
-        )
-        or 0.0
-        for row in rows
-    )
+    return sum(_non_negative(row.get("observed_gib")) or 0.0 for row in rows)
 
 
 # =====================================================================
 # BILLING
 # =====================================================================
+
 
 def _tgw_cost(
     context: AnalysisContext,
@@ -549,12 +464,7 @@ def _tgw_cost(
 
     billing = _billing(context)
 
-    return (
-        _non_negative(
-            billing.get("amount")
-        )
-        or 0.0
-    )
+    return _non_negative(billing.get("amount")) or 0.0
 
 
 def _has_tgw_cost(
@@ -568,13 +478,12 @@ def _has_tgw_cost(
 # ANALYZER CONFIGURATION
 # =====================================================================
 
+
 def _analyzer_config(
     context: AnalysisContext,
 ) -> dict[str, Any]:
 
-    resource = _dict(
-        context.resource
-    )
+    resource = _dict(context.resource)
 
     for key in (
         "analyzer_config",
@@ -595,18 +504,10 @@ def _meaningful_traffic_threshold_gib(
 
     config = _analyzer_config(context)
 
-    value = _non_negative(
-        config.get(
-            "meaningful_traffic_gib"
-        )
-    )
+    value = _non_negative(config.get("meaningful_traffic_gib"))
 
     if value is None:
-        value = _non_negative(
-            config.get(
-                "low_traffic_gib"
-            )
-        )
+        value = _non_negative(config.get("low_traffic_gib"))
 
     if value is None:
         return DEFAULT_MEANINGFUL_TRAFFIC_GIB
@@ -617,6 +518,7 @@ def _meaningful_traffic_threshold_gib(
 # =====================================================================
 # FINDING FACTORY
 # =====================================================================
+
 
 def _finding(
     *,
@@ -637,93 +539,47 @@ def _finding(
     observations = _cloudwatch(context)
 
     return Finding(
-
         finding_type=finding_type,
-
         title=title,
-
-        resource_type=(
-            context.resource_type
-            or "transit_gateway"
-        ),
-
-        resource_id=(
-            context.resource_id
-            or "unknown"
-        ),
-
+        resource_type=(context.resource_type or "transit_gateway"),
+        resource_id=(context.resource_id or "unknown"),
         analyzer="transit_gateway",
-
         analyzer_version="15.0",
-
         severity=severity.lower(),
-
         confidence=confidence.lower(),
-
         reason=reason,
-
         conditions=statements,
-
         evidence=Evidence(
-
             metrics={
-                "cloudwatch":
-                    observations,
+                "cloudwatch": observations,
             },
-
             configuration={},
-
             topology={
-                "relationships":
-                    relationships,
+                "relationships": relationships,
             },
-
             resource={
-                "resource_id":
-                    context.resource_id,
-
-                "resource_type":
-                    context.resource_type,
-
-                "region":
-                    context.region,
+                "resource_id": context.resource_id,
+                "resource_type": context.resource_type,
+                "region": context.region,
             },
-
             derived={
                 **metadata,
-
-                "optimization_rule":
-                    finding_type,
-
-                "cost_confirmed":
-                    True,
-
-                "finding_is_actionable":
-                    True,
+                "optimization_rule": finding_type,
+                "cost_confirmed": True,
+                "finding_is_actionable": True,
             },
-
             billing=billing,
-
             data_quality={
-                "collection_status":
-                    _collection_status(context),
+                "collection_status": _collection_status(context),
             },
         ),
-
         observation_period=None,
-
         metadata={
             **metadata,
-
-            "cost_optimization":
-                True,
-
-            "recommendation_required":
-                True,
+            "cost_optimization": True,
+            "recommendation_required": True,
         },
-
         recommendation_eligible=True,
-
         impact={},
     )
 
@@ -731,6 +587,7 @@ def _finding(
 # =====================================================================
 # ANALYZER
 # =====================================================================
+
 
 @register
 class TransitGatewayAnalyzer(Analyzer):
@@ -752,10 +609,7 @@ class TransitGatewayAnalyzer(Analyzer):
         context: AnalysisContext,
     ) -> bool:
 
-        return (
-            context.resource_type
-            in self.SUPPORTED_RESOURCE_TYPES
-        )
+        return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
     # -----------------------------------------------------------------
     # MAIN
@@ -782,14 +636,10 @@ class TransitGatewayAnalyzer(Analyzer):
 
         findings: list[Finding] = []
 
-        no_attachment_finding = (
-            self._no_attachments(context)
-        )
+        no_attachment_finding = self._no_attachments(context)
 
         if no_attachment_finding is not None:
-            findings.append(
-                no_attachment_finding
-            )
+            findings.append(no_attachment_finding)
 
             # No attachments means utilization analysis is not
             # applicable.
@@ -799,14 +649,10 @@ class TransitGatewayAnalyzer(Analyzer):
         # UTILIZATION ANALYSIS
         # =============================================================
 
-        low_utilization_finding = (
-            self._low_utilization(context)
-        )
+        low_utilization_finding = self._low_utilization(context)
 
         if low_utilization_finding is not None:
-            findings.append(
-                low_utilization_finding
-            )
+            findings.append(low_utilization_finding)
 
         return findings
 
@@ -825,9 +671,7 @@ class TransitGatewayAnalyzer(Analyzer):
         #
         # Missing/unknown attachment inventory must never be
         # interpreted as zero attachments.
-        if status.get(
-            "attachments_complete"
-        ) is not True:
+        if status.get("attachments_complete") is not True:
             return None
 
         attachments = _attachments(context)
@@ -840,21 +684,11 @@ class TransitGatewayAnalyzer(Analyzer):
         cost = _tgw_cost(context)
 
         return _finding(
-
             context=context,
-
-            finding_type=
-                "transit_gateway_no_attachments",
-
-            title=
-                "Review Transit Gateway removal",
-
-            severity=
-                "high",
-
-            confidence=
-                "high",
-
+            finding_type="transit_gateway_no_attachments",
+            title="Review Transit Gateway removal",
+            severity="high",
+            confidence="high",
             reason=(
                 f"Transit Gateway billing confirms "
                 f"${cost:,.2f} of Transit Gateway cost, "
@@ -865,72 +699,37 @@ class TransitGatewayAnalyzer(Analyzer):
                 "the Transit Gateway can eliminate its ongoing "
                 "cost."
             ),
-
             statements=[
-
                 EvidenceStatement(
-
-                    name=
-                        "transit_gateway_cost",
-
-                    value=
-                        cost,
-
-                    description=
-                        "Confirmed Transit Gateway "
-                        "billing cost.",
-
+                    name="transit_gateway_cost",
+                    value=cost,
+                    description="Confirmed Transit Gateway " "billing cost.",
                     source=[
                         "Cost Explorer",
                         "TransitGateway-Hours",
                         "TransitGateway-Bytes",
                     ],
                 ),
-
                 EvidenceStatement(
-
-                    name=
-                        "attachment_count",
-
-                    value=
-                        0,
-
-                    description=
-                        "Completed Transit Gateway "
-                        "attachment inventory found "
-                        "no attachments.",
-
+                    name="attachment_count",
+                    value=0,
+                    description="Completed Transit Gateway "
+                    "attachment inventory found "
+                    "no attachments.",
                     source=[
                         "EC2.DescribeTransitGatewayAttachments",
                     ],
                 ),
             ],
-
             metadata={
-
-                "cost_driver":
-                    "transit_gateway",
-
-                "transit_gateway_cost":
-                    cost,
-
-                "attachment_count":
-                    0,
-
-                "active_attachment_count":
-                    0,
-
-                "action":
-                    "review_transit_gateway_removal",
-
-                "removal_is_not_automatic":
-                    True,
-
-                "traffic_required":
-                    False,
-
-                "missing_is_zero":
-                    False,
+                "cost_driver": "transit_gateway",
+                "transit_gateway_cost": cost,
+                "attachment_count": 0,
+                "active_attachment_count": 0,
+                "action": "review_transit_gateway_removal",
+                "removal_is_not_automatic": True,
+                "traffic_required": False,
+                "missing_is_zero": False,
             },
         )
 
@@ -946,9 +745,7 @@ class TransitGatewayAnalyzer(Analyzer):
         status = _collection_status(context)
 
         # Attachment inventory must be complete.
-        if status.get(
-            "attachments_complete"
-        ) is not True:
+        if status.get("attachments_complete") is not True:
             return None
 
         attachments = _attachments(context)
@@ -969,24 +766,16 @@ class TransitGatewayAnalyzer(Analyzer):
         # COMPLETE ATTACHMENT TELEMETRY IS REQUIRED
         # =============================================================
 
-        traffic_rows = (
-            _collect_attachment_traffic(context)
-        )
+        traffic_rows = _collect_attachment_traffic(context)
 
         # Missing or incomplete telemetry must never become
         # a zero-traffic conclusion.
         if traffic_rows is None:
             return None
 
-        threshold = (
-            _meaningful_traffic_threshold_gib(context)
-        )
+        threshold = _meaningful_traffic_threshold_gib(context)
 
-        total_gib = (
-            _total_attachment_traffic_gib(
-                traffic_rows
-            )
-        )
+        total_gib = _total_attachment_traffic_gib(traffic_rows)
 
         # =============================================================
         # MEANINGFUL TRAFFIC
@@ -1002,21 +791,11 @@ class TransitGatewayAnalyzer(Analyzer):
         cost = _tgw_cost(context)
 
         return _finding(
-
             context=context,
-
-            finding_type=
-                "transit_gateway_low_utilization",
-
-            title=
-                "Review Transit Gateway utilization",
-
-            severity=
-                "medium",
-
-            confidence=
-                "high",
-
+            finding_type="transit_gateway_low_utilization",
+            title="Review Transit Gateway utilization",
+            severity="medium",
+            confidence="high",
             reason=(
                 f"Transit Gateway billing confirms "
                 f"${cost:,.2f} of Transit Gateway cost, "
@@ -1031,77 +810,43 @@ class TransitGatewayAnalyzer(Analyzer):
                 "utilized before considering architectural "
                 "changes."
             ),
-
             statements=[
-
                 EvidenceStatement(
-
-                    name=
-                        "transit_gateway_cost",
-
-                    value=
-                        cost,
-
-                    description=
-                        "Confirmed Transit Gateway "
-                        "billing cost.",
-
+                    name="transit_gateway_cost",
+                    value=cost,
+                    description="Confirmed Transit Gateway " "billing cost.",
                     source=[
                         "Cost Explorer",
                         "TransitGateway-Hours",
                         "TransitGateway-Bytes",
                     ],
                 ),
-
                 EvidenceStatement(
-
-                    name=
-                        "attachment_count",
-
-                    value=
-                        len(attachments),
-
-                    description=
-                        "Transit Gateway attachments "
-                        "observed in the completed "
-                        "attachment inventory.",
-
+                    name="attachment_count",
+                    value=len(attachments),
+                    description="Transit Gateway attachments "
+                    "observed in the completed "
+                    "attachment inventory.",
                     source=[
                         "EC2.DescribeTransitGatewayAttachments",
                     ],
                 ),
-
                 EvidenceStatement(
-
-                    name=
-                        "active_attachment_count",
-
-                    value=
-                        len(active),
-
-                    description=
-                        "Transit Gateway attachments "
-                        "currently in available state.",
-
+                    name="active_attachment_count",
+                    value=len(active),
+                    description="Transit Gateway attachments "
+                    "currently in available state.",
                     source=[
                         "EC2.DescribeTransitGatewayAttachments",
                     ],
                 ),
-
                 EvidenceStatement(
-
-                    name=
-                        "observed_attachment_traffic_gib",
-
-                    value=
-                        total_gib,
-
-                    description=
-                        "Combined observed traffic across "
-                        "all active Transit Gateway "
-                        "attachments during the complete "
-                        "analysis period.",
-
+                    name="observed_attachment_traffic_gib",
+                    value=total_gib,
+                    description="Combined observed traffic across "
+                    "all active Transit Gateway "
+                    "attachments during the complete "
+                    "analysis period.",
                     source=[
                         "AWS/TransitGateway",
                         "TransitGatewayAttachment",
@@ -1109,42 +854,28 @@ class TransitGatewayAnalyzer(Analyzer):
                         "BytesOut",
                     ],
                 ),
-
                 EvidenceStatement(
-
-                    name=
-                        "meaningful_traffic_threshold_gib",
-
-                    value=
-                        threshold,
-
+                    name="meaningful_traffic_threshold_gib",
+                    value=threshold,
                     description=(
                         "Operational threshold used by "
                         "the analyzer to classify meaningful "
                         "traffic. This is not an AWS pricing "
                         "threshold."
                     ),
-
                     source=[
                         "Transit Gateway analyzer configuration",
                     ],
                 ),
-
                 EvidenceStatement(
-
-                    name=
-                        "attachment_traffic",
-
-                    value=
-                        traffic_rows,
-
+                    name="attachment_traffic",
+                    value=traffic_rows,
                     description=(
                         "Complete traffic evidence for "
                         "every active Transit Gateway "
                         "attachment considered by the "
                         "utilization assessment."
                     ),
-
                     source=[
                         "AWS/TransitGateway",
                         "TransitGatewayAttachment",
@@ -1153,50 +884,25 @@ class TransitGatewayAnalyzer(Analyzer):
                     ],
                 ),
             ],
-
             metadata={
-
-                "cost_driver":
-                    "transit_gateway",
-
-                "transit_gateway_cost":
-                    cost,
-
-                "attachment_count":
-                    len(attachments),
-
-                "active_attachment_count":
-                    len(active),
-
-                "observed_traffic_gib":
-                    total_gib,
-
-                "meaningful_traffic_threshold_gib":
-                    threshold,
-
-                "traffic_complete":
-                    True,
-
-                "missing_is_zero":
-                    False,
-
-                "action":
-                    "review_transit_gateway_utilization",
-
+                "cost_driver": "transit_gateway",
+                "transit_gateway_cost": cost,
+                "attachment_count": len(attachments),
+                "active_attachment_count": len(active),
+                "observed_traffic_gib": total_gib,
+                "meaningful_traffic_threshold_gib": threshold,
+                "traffic_complete": True,
+                "missing_is_zero": False,
+                "action": "review_transit_gateway_utilization",
                 # Explicitly prevent a downstream recommendation
                 # generator from interpreting this as deletion.
-                "removal_recommendation":
-                    False,
-
-                "removal_is_not_automatic":
-                    True,
-
-                "attachments":
-                    traffic_rows,
+                "removal_recommendation": False,
+                "removal_is_not_automatic": True,
+                "attachments": traffic_rows,
             },
         )
 
-# =================================================================
+    # =================================================================
     # EVIDENCE-GAP FINDINGS
     # =================================================================
 
@@ -1225,59 +931,25 @@ class TransitGatewayAnalyzer(Analyzer):
 
         sections: list[str] = []
 
-        if (
-            status.get(
-                "attachments_complete"
-            )
-            is False
-        ):
-            sections.append(
-                "attachment inventory"
-            )
+        if status.get("attachments_complete") is False:
+            sections.append("attachment inventory")
 
-        if (
-            status.get(
-                "association_evidence_complete"
-            )
-            is False
-        ):
-            sections.append(
-                "associations"
-            )
+        if status.get("association_evidence_complete") is False:
+            sections.append("associations")
 
-        if (
-            status.get(
-                "route_data_complete"
-            )
-            is False
-        ):
-            sections.append(
-                "route tables and routes"
-            )
+        if status.get("route_data_complete") is False:
+            sections.append("route tables and routes")
 
         if not sections:
             return None
 
-        sections_text = (
-            " and ".join(sections)
-        )
+        sections_text = " and ".join(sections)
 
         return Finding(
-            finding_type=(
-                "transit_gateway_topology_incomplete"
-            ),
-            title=(
-                "Transit Gateway topology evidence "
-                "is incomplete"
-            ),
-            resource_type=(
-                context.resource_type
-                or "transit_gateway"
-            ),
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
+            finding_type=("transit_gateway_topology_incomplete"),
+            title=("Transit Gateway topology evidence " "is incomplete"),
+            resource_type=(context.resource_type or "transit_gateway"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
             analyzer_version=self.version,
             severity="info",
@@ -1295,9 +967,7 @@ class TransitGatewayAnalyzer(Analyzer):
                 metrics={},
                 configuration={},
                 topology={
-                    "relationships": (
-                        _relationships(context)
-                    ),
+                    "relationships": (_relationships(context)),
                 },
                 resource={
                     "resource_id": context.resource_id,
@@ -1340,12 +1010,7 @@ class TransitGatewayAnalyzer(Analyzer):
         # Incomplete route/topology evidence is insufficient evidence:
         # we cannot safely decide the TGW is unused or under-utilized
         # when the routing structure was never collected.
-        if (
-            status.get(
-                "route_data_complete"
-            )
-            is False
-        ):
+        if status.get("route_data_complete") is False:
             return (
                 "insufficient_evidence",
                 "route data incomplete: route topology evidence is "
@@ -1354,12 +1019,7 @@ class TransitGatewayAnalyzer(Analyzer):
 
         # If attachment completeness is explicitly false,
         # evidence is insufficient.
-        if (
-            status.get(
-                "attachments_complete"
-            )
-            is False
-        ):
+        if status.get("attachments_complete") is False:
             return (
                 "insufficient_evidence",
                 "attachment inventory incomplete: "
@@ -1368,12 +1028,7 @@ class TransitGatewayAnalyzer(Analyzer):
 
         # Missing completeness information is also not evidence
         # of zero attachments.
-        if (
-            status.get(
-                "attachments_complete"
-            )
-            is not True
-        ):
+        if status.get("attachments_complete") is not True:
             return (
                 "insufficient_evidence",
                 "attachment inventory completeness is unknown",
@@ -1388,9 +1043,7 @@ class TransitGatewayAnalyzer(Analyzer):
 
             if active:
 
-                traffic_rows = (
-                    _collect_attachment_traffic(context)
-                )
+                traffic_rows = _collect_attachment_traffic(context)
 
                 if traffic_rows is None:
                     return (

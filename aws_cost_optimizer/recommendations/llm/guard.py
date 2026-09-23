@@ -281,7 +281,7 @@ _UNCONDITIONAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     ("code_block_or_shell_flag", re.compile(r"```|(?<!\w)--[a-z][a-z-]*\b", re.I)),
-            (
+    (
         "account_scope_widening",
         # Only flag explicit account-wide claims that assert a lack of
         # resources/costs/budgets, not legitimate mentions of "the account"

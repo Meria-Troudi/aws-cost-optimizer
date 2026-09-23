@@ -60,7 +60,6 @@ class NatGatewayCollector(BaseCollector):
     key = "nat_gateway"
     resource_type = "nat_gateway"
 
-
     def __init__(
         self,
         scan,
@@ -205,7 +204,6 @@ class NatGatewayCollector(BaseCollector):
         role: str,
     ) -> tuple[str, ...]:
 
-
         result: list[str] = []
 
         for spec in self._profile_metric_specs():
@@ -295,7 +293,6 @@ class NatGatewayCollector(BaseCollector):
         return max(value, 60)
 
     def _state_category(self, state: Any) -> str:
- 
 
         normalized = str(state or "").strip().lower()
 
@@ -305,7 +302,6 @@ class NatGatewayCollector(BaseCollector):
         return normalized or "unknown"
 
     def _get_subnet_az(self, subnet_id: Any) -> Optional[str]:
-
 
         if not subnet_id:
             return None
@@ -333,13 +329,11 @@ class NatGatewayCollector(BaseCollector):
 
     def _get_nat_primary_az(self, raw: Dict[str, Any]) -> Optional[str]:
 
-
         raw = self._dict(raw)
 
         return self._get_subnet_az(raw.get("SubnetId"))
 
     def _get_nat_coverage_azs(self, raw: Dict[str, Any]) -> List[str]:
-
 
         raw = self._dict(raw)
 
@@ -374,7 +368,6 @@ class NatGatewayCollector(BaseCollector):
         self,
         routes: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
-
 
         routes = [route for route in routes if isinstance(route, dict)]
 

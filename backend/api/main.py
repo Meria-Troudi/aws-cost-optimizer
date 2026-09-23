@@ -90,15 +90,9 @@ def warm_up_llm_model() -> None:
         provider = OllamaProvider()
 
         if provider.warm_up():
-            print(
-                "[startup] LLM model "
-                f"'{provider.model}' is warm."
-            )
+            print("[startup] LLM model " f"'{provider.model}' is warm.")
         else:
-            print(
-                "[startup] LLM warm-up skipped "
-                "(Ollama not reachable)."
-            )
+            print("[startup] LLM warm-up skipped " "(Ollama not reachable).")
 
     threading.Thread(
         target=_warm,

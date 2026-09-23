@@ -35,7 +35,6 @@ from ....evidence import Evidence
 from ....finding import Finding, ObservationPeriod
 from ....registry import register
 
-
 SUPPORTED_RESOURCE_TYPES = frozenset(
     {
         "public_ipv4",
@@ -132,80 +131,29 @@ class IPv4Analyzer(Analyzer):
         context: AnalysisContext,
     ) -> dict[str, Any]:
 
-        configuration = _dict(
-            context.configuration()
-        )
+        configuration = _dict(context.configuration())
 
         return {
             "configuration_available": bool(configuration),
-
-            "public_ip": configuration.get(
-                "public_ip"
-            ),
-
-            "allocation_id": configuration.get(
-                "allocation_id"
-            ),
-
-            "association_id": configuration.get(
-                "association_id"
-            ),
-
-            "associated": configuration.get(
-                "associated"
-            ),
-
-            "instance_id": configuration.get(
-                "instance_id"
-            ),
-
-            "instance_state": _normalise_string(
-                configuration.get("instance_state")
-            ),
-
-            "network_interface_id": configuration.get(
-                "network_interface_id"
-            ),
-
+            "public_ip": configuration.get("public_ip"),
+            "allocation_id": configuration.get("allocation_id"),
+            "association_id": configuration.get("association_id"),
+            "associated": configuration.get("associated"),
+            "instance_id": configuration.get("instance_id"),
+            "instance_state": _normalise_string(configuration.get("instance_state")),
+            "network_interface_id": configuration.get("network_interface_id"),
             "network_interface_type": _normalise_string(
                 configuration.get("network_interface_type")
             ),
-
-            "requester_managed": configuration.get(
-                "requester_managed"
-            ),
-
-            "service_managed": configuration.get(
-                "service_managed"
-            ),
-
-            "optimization_candidate": configuration.get(
-                "optimization_candidate"
-            ),
-
-            "release_candidate": configuration.get(
-                "release_candidate"
-            ),
-
-            "cost_relevant": configuration.get(
-                "cost_relevant"
-            ),
-
-            "address_source": _normalise_string(
-                configuration.get("address_source")
-            ),
-
-            "address_type": _normalise_string(
-                configuration.get("address_type")
-            ),
-
-            "public_ip_type": _normalise_string(
-                configuration.get("public_ip_type")
-            ),
-
-            "billing_usage_type": configuration.get(
-                "billing_usage_type"
-            ),
+            "requester_managed": configuration.get("requester_managed"),
+            "service_managed": configuration.get("service_managed"),
+            "optimization_candidate": configuration.get("optimization_candidate"),
+            "release_candidate": configuration.get("release_candidate"),
+            "cost_relevant": configuration.get("cost_relevant"),
+            "address_source": _normalise_string(configuration.get("address_source")),
+            "address_type": _normalise_string(configuration.get("address_type")),
+            "public_ip_type": _normalise_string(configuration.get("public_ip_type")),
+            "billing_usage_type": configuration.get("billing_usage_type"),
         }
 
     # ------------------------------------------------------------------
@@ -488,14 +436,8 @@ class IPv4Analyzer(Analyzer):
         return Finding(
             finding_type=finding_type,
             title=title,
-            resource_type=(
-                context.resource_type
-                or "public_ipv4"
-            ),
-            resource_id=(
-                context.resource_id
-                or "unknown"
-            ),
+            resource_type=(context.resource_type or "public_ipv4"),
+            resource_id=(context.resource_id or "unknown"),
             analyzer=self.name,
             analyzer_version=self.version,
             severity=severity,
@@ -506,9 +448,7 @@ class IPv4Analyzer(Analyzer):
                 context,
                 data,
             ),
-            observation_period=self._observation_period(
-                context
-            ),
+            observation_period=self._observation_period(context),
             metadata=dict(metadata),
             recommendation_eligible=True,
             cost_optimization_type=cost_optimization_type,
@@ -524,16 +464,12 @@ class IPv4Analyzer(Analyzer):
         data: dict[str, Any],
     ) -> Evidence:
 
-        configuration = dict(
-            context.configuration() or {}
-        )
+        configuration = dict(context.configuration() or {})
 
         return Evidence(
             metrics={},
             configuration=configuration,
-            topology=dict(
-                context.topology() or {}
-            ),
+            topology=dict(context.topology() or {}),
             resource={
                 "resource_id": context.resource_id,
                 "resource_type": context.resource_type,
@@ -559,25 +495,14 @@ class IPv4Analyzer(Analyzer):
                 )
             },
             data_quality={
-                "configuration_available": bool(
-                    configuration
-                ),
-                "public_ip_available": (
-                    data["public_ip"] is not None
-                ),
-                "association_available": (
-                    data["associated"] is not None
-                ),
+                "configuration_available": bool(configuration),
+                "public_ip_available": (data["public_ip"] is not None),
+                "association_available": (data["associated"] is not None),
                 "instance_state_available": (
-                    data["instance_state"] is not None
-                    or not data["instance_id"]
+                    data["instance_state"] is not None or not data["instance_id"]
                 ),
-                "management_available": (
-                    data["requester_managed"] is not None
-                ),
-                "service_management_available": (
-                    data["service_managed"] is not None
-                ),
+                "management_available": (data["requester_managed"] is not None),
+                "service_management_available": (data["service_managed"] is not None),
                 "billing_classification_available": (
                     data["billing_usage_type"] is not None
                 ),
@@ -604,11 +529,7 @@ class IPv4Analyzer(Analyzer):
                 "AWS EC2 API",
                 "collector-derived evidence",
             ],
-            evidence_keys=(
-                [path]
-                if path
-                else []
-            ),
+            evidence_keys=([path] if path else []),
             observed=True,
         )
 
@@ -629,7 +550,5 @@ class IPv4Analyzer(Analyzer):
         return ObservationPeriod(
             start=period.get("start"),
             end=period.get("end"),
-            duration_seconds=period.get(
-                "duration_seconds"
-            ),
+            duration_seconds=period.get("duration_seconds"),
         )
