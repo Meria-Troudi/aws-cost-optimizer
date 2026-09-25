@@ -135,9 +135,7 @@ from ...evidence import Evidence
 from ...finding import Finding, ObservationPeriod
 from ...registry import register
 
-# ============================================================================
 # AWS WAF PRICING CONSTANTS
-# ============================================================================
 
 AWS_WAF_WEB_ACL_MONTHLY_PRICE = 5.00
 
@@ -168,9 +166,7 @@ AWS_WAF_TARGETED_BOT_PRICE_PER_MILLION = 10.00
 AWS_WAF_FRAUD_CONTROL_MONTHLY_PRICE = 10.00
 
 
-# ============================================================================
 # DEFAULT ANALYSIS THRESHOLDS
-# ============================================================================
 
 DEFAULT_HIGH_REQUESTS = 10_000_000
 DEFAULT_HIGH_WCU = 1500
@@ -180,9 +176,7 @@ DEFAULT_MIN_CAPTCHA_REQUESTS = 1_000
 DEFAULT_MIN_CHALLENGE_REQUESTS = 1_000
 
 
-# ============================================================================
 # FINDING TITLES
-# ============================================================================
 
 TITLES = {
     "waf_unused_web_acl": "Unused WAF Web ACL",
@@ -204,9 +198,7 @@ TITLES = {
 }
 
 
-# ============================================================================
 # GENERIC HELPERS
-# ============================================================================
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -245,9 +237,7 @@ def _statement(
     )
 
 
-# ============================================================================
 # ANALYZER
-# ============================================================================
 
 
 @register
@@ -261,9 +251,7 @@ class WAFAnalyzer(Analyzer):
         "waf_web_acl",
     }
 
-    # ========================================================================
     # SUPPORT
-    # ========================================================================
 
     def supports(
         self,
@@ -272,9 +260,7 @@ class WAFAnalyzer(Analyzer):
 
         return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
-    # ========================================================================
     # MAIN ANALYSIS
-    # ========================================================================
 
     def analyze(
         self,
@@ -328,9 +314,7 @@ class WAFAnalyzer(Analyzer):
 
         return findings
 
-    # ========================================================================
     # EVIDENCE DOMAINS
-    # ========================================================================
 
     @staticmethod
     def _configuration(
@@ -367,9 +351,7 @@ class WAFAnalyzer(Analyzer):
 
         return _dict(evidence.get("data_quality"))
 
-    # ========================================================================
     # TELEMETRY SEMANTICS
-    # ========================================================================
 
     _METRIC_OBSERVATION_KEYS = {
         "captcha_attempts": "CaptchasAttempted",
@@ -384,9 +366,7 @@ class WAFAnalyzer(Analyzer):
         metric_key: str | None = None,
     ) -> bool:
 
-        # ---------------------------------------------------------------
         # Specific metric
-        # ---------------------------------------------------------------
 
         if metric_key is not None:
 
@@ -399,15 +379,11 @@ class WAFAnalyzer(Analyzer):
 
             return observation.get(raw_metric_name) is True
 
-        # ---------------------------------------------------------------
         # Overall telemetry
-        # ---------------------------------------------------------------
 
         return traffic.get("available") is True and traffic.get("complete") is True
 
-    # ========================================================================
     # UNUSED WEB ACL
-    # ========================================================================
 
     def _detect_unused_web_acl(
         self,
@@ -478,9 +454,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # REQUEST VOLUME
-    # ========================================================================
 
     def _detect_high_request_volume(
         self,
@@ -548,9 +522,7 @@ class WAFAnalyzer(Analyzer):
             ],
         )
 
-    # ========================================================================
     # WCU
-    # ========================================================================
 
     def _detect_high_wcu(
         self,
@@ -698,9 +670,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # CUSTOMER RULE COUNT
-    # ========================================================================
 
     def _detect_high_rule_count(
         self,
@@ -797,9 +767,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # RULE ACTIVITY
-    # ========================================================================
 
     def _detect_rule_no_observed_activity(
         self,
@@ -922,9 +890,7 @@ class WAFAnalyzer(Analyzer):
             ],
         )
 
-    # ========================================================================
     # MANAGED RULE GROUP
-    # ========================================================================
 
     def _detect_managed_rule_group_cost(
         self,
@@ -1051,9 +1017,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # CAPTCHA
-    # ========================================================================
 
     def _detect_captcha_cost(
         self,
@@ -1147,9 +1111,7 @@ class WAFAnalyzer(Analyzer):
             ],
         )
 
-    # ========================================================================
     # CHALLENGE
-    # ========================================================================
 
     def _detect_challenge_cost(
         self,
@@ -1234,9 +1196,7 @@ class WAFAnalyzer(Analyzer):
             ],
         )
 
-    # ========================================================================
     # BODY INSPECTION
-    # ========================================================================
 
     def _detect_body_inspection_cost(
         self,
@@ -1400,9 +1360,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # BOT CONTROL
-    # ========================================================================
 
     def _detect_bot_control_cost(
         self,
@@ -1437,9 +1395,7 @@ class WAFAnalyzer(Analyzer):
         if "bot_control" not in premium and not bot_groups:
             return None
 
-        # ---------------------------------------------------------------
         # Determine Bot Control level
-        # ---------------------------------------------------------------
 
         bot_mode = str(configuration.get("bot_control_level") or "").strip().lower()
 
@@ -1479,9 +1435,7 @@ class WAFAnalyzer(Analyzer):
         }:
             bot_mode = "unknown"
 
-        # ---------------------------------------------------------------
         # Determine AWS pricing
-        # ---------------------------------------------------------------
 
         free_requests: Optional[float] = None
         request_price: Optional[float] = None
@@ -1498,9 +1452,7 @@ class WAFAnalyzer(Analyzer):
 
             request_price = AWS_WAF_TARGETED_BOT_PRICE_PER_MILLION
 
-        # ---------------------------------------------------------------
         # Exact usage evidence
-        # ---------------------------------------------------------------
 
         bot_requests = _number(traffic.get("bot_control_requests"))
 
@@ -1523,9 +1475,7 @@ class WAFAnalyzer(Analyzer):
 
             estimated_request_charge = billable_requests / 1_000_000 * request_price
 
-        # ---------------------------------------------------------------
         # Severity
-        # ---------------------------------------------------------------
 
         severity = "low"
 
@@ -1654,9 +1604,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # FRAUD CONTROL
-    # ========================================================================
 
     def _detect_fraud_control_cost(
         self,
@@ -1683,13 +1631,11 @@ class WAFAnalyzer(Analyzer):
         if not fraud_features:
             return None
 
-        # ---------------------------------------------------------------
         # Exact request telemetry may optionally be supplied by collector.
         #
         # We intentionally do not implement a local tier calculation
         # unless the collector provides the exact pricing basis.
         # Fraud Control pricing is tiered and should not be guessed.
-        # ---------------------------------------------------------------
 
         fraud_requests = _number(self._traffic(evidence).get("fraud_control_requests"))
 
@@ -1785,9 +1731,7 @@ class WAFAnalyzer(Analyzer):
             },
         )
 
-    # ========================================================================
     # THRESHOLD RESOLUTION
-    # ========================================================================
 
     @staticmethod
     def _threshold(
@@ -1829,9 +1773,7 @@ class WAFAnalyzer(Analyzer):
 
         return default
 
-    # ========================================================================
     # FINDING BUILDER
-    # ========================================================================
 
     def _finding(
         self,
@@ -1884,9 +1826,7 @@ class WAFAnalyzer(Analyzer):
             impact={},
         )
 
-    # ========================================================================
     # OBSERVATION PERIOD
-    # ========================================================================
 
     @staticmethod
     def _observation_period(
@@ -1927,9 +1867,7 @@ class WAFAnalyzer(Analyzer):
 
         return None
 
-    # ========================================================================
     # EVIDENCE BUILDER
-    # ========================================================================
 
     def _build_evidence(
         self,

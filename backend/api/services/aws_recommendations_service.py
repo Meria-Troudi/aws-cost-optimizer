@@ -94,9 +94,7 @@ class AwsRecommendationsService:
             CE_REGION,
         )
 
-    # ================================================================
     # GENERIC HELPERS
-    # ================================================================
 
     @staticmethod
     def _float(
@@ -221,9 +219,7 @@ class AwsRecommendationsService:
 
         return str(exc)
 
-    # ================================================================
     # SAVINGS PLANS
-    # ================================================================
 
     def _savings_plans(
         self,
@@ -312,9 +308,7 @@ class AwsRecommendationsService:
 
         return results, errors
 
-    # ================================================================
     # RESERVATIONS
-    # ================================================================
 
     @staticmethod
     def _reservation_resource_type(
@@ -449,9 +443,7 @@ class AwsRecommendationsService:
 
         return results, errors
 
-    # ================================================================
     # COST EXPLORER RIGHTSIZING
-    # ================================================================
 
     def _rightsizing(
         self,
@@ -594,9 +586,7 @@ class AwsRecommendationsService:
 
         return results, []
 
-    # ================================================================
     # COMPUTE OPTIMIZER
-    # ================================================================
 
     @staticmethod
     def _compute_optimizer_metric(
@@ -901,9 +891,7 @@ class AwsRecommendationsService:
 
         return results, errors
 
-    # ================================================================
     # OVERVIEW
-    # ================================================================
 
     def get_overview(
         self,

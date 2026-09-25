@@ -266,9 +266,7 @@ class DynamoDBAnalyzer(Analyzer):
 
         return findings
 
-    # ==================================================================
     # RULE 1 -- PROVISIONED UNDERUTILIZATION
-    # ==================================================================
 
     def _check_underutilized_provisioned(
         self,
@@ -338,9 +336,7 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 2 -- AUTOSCALING
-    # ==================================================================
 
     def _check_missing_autoscaling(
         self,
@@ -401,9 +397,7 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 3 -- UNUSED TABLE
-    # ==================================================================
 
     def _check_unused_table(
         self,
@@ -469,9 +463,7 @@ class DynamoDBAnalyzer(Analyzer):
             cost_optimization_type="elimination",
         )
 
-    # ==================================================================
     # RULE 4 -- ON-DEMAND REVIEW
-    # ==================================================================
 
     def _check_on_demand_review(
         self,
@@ -527,9 +519,7 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 5 -- GLOBAL TABLE
-    # ==================================================================
 
     def _check_global_table(
         self,
@@ -576,9 +566,7 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 6 -- GSI UNDERUTILIZATION
-    # ==================================================================
 
     def _check_gsi_underutilization(
         self,
@@ -695,9 +683,7 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 7 -- THROTTLING
-    # ==================================================================
 
     def _check_throttling(
         self,
@@ -748,9 +734,7 @@ class DynamoDBAnalyzer(Analyzer):
             recommendation_eligible=False,
         )
 
-    # ==================================================================
     # FINDING / EVIDENCE
-    # ==================================================================
 
     def _finding(
         self,

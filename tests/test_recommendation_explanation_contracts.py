@@ -35,9 +35,7 @@ from backend.database.models.scan_run import ScanRun
 
 import backend.api.services.recommendation_explanation_service as svc
 
-# ======================================================================
 # Payload compactness
-# ======================================================================
 
 
 def test_payload_never_includes_raw_topology_or_cloudwatch():
@@ -121,9 +119,7 @@ def test_payload_handles_missing_finding():
     assert payload["evidence"] == {}
 
 
-# ======================================================================
 # Service: cache-first + fail-safe
-# ======================================================================
 
 
 class _StubProvider:

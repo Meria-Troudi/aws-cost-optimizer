@@ -122,9 +122,7 @@ class IPv4Analyzer(Analyzer):
 
         return findings
 
-    # ------------------------------------------------------------------
     # DATA
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _data(
@@ -156,9 +154,7 @@ class IPv4Analyzer(Analyzer):
             "billing_usage_type": configuration.get("billing_usage_type"),
         }
 
-    # ------------------------------------------------------------------
     # RULE 1 — UNASSOCIATED EIP
-    # ------------------------------------------------------------------
 
     def _unassociated_eip(
         self,
@@ -234,9 +230,7 @@ class IPv4Analyzer(Analyzer):
             cost_optimization_type="elimination",
         )
 
-    # ------------------------------------------------------------------
     # RULE 2 — EIP ON STOPPED INSTANCE
-    # ------------------------------------------------------------------
 
     def _stopped_eip(
         self,
@@ -311,9 +305,7 @@ class IPv4Analyzer(Analyzer):
             cost_optimization_type="elimination",
         )
 
-    # ------------------------------------------------------------------
     # RULE 3 — ASSOCIATED PUBLIC IPV4 COST EXPOSURE
-    # ------------------------------------------------------------------
 
     def _in_use_public_ipv4(
         self,
@@ -414,9 +406,7 @@ class IPv4Analyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ------------------------------------------------------------------
     # FINDING
-    # ------------------------------------------------------------------
 
     def _finding(
         self,
@@ -454,9 +444,7 @@ class IPv4Analyzer(Analyzer):
             cost_optimization_type=cost_optimization_type,
         )
 
-    # ------------------------------------------------------------------
     # EVIDENCE
-    # ------------------------------------------------------------------
 
     def _evidence(
         self,
@@ -509,9 +497,7 @@ class IPv4Analyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # STATEMENT
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _statement(
@@ -533,9 +519,7 @@ class IPv4Analyzer(Analyzer):
             observed=True,
         )
 
-    # ------------------------------------------------------------------
     # OBSERVATION PERIOD
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _observation_period(

@@ -49,9 +49,7 @@ from ...finding import Finding, ObservationPeriod
 from ...metrics import metric_has_observed_data
 from ...registry import register
 
-# ======================================================================
 # DEFAULT POLICY
-# ======================================================================
 
 DEFAULT_POLICY = {
     "activity": {
@@ -116,9 +114,7 @@ class ElbAnalyzer(Analyzer):
 
     DEFAULT_RESOURCE_TYPE = "load_balancer"
 
-    # ==================================================================
     # SUPPORT
-    # ==================================================================
 
     def supports(
         self,
@@ -127,9 +123,7 @@ class ElbAnalyzer(Analyzer):
 
         return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
-    # ==================================================================
     # ANALYZE
-    # ==================================================================
 
     def analyze(
         self,
@@ -178,9 +172,7 @@ class ElbAnalyzer(Analyzer):
 
         return []
 
-    # ==================================================================
     # POLICY
-    # ==================================================================
 
     @classmethod
     def _policy(
@@ -253,9 +245,7 @@ class ElbAnalyzer(Analyzer):
 
         return policy
 
-    # ==================================================================
     # ELIGIBILITY
-    # ==================================================================
 
     @staticmethod
     def _configuration(
@@ -292,9 +282,7 @@ class ElbAnalyzer(Analyzer):
 
         return True
 
-    # ==================================================================
     # RESOURCE FAMILY
-    # ==================================================================
 
     @classmethod
     def _lb_type(
@@ -304,9 +292,7 @@ class ElbAnalyzer(Analyzer):
 
         return str(cls._configuration(context).get("type") or "").strip().lower()
 
-    # ==================================================================
     # METRICS
-    # ==================================================================
 
     @staticmethod
     def _metric(
@@ -376,9 +362,7 @@ class ElbAnalyzer(Analyzer):
 
         return None
 
-    # ==================================================================
     # TRAFFIC STATE
-    # ==================================================================
 
     @classmethod
     def _traffic_state(
@@ -491,9 +475,7 @@ class ElbAnalyzer(Analyzer):
             "new_flow_count": (new_flow_count),
         }
 
-    # ==================================================================
     # RELATIONSHIPS
-    # ==================================================================
 
     @staticmethod
     def _relationships(
@@ -534,9 +516,7 @@ class ElbAnalyzer(Analyzer):
             else {}
         )
 
-    # ==================================================================
     # SIGNALS + CANONICAL IDLE
-    # ==================================================================
 
     @classmethod
     def _signals(
@@ -743,9 +723,7 @@ class ElbAnalyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # RULE 1 — NO OBSERVED ACTIVITY
-    # ==================================================================
 
     def _check_no_observed_activity(
         self,
@@ -864,9 +842,7 @@ class ElbAnalyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # RULE 2 — LOW TRAFFIC
-    # ==================================================================
 
     def _check_low_traffic(
         self,
@@ -911,9 +887,7 @@ class ElbAnalyzer(Analyzer):
 
         lb_type = traffic.get("lb_type")
 
-        # --------------------------------------------------------------
         # ALB
-        # --------------------------------------------------------------
 
         if lb_type == "application":
 
@@ -967,9 +941,7 @@ class ElbAnalyzer(Analyzer):
                 "processed_gib_max": gib_limit,
             }
 
-        # --------------------------------------------------------------
         # NLB
-        # --------------------------------------------------------------
 
         elif lb_type == "network":
 
@@ -1023,9 +995,7 @@ class ElbAnalyzer(Analyzer):
                 "processed_gib_max": gib_limit,
             }
 
-        # --------------------------------------------------------------
         # GWLB
-        # --------------------------------------------------------------
 
         elif lb_type == "gateway":
 
@@ -1105,9 +1075,7 @@ class ElbAnalyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # RULE 3 — NO REGISTERED TARGETS
-    # ==================================================================
 
     def _check_no_registered_targets(
         self,
@@ -1185,9 +1153,7 @@ class ElbAnalyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # RULE 4 — NO HEALTHY TARGETS + NO TRAFFIC
-    # ==================================================================
 
     def _check_no_healthy_targets_no_traffic(
         self,
@@ -1292,9 +1258,7 @@ class ElbAnalyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # RULE 5 — IDLE + ZERO TRAFFIC + RECONCILED COST
-    # ==================================================================
 
     def _check_idle_with_cost(
         self,
@@ -1430,9 +1394,7 @@ class ElbAnalyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # METRIC STATEMENT HELPER
-    # ==================================================================
 
     @classmethod
     def _append_metric_statement(
@@ -1464,9 +1426,7 @@ class ElbAnalyzer(Analyzer):
             )
         )
 
-    # ==================================================================
     # FINDING BUILDER
-    # ==================================================================
 
     @classmethod
     def _finding(
@@ -1587,9 +1547,7 @@ class ElbAnalyzer(Analyzer):
             cost_optimization_type=(cost_optimization_type),
         )
 
-    # ==================================================================
     # EVIDENCE STATEMENT
-    # ==================================================================
 
     @staticmethod
     def _statement(
@@ -1611,9 +1569,7 @@ class ElbAnalyzer(Analyzer):
             observed=observed,
         )
 
-    # ==================================================================
     # OBSERVATION PERIOD
-    # ==================================================================
 
     @staticmethod
     def _observation_period(

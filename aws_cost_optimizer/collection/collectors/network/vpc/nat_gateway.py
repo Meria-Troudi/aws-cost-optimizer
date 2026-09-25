@@ -1373,9 +1373,7 @@ class NatGatewayCollector(BaseCollector):
 
         connection_metrics = self._connection_metrics()
 
-        # --------------------------------------------------------------
         # Traffic
-        # --------------------------------------------------------------
 
         traffic_values = {
             name: metric_sum_value(metrics_dict.get(name)) for name in traffic_metrics
@@ -1468,9 +1466,7 @@ class NatGatewayCollector(BaseCollector):
 
         traffic_complete = core_traffic_complete and core_traffic_semantics_valid
 
-        # --------------------------------------------------------------
         # Connections
-        # --------------------------------------------------------------
 
         active_metric = metrics_dict.get("ActiveConnectionCount")
 
@@ -1498,9 +1494,7 @@ class NatGatewayCollector(BaseCollector):
             active_connection_count is not None and active_connection_count > 0
         )
 
-        # --------------------------------------------------------------
         # Diagnostics
-        # --------------------------------------------------------------
 
         diagnostic_values = {}
         diagnostic_observed = {}
@@ -1567,9 +1561,7 @@ class NatGatewayCollector(BaseCollector):
             )
         )
 
-        # --------------------------------------------------------------
         # Packet metrics
-        # --------------------------------------------------------------
 
         packet_metrics = {
             name: {
@@ -1579,9 +1571,7 @@ class NatGatewayCollector(BaseCollector):
             for name in self.packet_metrics
         }
 
-        # --------------------------------------------------------------
         # Peak metrics
-        # --------------------------------------------------------------
 
         peak_bytes_metric = metrics_dict.get("PeakBytesPerSecond")
 
@@ -1599,9 +1589,7 @@ class NatGatewayCollector(BaseCollector):
             else None
         )
 
-        # --------------------------------------------------------------
         # Core activity
-        # --------------------------------------------------------------
 
         activity_available = traffic_available or core_connection_available
 
@@ -1779,9 +1767,7 @@ class NatGatewayCollector(BaseCollector):
 
         resolver = NetworkRelationshipResolver(topology)
 
-        # --------------------------------------------------------------
         # NAT routes
-        # --------------------------------------------------------------
 
         all_nat_routes = resolver.routes_targeting(
             "nat_gateway",
@@ -1874,9 +1860,7 @@ class NatGatewayCollector(BaseCollector):
             )
         )
 
-        # --------------------------------------------------------------
         # AZ analysis
-        # --------------------------------------------------------------
 
         nat_az = configuration.get("availability_zone")
 
@@ -1939,9 +1923,7 @@ class NatGatewayCollector(BaseCollector):
 
         unresolved_az_subnets = sorted(set(unresolved_az_subnets))
 
-        # --------------------------------------------------------------
         # Strong endpoint analysis
-        # --------------------------------------------------------------
 
         endpoints = topology.get(
             "vpc_endpoints",
@@ -1963,9 +1945,7 @@ class NatGatewayCollector(BaseCollector):
             topology=topology,
         )
 
-        # --------------------------------------------------------------
         # Fleet
-        # --------------------------------------------------------------
 
         fleet_context = self._build_nat_fleet_context(
             vpc_id=str(vpc_id),
@@ -1974,9 +1954,7 @@ class NatGatewayCollector(BaseCollector):
             dependent_subnet_profiles=(dependent_subnet_profiles),
         )
 
-        # --------------------------------------------------------------
         # Route summary
-        # --------------------------------------------------------------
 
         route_summary = self._build_nat_route_summary(all_nat_routes)
 
@@ -2347,9 +2325,7 @@ class NatGatewayCollector(BaseCollector):
             key=lambda item: str(item.get("endpoint_id") or ""),
         )
 
-        # --------------------------------------------------------------
         # Strong evidence semantics
-        # --------------------------------------------------------------
 
         gateway_route_table_covered = {
             route_table_id

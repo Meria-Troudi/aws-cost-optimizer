@@ -714,9 +714,7 @@ class RDSCollector(BaseCollector):
             requested_period=(self._requested_period()),
         )
 
-    # ==================================================================
     # OBSERVATIONS
-    # ==================================================================
 
     def collect_observations(
         self,
@@ -752,7 +750,6 @@ class RDSCollector(BaseCollector):
             [],
         )
 
-        # ----------------------------------------------------------
         # IMPORTANT: this profile deliberately queries some metrics
         # twice under the same metric_name with different statistics
         # (e.g. CPUUtilization/Average + CPUUtilization/Maximum,
@@ -762,7 +759,6 @@ class RDSCollector(BaseCollector):
         # Merge same-name results into one canonical entry instead,
         # while also keeping each statistic addressable by its own
         # metric_key for callers that want the raw series.
-        # ----------------------------------------------------------
 
         metrics: dict = {}
 

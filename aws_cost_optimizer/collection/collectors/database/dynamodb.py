@@ -106,9 +106,7 @@ class DynamoDBCollector(BaseCollector):
 
         self._analysis_duration_seconds: Optional[float] = None
 
-    # ==============================================================
     # PROFILE
-    # ==============================================================
 
     def _section(
         self,
@@ -152,9 +150,7 @@ class DynamoDBCollector(BaseCollector):
             self.cloudwatch_period(),
         )
 
-    # ==============================================================
     # DISCOVERY
-    # ==============================================================
 
     def discover(self) -> List[Dict[str, Any]]:
 
@@ -218,9 +214,7 @@ class DynamoDBCollector(BaseCollector):
 
         return str(value)
 
-    # ==============================================================
     # IDENTITY
-    # ==============================================================
 
     def collect_identity(
         self,
@@ -241,9 +235,7 @@ class DynamoDBCollector(BaseCollector):
             "tags": self._collect_tags(table.get("TableArn")),
         }
 
-    # ==============================================================
     # CONFIGURATION
-    # ==============================================================
 
     def collect_configuration(
         self,
@@ -299,9 +291,7 @@ class DynamoDBCollector(BaseCollector):
             },
         }
 
-    # ==============================================================
     # RELATIONSHIPS
-    # ==============================================================
 
     def collect_relationships(
         self,
@@ -329,9 +319,7 @@ class DynamoDBCollector(BaseCollector):
             },
         }
 
-    # ==============================================================
     # CLOUDWATCH PREFETCH
-    # ==============================================================
 
     def _prefetch_metrics(
         self,
@@ -423,9 +411,7 @@ class DynamoDBCollector(BaseCollector):
 
         self._metrics_batch_cache = results if isinstance(results, dict) else {}
 
-    # ==============================================================
     # OBSERVATIONS
-    # ==============================================================
 
     def collect_observations(
         self,
@@ -507,9 +493,7 @@ class DynamoDBCollector(BaseCollector):
             ),
         }
 
-    # ==============================================================
     # TOPOLOGY
-    # ==============================================================
 
     def collect_topology(
         self,
@@ -528,9 +512,7 @@ class DynamoDBCollector(BaseCollector):
             ),
         }
 
-    # ==============================================================
     # OPTIMIZATION EVIDENCE
-    # ==============================================================
 
     def build_optimization_evidence(
         self,
@@ -586,9 +568,7 @@ class DynamoDBCollector(BaseCollector):
             },
         }
 
-    # ==============================================================
     # INDEXES
-    # ==============================================================
 
     def _collect_indexes(
         self,
@@ -620,9 +600,7 @@ class DynamoDBCollector(BaseCollector):
 
         return result
 
-    # ==============================================================
     # GLOBAL TABLE
-    # ==============================================================
 
     @staticmethod
     def _global_table_context(
@@ -658,9 +636,7 @@ class DynamoDBCollector(BaseCollector):
             "replicas": replica_details,
         }
 
-    # ==============================================================
     # AUTOSCALING
-    # ==============================================================
 
     def _prefetch_autoscaling(
         self,
@@ -787,9 +763,7 @@ class DynamoDBCollector(BaseCollector):
                 "error": str(exc),
             }
 
-    # ==============================================================
     # DERIVED
-    # ==============================================================
 
     @classmethod
     def _build_derived(
@@ -939,9 +913,7 @@ class DynamoDBCollector(BaseCollector):
 
         return min(100.0, consumed_rate / provisioned * 100.0)
 
-    # ==============================================================
     # METRIC QUALITY
-    # ==============================================================
 
     @classmethod
     def _metrics_to_map(cls, results: Any) -> Dict[str, Any]:
@@ -1029,9 +1001,7 @@ class DynamoDBCollector(BaseCollector):
             ),
         }
 
-    # ==============================================================
     # TABLE HELPERS
-    # ==============================================================
 
     @staticmethod
     def _billing_mode(table: Dict[str, Any]) -> str:
@@ -1126,9 +1096,7 @@ class DynamoDBCollector(BaseCollector):
 
             return {}
 
-    # ==============================================================
     # ISO / DICT
-    # ==============================================================
 
     @staticmethod
     def _dict(value: Any) -> Dict[str, Any]:

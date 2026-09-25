@@ -42,9 +42,7 @@ from ....finding import (
 )
 from ....registry import register
 
-# ======================================================================
 # DEFAULT THRESHOLDS
-# ======================================================================
 
 DEFAULT_LOW_CPU_AVERAGE_PERCENT = 20.0
 DEFAULT_LOW_CPU_MAXIMUM_PERCENT = 50.0
@@ -65,9 +63,7 @@ DEFAULT_LOW_GPU_UTILIZATION_PERCENT = 20.0
 DEFAULT_MIN_NODEGROUP_INSTANCES = 1
 
 
-# ======================================================================
 # METRIC NAMES
-# ======================================================================
 
 CPU_UTILIZATION = "node_cpu_utilization"
 CPU_LIMIT = "node_cpu_limit"
@@ -104,9 +100,7 @@ POD_GPU_RESERVED = "pod_gpu_reserved_capacity"
 POD_GPU_UTILIZATION = "pod_gpu_utilization"
 
 
-# ======================================================================
 # HELPERS
-# ======================================================================
 
 
 def _dict(
@@ -190,9 +184,7 @@ def _statement(
     )
 
 
-# ======================================================================
 # CONFIGURATION
-# ======================================================================
 
 
 def _config(
@@ -245,9 +237,7 @@ def _threshold(
     return parsed
 
 
-# ======================================================================
 # RESOURCE DATA
-# ======================================================================
 
 
 def _configuration(
@@ -306,9 +296,7 @@ def _ec2_instances(
     ]
 
 
-# ======================================================================
 # CLOUDWATCH GROUPS
-# ======================================================================
 
 
 def _cloudwatch_group(
@@ -377,9 +365,7 @@ def _metric_ready(
     return True
 
 
-# ======================================================================
 # NODE SERIES
-# ======================================================================
 
 
 def _node_series(
@@ -475,9 +461,7 @@ def _node_series_index(
     return result
 
 
-# ======================================================================
 # POD SERIES
-# ======================================================================
 
 
 def _pod_series(
@@ -502,9 +486,7 @@ def _pod_series(
     ]
 
 
-# ======================================================================
 # SERIES VALUE HELPERS
-# ======================================================================
 
 
 def _series_average(
@@ -598,9 +580,7 @@ def _utilization_hotspots(
     return sorted(hotspots, key=lambda item: str(item["instance_id"]))
 
 
-# ======================================================================
 # NODEGROUP UTILIZATION
-# ======================================================================
 
 
 def _instance_to_nodegroup(
@@ -701,9 +681,7 @@ def _mean(
     return sum(values) / len(values)
 
 
-# ======================================================================
 # OBSERVATION PERIOD
-# ======================================================================
 
 
 def _observation_period(
@@ -793,9 +771,7 @@ def _minimum_observation_period_met(
     return observed >= required
 
 
-# ======================================================================
 # ANALYZER
-# ======================================================================
 
 
 @register
@@ -809,9 +785,7 @@ class EKSAnalyzer(Analyzer):
         "eks",
     }
 
-    # ==================================================================
     # SUPPORT
-    # ==================================================================
 
     def supports(
         self,
@@ -820,9 +794,7 @@ class EKSAnalyzer(Analyzer):
 
         return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
-    # ==================================================================
     # ANALYZE
-    # ==================================================================
 
     def analyze(
         self,
@@ -856,9 +828,7 @@ class EKSAnalyzer(Analyzer):
 
         return findings
 
-    # ==================================================================
     # RULE 1: VERSION SUPPORT
-    # ==================================================================
 
     def _check_extended_support(
         self,
@@ -917,9 +887,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=False,
         )
 
-    # ==================================================================
     # RULE 2: NO OBSERVED WORKER CAPACITY
-    # ==================================================================
 
     def _check_no_observed_worker_capacity(
         self,
@@ -999,9 +967,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=False,
         )
 
-    # ==================================================================
     # RULE 3: CLUSTER WORKER UNDERUTILIZATION
-    # ==================================================================
 
     def _check_low_cluster_utilization(
         self,
@@ -1157,9 +1123,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 4: NODEGROUP UNDERUTILIZATION
-    # ==================================================================
 
     def _check_nodegroup_underutilization(
         self,
@@ -1358,9 +1322,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 5: POD CPU
-    # ==================================================================
 
     def _check_pod_cpu_overprovisioning(
         self,
@@ -1442,9 +1404,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 7: POD MEMORY
-    # ==================================================================
 
     def _check_pod_memory_overprovisioning(
         self,
@@ -1526,9 +1486,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # RULE 8: GPU
-    # ==================================================================
 
     def _check_gpu_underutilization(
         self,
@@ -1639,9 +1597,7 @@ class EKSAnalyzer(Analyzer):
             recommendation_eligible=True,
         )
 
-    # ==================================================================
     # COMMON CHECKS
-    # ==================================================================
 
     @staticmethod
     def _metric_pair_ready(
@@ -1702,9 +1658,7 @@ class EKSAnalyzer(Analyzer):
             DEFAULT_LOW_MEMORY_AVERAGE_PERCENT,
         )
 
-    # ==================================================================
     # EVIDENCE
-    # ==================================================================
 
     @staticmethod
     def _metric_statement(
@@ -1756,9 +1710,7 @@ class EKSAnalyzer(Analyzer):
             observed=True,
         )
 
-    # ==================================================================
     # FINDING CREATION
-    # ==================================================================
 
     def _finding(
         self,

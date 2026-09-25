@@ -73,9 +73,7 @@ from ....evidence import Evidence
 from ....finding import Finding
 from ....registry import register
 
-# =====================================================================
 # CONSTANTS
-# =====================================================================
 
 # Operational classification threshold.
 #
@@ -89,9 +87,7 @@ from ....registry import register
 DEFAULT_MEANINGFUL_TRAFFIC_GIB = 1.0
 
 
-# =====================================================================
 # GENERIC HELPERS
-# =====================================================================
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -128,9 +124,7 @@ def _state(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
-# =====================================================================
 # CONTEXT
-# =====================================================================
 
 
 def _relationships(
@@ -164,9 +158,7 @@ def _collection_status(
     return _dict(_relationships(context).get("collection_status"))
 
 
-# =====================================================================
 # ATTACHMENTS
-# =====================================================================
 
 
 def _attachments(
@@ -235,9 +227,7 @@ def _attachment_id(
     return str(value)
 
 
-# =====================================================================
 # CLOUDWATCH STRUCTURE
-# =====================================================================
 
 
 def _attachment_metrics(
@@ -260,9 +250,7 @@ def _attachment_metrics(
     return {}
 
 
-# =====================================================================
 # METRIC HELPERS
-# =====================================================================
 
 
 def _metric_total(
@@ -317,9 +305,7 @@ def _metric_complete(
     return metric.get("has_data") is True and _state(metric.get("status")) == "ok"
 
 
-# =====================================================================
 # ATTACHMENT TRAFFIC
-# =====================================================================
 
 
 def _attachment_traffic(
@@ -453,9 +439,7 @@ def _total_attachment_traffic_gib(
     return sum(_non_negative(row.get("observed_gib")) or 0.0 for row in rows)
 
 
-# =====================================================================
 # BILLING
-# =====================================================================
 
 
 def _tgw_cost(
@@ -474,9 +458,7 @@ def _has_tgw_cost(
     return _tgw_cost(context) > 0
 
 
-# =====================================================================
 # ANALYZER CONFIGURATION
-# =====================================================================
 
 
 def _analyzer_config(
@@ -515,9 +497,7 @@ def _meaningful_traffic_threshold_gib(
     return value
 
 
-# =====================================================================
 # FINDING FACTORY
-# =====================================================================
 
 
 def _finding(
@@ -584,9 +564,7 @@ def _finding(
     )
 
 
-# =====================================================================
 # ANALYZER
-# =====================================================================
 
 
 @register
@@ -600,9 +578,7 @@ class TransitGatewayAnalyzer(Analyzer):
         "transit_gateway",
     }
 
-    # -----------------------------------------------------------------
     # SUPPORT
-    # -----------------------------------------------------------------
 
     def supports(
         self,
@@ -611,9 +587,7 @@ class TransitGatewayAnalyzer(Analyzer):
 
         return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
-    # -----------------------------------------------------------------
     # MAIN
-    # -----------------------------------------------------------------
 
     def analyze(
         self,
@@ -623,16 +597,12 @@ class TransitGatewayAnalyzer(Analyzer):
         if not self.supports(context):
             return []
 
-        # =============================================================
         # HARD COST GATE
-        # =============================================================
 
         if not _has_tgw_cost(context):
             return []
 
-        # =============================================================
         # STRUCTURAL EVIDENCE
-        # =============================================================
 
         findings: list[Finding] = []
 
@@ -645,9 +615,7 @@ class TransitGatewayAnalyzer(Analyzer):
             # applicable.
             return findings
 
-        # =============================================================
         # UTILIZATION ANALYSIS
-        # =============================================================
 
         low_utilization_finding = self._low_utilization(context)
 
@@ -656,9 +624,7 @@ class TransitGatewayAnalyzer(Analyzer):
 
         return findings
 
-    # =================================================================
     # RULE 1 — NO ATTACHMENTS
-    # =================================================================
 
     def _no_attachments(
         self,
@@ -733,9 +699,7 @@ class TransitGatewayAnalyzer(Analyzer):
             },
         )
 
-    # =================================================================
     # RULE 2 — LOW UTILIZATION
-    # =================================================================
 
     def _low_utilization(
         self,
@@ -762,9 +726,7 @@ class TransitGatewayAnalyzer(Analyzer):
         if not active:
             return None
 
-        # =============================================================
         # COMPLETE ATTACHMENT TELEMETRY IS REQUIRED
-        # =============================================================
 
         traffic_rows = _collect_attachment_traffic(context)
 
@@ -777,16 +739,12 @@ class TransitGatewayAnalyzer(Analyzer):
 
         total_gib = _total_attachment_traffic_gib(traffic_rows)
 
-        # =============================================================
         # MEANINGFUL TRAFFIC
-        # =============================================================
 
         if total_gib > threshold:
             return None
 
-        # =============================================================
         # LOW / NO MEANINGFUL TRAFFIC
-        # =============================================================
 
         cost = _tgw_cost(context)
 
@@ -902,9 +860,7 @@ class TransitGatewayAnalyzer(Analyzer):
             },
         )
 
-    # =================================================================
     # EVIDENCE-GAP FINDINGS
-    # =================================================================
 
     def _topology_incomplete(
         self,
@@ -989,9 +945,7 @@ class TransitGatewayAnalyzer(Analyzer):
             impact={},
         )
 
-    # =================================================================
     # OUTCOME CLASSIFICATION
-    # =================================================================
 
     def classify(
         self,

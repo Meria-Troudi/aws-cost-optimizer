@@ -82,9 +82,7 @@ class PublicIPv4Collector(BaseCollector):
             dict[str, Any],
         ] = {}
 
-    # ==============================================================
     # DISCOVERY
-    # ==============================================================
 
     def discover(
         self,
@@ -147,9 +145,7 @@ class PublicIPv4Collector(BaseCollector):
 
         return resources
 
-    # ==============================================================
     # DISCOVERY HELPERS
-    # ==============================================================
 
     def _discover_eips(
         self,
@@ -206,9 +202,7 @@ class PublicIPv4Collector(BaseCollector):
 
         return result
 
-    # ==============================================================
     # BATCH ENRICHMENT
-    # ==============================================================
 
     def _build_indexes(
         self,
@@ -265,9 +259,7 @@ class PublicIPv4Collector(BaseCollector):
                     if instance_id:
                         self._instance_index[str(instance_id)] = instance
 
-    # ==============================================================
     # RESOURCE ID
-    # ==============================================================
 
     def get_resource_id(
         self,
@@ -300,9 +292,7 @@ class PublicIPv4Collector(BaseCollector):
 
         return f"public-ip:{public_ip}"
 
-    # ==============================================================
     # IDENTITY
-    # ==============================================================
 
     def collect_identity(
         self,
@@ -375,9 +365,7 @@ class PublicIPv4Collector(BaseCollector):
             ),
         }
 
-    # ==============================================================
     # CONFIGURATION
-    # ==============================================================
 
     def collect_configuration(
         self,
@@ -538,9 +526,7 @@ class PublicIPv4Collector(BaseCollector):
             "release_candidate": False,
         }
 
-    # ==============================================================
     # OBSERVATIONS
-    # ==============================================================
 
     def collect_observations(
         self,
@@ -556,9 +542,7 @@ class PublicIPv4Collector(BaseCollector):
             },
         }
 
-    # ==============================================================
     # OPTIMIZATION EVIDENCE
-    # ==============================================================
 
     def build_optimization_evidence(
         self,
@@ -627,9 +611,7 @@ class PublicIPv4Collector(BaseCollector):
             },
         }
 
-    # ==============================================================
     # HELPERS
-    # ==============================================================
 
     def _eni_for_eip(
         self,

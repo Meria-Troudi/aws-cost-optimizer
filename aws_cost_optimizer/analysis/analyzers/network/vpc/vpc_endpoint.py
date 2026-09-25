@@ -61,9 +61,7 @@ class VpcEndpointAnalyzer(Analyzer):
         "Interface",
     }
 
-    # ------------------------------------------------------------------
     # Analyzer entry point
-    # ------------------------------------------------------------------
 
     def supports(
         self,
@@ -102,9 +100,7 @@ class VpcEndpointAnalyzer(Analyzer):
 
         return findings
 
-    # ------------------------------------------------------------------
     # Context helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _dict(
@@ -240,9 +236,7 @@ class VpcEndpointAnalyzer(Analyzer):
 
         return True
 
-    # ------------------------------------------------------------------
     # Collection completeness
-    # ------------------------------------------------------------------
 
     @classmethod
     def _topology_complete(
@@ -278,9 +272,7 @@ class VpcEndpointAnalyzer(Analyzer):
 
         return status.get("network_interfaces") == "ok"
 
-    # ------------------------------------------------------------------
     # Finding 1: non-operational endpoint
-    # ------------------------------------------------------------------
 
     def _check_non_operational(
         self,
@@ -336,9 +328,7 @@ class VpcEndpointAnalyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # Finding 2: gateway endpoint has no routes
-    # ------------------------------------------------------------------
 
     def _check_gateway_missing_routes(
         self,
@@ -406,9 +396,7 @@ class VpcEndpointAnalyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # Finding 3: gateway endpoint partial route coverage
-    # ------------------------------------------------------------------
 
     def _check_gateway_partial_coverage(
         self,
@@ -494,9 +482,7 @@ class VpcEndpointAnalyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # Finding 4: interface endpoint ENI mismatch
-    # ------------------------------------------------------------------
 
     def _check_interface_eni_mismatch(
         self,
@@ -637,9 +623,7 @@ class VpcEndpointAnalyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # Finding 5: billing/resource reconciliation
-    # ------------------------------------------------------------------
 
     def _check_billing_reconciliation(
         self,
@@ -813,9 +797,7 @@ class VpcEndpointAnalyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # Billing helpers
-    # ------------------------------------------------------------------
 
     @classmethod
     def _billing_reconciliation(
@@ -906,9 +888,7 @@ class VpcEndpointAnalyzer(Analyzer):
             "period": billing.get("period"),
         }
 
-    # ------------------------------------------------------------------
     # Finding construction
-    # ------------------------------------------------------------------
 
     def _finding(
         self,
@@ -941,9 +921,7 @@ class VpcEndpointAnalyzer(Analyzer):
             impact={},
         )
 
-    # ------------------------------------------------------------------
     # Evidence
-    # ------------------------------------------------------------------
 
     def _build_evidence(
         self,
@@ -1012,9 +990,7 @@ class VpcEndpointAnalyzer(Analyzer):
             },
         )
 
-    # ------------------------------------------------------------------
     # Observation period
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _observation_period(
@@ -1048,9 +1024,7 @@ class VpcEndpointAnalyzer(Analyzer):
             duration_seconds=value.get("duration_seconds"),
         )
 
-    # ------------------------------------------------------------------
     # Statement construction
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _statement(
@@ -1070,9 +1044,7 @@ class VpcEndpointAnalyzer(Analyzer):
             observed=observed,
         )
 
-    # ------------------------------------------------------------------
     # Generic helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _string_list(

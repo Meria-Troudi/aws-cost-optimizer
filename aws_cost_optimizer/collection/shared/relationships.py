@@ -124,9 +124,7 @@ class NetworkRelationshipResolver:
                 [],
             ).append(route)
 
-    # ------------------------------------------------------------------
     # Basic helpers
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _as_list(
@@ -148,9 +146,7 @@ class NetworkRelationshipResolver:
 
         return self._route_table_index.get(str(route_table_id))
 
-    # ------------------------------------------------------------------
     # Subnet lookup
-    # ------------------------------------------------------------------
 
     def subnet(
         self,
@@ -245,9 +241,7 @@ class NetworkRelationshipResolver:
 
         return result
 
-    # ------------------------------------------------------------------
     # Route lookup
-    # ------------------------------------------------------------------
 
     def routes_for_subnet(
         self,
@@ -353,9 +347,7 @@ class NetworkRelationshipResolver:
 
         return result
 
-    # ------------------------------------------------------------------
     # Target relationships
-    # ------------------------------------------------------------------
 
     def routes_targeting(
         self,
@@ -488,9 +480,7 @@ class NetworkRelationshipResolver:
             if table.get("route_table_id") and str(table.get("route_table_id")) in ids
         ]
 
-    # ------------------------------------------------------------------
     # Dependency extraction
-    # ------------------------------------------------------------------
 
     def dependency_ids_for_routes(
         self,
@@ -626,9 +616,7 @@ class NetworkRelationshipResolver:
             target_id=vpc_endpoint_id,
         )
 
-    # ------------------------------------------------------------------
     # Boolean helpers
-    # ------------------------------------------------------------------
 
     def subnet_has_nat_gateway(
         self,

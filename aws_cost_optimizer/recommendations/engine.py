@@ -55,7 +55,6 @@ from .scoring import score
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
 # Catalog evidence-concept resolver.
 #
 # The catalog's `required_evidence` entries are SEMANTIC concepts
@@ -75,7 +74,6 @@ logger = logging.getLogger(__name__)
 #
 # A concept not listed here falls back to exact-key lookups only (and thus
 # reports itself missing in the contract warning until mapped).
-# ---------------------------------------------------------------------------
 
 
 def _section_mentions_concept(section: Any, requirement: str) -> bool:
@@ -695,9 +693,7 @@ class RecommendationEngine:
             key=self._sort_key,
         )
 
-    # --------------------------------------------------------------
     # AGGREGATION
-    # --------------------------------------------------------------
 
     def _aggregate(
         self,
@@ -1003,9 +999,7 @@ class RecommendationEngine:
             "currency": "USD",
         }
 
-    # --------------------------------------------------------------
     # BUILD
-    # --------------------------------------------------------------
 
     def _build_one(
         self,
@@ -1187,9 +1181,7 @@ class RecommendationEngine:
             "supporting_finding_count": 0,
         }
 
-    # --------------------------------------------------------------
     # EVIDENCE VALIDATION
-    # --------------------------------------------------------------
 
     @classmethod
     def _missing_required_evidence(
@@ -1365,9 +1357,7 @@ class RecommendationEngine:
 
         return False
 
-    # --------------------------------------------------------------
     # HELPERS
-    # --------------------------------------------------------------
 
     @staticmethod
     def _title_for(

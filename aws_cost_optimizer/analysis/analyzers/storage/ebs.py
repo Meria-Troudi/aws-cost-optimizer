@@ -75,9 +75,7 @@ class EBSAnalyzer(Analyzer):
 
         findings: list[Finding] = []
 
-        # ---------------------------------------------------------
         # 1. Unattached volume
-        # ---------------------------------------------------------
 
         unattached = self._is_unattached(volume)
 
@@ -92,9 +90,7 @@ class EBSAnalyzer(Analyzer):
             if finding:
                 findings.append(finding)
 
-        # ---------------------------------------------------------
         # 2. gp2 -> gp3
-        # ---------------------------------------------------------
 
         if self._is_gp2(volume):
 
@@ -107,9 +103,7 @@ class EBSAnalyzer(Analyzer):
             if finding:
                 findings.append(finding)
 
-        # ---------------------------------------------------------
         # 3. IOPS utilization
-        # ---------------------------------------------------------
 
         finding = self._iops_finding(
             context,
@@ -120,9 +114,7 @@ class EBSAnalyzer(Analyzer):
         if finding:
             findings.append(finding)
 
-        # ---------------------------------------------------------
         # 4. Throughput utilization
-        # ---------------------------------------------------------
 
         finding = self._throughput_finding(
             context,
@@ -135,9 +127,7 @@ class EBSAnalyzer(Analyzer):
 
         return findings
 
-    # =============================================================
     # Volume extraction
-    # =============================================================
 
     @staticmethod
     def _volume(
@@ -183,9 +173,7 @@ class EBSAnalyzer(Analyzer):
 
         return {}
 
-    # =============================================================
     # Unattached volume
-    # =============================================================
 
     def _unattached_volume_finding(
         self,
@@ -260,9 +248,7 @@ class EBSAnalyzer(Analyzer):
             account_id=context.account_id,
         )
 
-    # =============================================================
     # gp2 -> gp3
-    # =============================================================
 
     def _gp2_to_gp3_finding(
         self,
@@ -340,9 +326,7 @@ class EBSAnalyzer(Analyzer):
             account_id=context.account_id,
         )
 
-    # =============================================================
     # IOPS
-    # =============================================================
 
     def _iops_finding(
         self,
@@ -522,9 +506,7 @@ class EBSAnalyzer(Analyzer):
             account_id=context.account_id,
         )
 
-    # =============================================================
     # Throughput
-    # =============================================================
 
     def _throughput_finding(
         self,
@@ -697,9 +679,7 @@ class EBSAnalyzer(Analyzer):
             account_id=context.account_id,
         )
 
-    # =============================================================
     # Evidence
-    # =============================================================
 
     def _evidence(
         self,
@@ -725,9 +705,7 @@ class EBSAnalyzer(Analyzer):
 
         return Evidence(billing=dict(context.billing() or {}), resource=resource)
 
-    # =============================================================
     # Helpers
-    # =============================================================
 
     @staticmethod
     def _is_unattached(

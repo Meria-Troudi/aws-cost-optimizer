@@ -51,9 +51,7 @@ from backend.api.services.analytics_constants import (
     MIN_PRIOR_COST_FOR_PERCENTAGE,
 )
 
-# ---------------------------------------------------------------------
 # Cache
-# ---------------------------------------------------------------------
 
 # Cost Explorer responses, keyed by query shape.
 #
@@ -152,9 +150,7 @@ def _cache_clear() -> None:
         _QUERY_CACHE.clear()
 
 
-# ---------------------------------------------------------------------
 # Service
-# ---------------------------------------------------------------------
 
 
 class DashboardService:
@@ -203,9 +199,7 @@ class DashboardService:
             CE_REGION,
         )
 
-    # ================================================================
     # DATE HELPERS
-    # ================================================================
 
     @staticmethod
     def _month_start(
@@ -268,9 +262,7 @@ class DashboardService:
 
         return list(reversed(values))
 
-    # ================================================================
     # COST EXPLORER CORE QUERY
-    # ================================================================
 
     def _query(
         self,
@@ -428,9 +420,7 @@ class DashboardService:
                 )
             )
 
-    # ================================================================
     # SAFE AMOUNT
-    # ================================================================
 
     @staticmethod
     def _amount(
@@ -492,9 +482,7 @@ class DashboardService:
 
         return 0.0
 
-    # ================================================================
     # OVERVIEW
-    # ================================================================
 
     def get_current_mtd(
         self,
@@ -548,9 +536,7 @@ class DashboardService:
             "estimated": estimated,
         }
 
-    # ================================================================
     # FORECAST
-    # ================================================================
 
     def get_current_month_forecast(
         self,
@@ -748,9 +734,7 @@ class DashboardService:
             "status": "available",
         }
 
-    # ================================================================
     # GENERIC MONTHLY GROUPING
-    # ================================================================
 
     def _monthly_grouped(
         self,
@@ -857,9 +841,7 @@ class DashboardService:
 
         return rows
 
-    # ================================================================
     # SERVICE / REGION / USAGE
-    # ================================================================
 
     def _get_monthly_service_region_usage(
         self,
@@ -1096,9 +1078,7 @@ class DashboardService:
 
         return rows
 
-    # ================================================================
     # OVERVIEW
-    # ================================================================
 
     def get_overview(
         self,
@@ -1508,9 +1488,7 @@ class DashboardService:
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    # ================================================================
     # COST EXPLORER DATE SCOPE
-    # ================================================================
 
     def resolve_explorer_scope(
         self,
@@ -1635,9 +1613,7 @@ class DashboardService:
 
         raise ValueError(f"Unknown date_type: {date_type}")
 
-    # ================================================================
     # COST EXPLORER MAIN
-    # ================================================================
 
     def get_cost_explorer(
         self,
@@ -1695,9 +1671,7 @@ class DashboardService:
             "items": rows,
         }
 
-    # ================================================================
     # SERVICE DRILL-DOWN
-    # ================================================================
 
     def get_cost_explorer_service(
         self,
@@ -1930,9 +1904,7 @@ class DashboardService:
             "monthly": monthly,
         }
 
-    # ================================================================
     # DAILY TREND (rolling N-day window)
-    # ================================================================
 
     def get_daily_trend(
         self,
@@ -2037,9 +2009,7 @@ class DashboardService:
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    # ================================================================
     # WEEKLY SERVICE CHANGES (current 7D vs previous 7D)
-    # ================================================================
 
     @staticmethod
     def _daily_group_totals(
@@ -2215,9 +2185,7 @@ class DashboardService:
             "retrieved_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    # ================================================================
     # MONTHLY COST BY DIMENSION (Service / Operation / Product)
-    # ================================================================
 
     def get_monthly_dimension_cost(
         self,

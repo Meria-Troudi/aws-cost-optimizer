@@ -144,9 +144,7 @@ def normalize_billing_context(
 
     result: dict[str, Any] = {}
 
-    # --------------------------------------------------------------
     # Amount
-    # --------------------------------------------------------------
 
     amount = _first_present(
         value,

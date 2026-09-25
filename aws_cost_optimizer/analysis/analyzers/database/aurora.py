@@ -47,9 +47,7 @@ from ...financial import calculate_savings
 from ...finding import Finding, ObservationPeriod
 from ...registry import register
 
-# ============================================================================
 # DEFAULT POLICY
-# ============================================================================
 
 DEFAULT_POLICY: dict[str, dict[str, Any]] = {
     "serverless_v2": {
@@ -125,9 +123,7 @@ DEFAULT_POLICY: dict[str, dict[str, Any]] = {
 }
 
 
-# ============================================================================
 # FINDING TITLES
-# ============================================================================
 
 TITLES: dict[str, str] = {
     "aurora_serverless_v2_cost_opportunity": "Provisioned Aurora Cluster With Sustained Low Workload",
@@ -144,9 +140,7 @@ TITLES: dict[str, str] = {
 }
 
 
-# ============================================================================
 # GENERIC HELPERS
-# ============================================================================
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -190,9 +184,7 @@ def _boolean(value: Any) -> bool | None:
     return None
 
 
-# ============================================================================
 # ANALYZER
-# ============================================================================
 
 
 @register
@@ -208,9 +200,7 @@ class AuroraAnalyzer(Analyzer):
 
     _dict = staticmethod(_dict)
 
-    # ----------------------------------------------------------------------
     # SUPPORT
-    # ----------------------------------------------------------------------
 
     def supports(
         self,
@@ -218,9 +208,7 @@ class AuroraAnalyzer(Analyzer):
     ) -> bool:
         return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
-    # ----------------------------------------------------------------------
     # ANALYZE
-    # ----------------------------------------------------------------------
 
     def analyze(
         self,
@@ -266,9 +254,7 @@ class AuroraAnalyzer(Analyzer):
 
         return findings
 
-    # ======================================================================
     # POLICY
-    # ======================================================================
 
     @classmethod
     def _policy(
@@ -322,9 +308,7 @@ class AuroraAnalyzer(Analyzer):
 
         return policy
 
-    # ======================================================================
     # CONFIGURATION
-    # ======================================================================
 
     @classmethod
     def _configuration(
@@ -361,9 +345,7 @@ class AuroraAnalyzer(Analyzer):
     ) -> dict[str, Any]:
         return cls._dict(cls._configuration(context).get("serverless_v1"))
 
-    # ======================================================================
     # RELATIONSHIPS
-    # ======================================================================
 
     @classmethod
     def _relationships(
@@ -399,9 +381,7 @@ class AuroraAnalyzer(Analyzer):
 
         return len(cls._reader_instances(context))
 
-    # ======================================================================
     # CLOUDWATCH
-    # ======================================================================
 
     @classmethod
     def _cloudwatch(
@@ -448,9 +428,7 @@ class AuroraAnalyzer(Analyzer):
 
         return metric if isinstance(metric, dict) else {}
 
-    # ======================================================================
     # METRIC VALIDATION
-    # ======================================================================
 
     @staticmethod
     def _metric_observed(
@@ -516,9 +494,7 @@ class AuroraAnalyzer(Analyzer):
 
         return True
 
-    # ======================================================================
     # INSTANCE METRICS
-    # ======================================================================
 
     @classmethod
     def _instance_metric(
@@ -536,9 +512,7 @@ class AuroraAnalyzer(Analyzer):
 
         return cls._dict(metrics.get(name))
 
-    # ======================================================================
     # OBSERVATION PERIOD
-    # ======================================================================
 
     @classmethod
     def _observation_period_data(
@@ -657,9 +631,7 @@ class AuroraAnalyzer(Analyzer):
 
         return days >= minimum, days
 
-    # ======================================================================
     # BILLING
-    # ======================================================================
 
     @classmethod
     def _billing(
@@ -745,9 +717,7 @@ class AuroraAnalyzer(Analyzer):
 
         return None
 
-    # ======================================================================
     # STOPPED CLUSTER
-    # ======================================================================
 
     def _check_stopped_cluster(
         self,
@@ -950,9 +920,7 @@ class AuroraAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ======================================================================
     # SERVERLESS V2
-    # ======================================================================
 
     def _check_serverless_v2_cost_opportunity(
         self,
@@ -1125,9 +1093,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # READER AUTO SCALING
-    # ======================================================================
 
     def _check_reader_autoscaling_cost_opportunity(
         self,
@@ -1320,9 +1286,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # READER UNDERUTILIZATION
-    # ======================================================================
 
     def _check_reader_underutilization(
         self,
@@ -1502,9 +1466,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # READER COUNT
-    # ======================================================================
 
     def _check_reader_count_review(
         self,
@@ -1585,9 +1547,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # IDLE CLUSTER
-    # ======================================================================
 
     def _check_idle_cluster(
         self,
@@ -1756,9 +1716,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # SERVERLESS CAPACITY
-    # ======================================================================
 
     def _check_serverless_capacity_pressure(
         self,
@@ -1837,9 +1795,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # I/O OPTIMIZED
-    # ======================================================================
 
     def _check_io_optimized_storage(
         self,
@@ -1964,9 +1920,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # BACKUP RETENTION
-    # ======================================================================
 
     def _check_backup_retention(
         self,
@@ -2037,9 +1991,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # GLOBAL DATABASE
-    # ======================================================================
 
     def _check_global_database(
         self,
@@ -2095,9 +2047,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # SERVERLESS V1
-    # ======================================================================
 
     def _check_serverless_v1(
         self,
@@ -2151,9 +2101,7 @@ class AuroraAnalyzer(Analyzer):
             ),
         )
 
-    # ======================================================================
     # OBSERVATIONS
-    # ======================================================================
 
     @classmethod
     def _observations(
@@ -2162,9 +2110,7 @@ class AuroraAnalyzer(Analyzer):
     ) -> dict[str, Any]:
         return cls._dict(context.observations())
 
-    # ======================================================================
     # EVIDENCE
-    # ======================================================================
 
     @classmethod
     def _metric_statement(
@@ -2211,9 +2157,7 @@ class AuroraAnalyzer(Analyzer):
             observed=observed,
         )
 
-    # ======================================================================
     # FINDING BUILDER
-    # ======================================================================
 
     def _finding(
         self,
@@ -2273,9 +2217,7 @@ class AuroraAnalyzer(Analyzer):
             aggregation_scope="resource",
         )
 
-    # ======================================================================
     # FINANCIAL IMPACT
-    # ======================================================================
 
     @classmethod
     def _build_impact(
@@ -2318,9 +2260,7 @@ class AuroraAnalyzer(Analyzer):
             "savings_available": True,
         }
 
-    # ======================================================================
     # EVIDENCE OBJECT
-    # ======================================================================
 
     def _build_evidence(
         self,
@@ -2366,9 +2306,7 @@ class AuroraAnalyzer(Analyzer):
             },
         )
 
-    # ======================================================================
     # OBSERVATION PERIOD OBJECT
-    # ======================================================================
 
     @classmethod
     def _observation_period(
@@ -2444,9 +2382,7 @@ class AuroraAnalyzer(Analyzer):
             duration_seconds=duration_seconds,
         )
 
-    # ======================================================================
     # CLUSTER STATE
-    # ======================================================================
 
     @classmethod
     def _available_cluster(

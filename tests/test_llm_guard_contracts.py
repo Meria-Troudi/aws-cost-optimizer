@@ -32,9 +32,7 @@ def _explanation(**overrides) -> dict:
     return base
 
 
-# ----------------------------------------------------------------------
 # Must not fire on legitimate output
-# ----------------------------------------------------------------------
 
 
 def test_hedged_review_language_is_allowed():
@@ -64,9 +62,7 @@ def test_empty_explanation_is_not_a_violation():
     assert violations({}, ["savings"]) == []
 
 
-# ----------------------------------------------------------------------
 # Must fire on forbidden assertions
-# ----------------------------------------------------------------------
 
 
 def test_concrete_savings_figure_is_rejected():
@@ -121,13 +117,11 @@ def test_only_concepts_the_route_forbids_are_checked():
     assert violations(explanation, ["deletion_safety"]) == []
 
 
-# ----------------------------------------------------------------------
 # Unconditional checks: commands and account-scope widening
 #
 # These run regardless of the route's never_invent list, because this
 # system never hands out remediation commands, and a finding's evidence
 # is always scoped to one resource -- see llm/guard.py module docstring.
-# ----------------------------------------------------------------------
 
 
 def test_aws_cli_command_is_rejected_even_when_not_in_never_invent():
@@ -171,9 +165,7 @@ def test_resource_scoped_statement_is_allowed():
     assert violations(explanation, []) == []
 
 
-# ----------------------------------------------------------------------
 # Coverage honesty
-# ----------------------------------------------------------------------
 
 
 def test_guard_covers_the_catalogs_most_common_forbidden_concepts():

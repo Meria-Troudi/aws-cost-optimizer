@@ -51,9 +51,7 @@ class VpcEndpointCollector(BaseCollector):
     key = "vpc_endpoint"
     resource_type = "vpc_endpoint"
 
-    # ------------------------------------------------------------------
     # INITIALIZATION
-    # ------------------------------------------------------------------
 
     def __init__(
         self,
@@ -84,9 +82,7 @@ class VpcEndpointCollector(BaseCollector):
 
         self.interface_collector = NetworkInterfaceCollector(self.region)
 
-    # ------------------------------------------------------------------
     # DISCOVERY
-    # ------------------------------------------------------------------
 
     def discover(
         self,
@@ -104,9 +100,7 @@ class VpcEndpointCollector(BaseCollector):
 
             vpc_id = endpoint.get("vpc_id")
 
-            # ----------------------------------------------------------
             # Topology
-            # ----------------------------------------------------------
 
             if vpc_id:
 
@@ -124,9 +118,7 @@ class VpcEndpointCollector(BaseCollector):
                     "reason": ("VPC ID unavailable"),
                 }
 
-            # ----------------------------------------------------------
             # Relationships
-            # ----------------------------------------------------------
 
             topology = resource.get(
                 "topology",
@@ -160,18 +152,14 @@ class VpcEndpointCollector(BaseCollector):
                     ),
                 }
 
-            # ----------------------------------------------------------
             # Interface endpoint ENIs
-            # ----------------------------------------------------------
 
             self._collect_network_interfaces(
                 endpoint=endpoint,
                 resource=resource,
             )
 
-            # ----------------------------------------------------------
             # Collection status
-            # ----------------------------------------------------------
 
             resource["collection_status"] = self._build_collection_status(
                 endpoint=endpoint,
@@ -182,9 +170,7 @@ class VpcEndpointCollector(BaseCollector):
 
         return resources
 
-    # ------------------------------------------------------------------
     # AWS COLLECTION
-    # ------------------------------------------------------------------
 
     def _collect_all_endpoints(
         self,
@@ -230,9 +216,7 @@ class VpcEndpointCollector(BaseCollector):
 
         return result
 
-    # ------------------------------------------------------------------
     # NORMALIZATION
-    # ------------------------------------------------------------------
 
     def _normalize_endpoint(
         self,
@@ -306,9 +290,7 @@ class VpcEndpointCollector(BaseCollector):
             "is_interface": (endpoint_type == "Interface"),
         }
 
-    # ------------------------------------------------------------------
     # TOPOLOGY
-    # ------------------------------------------------------------------
 
     def _collect_topology(
         self,
@@ -350,9 +332,7 @@ class VpcEndpointCollector(BaseCollector):
 
         return topology
 
-    # ------------------------------------------------------------------
     # NETWORK INTERFACES
-    # ------------------------------------------------------------------
 
     def _collect_network_interfaces(
         self,
@@ -493,9 +473,7 @@ class VpcEndpointCollector(BaseCollector):
             ),
         }
 
-    # ------------------------------------------------------------------
     # RELATIONSHIPS
-    # ------------------------------------------------------------------
 
     def _build_relationships(
         self,
@@ -552,9 +530,7 @@ class VpcEndpointCollector(BaseCollector):
             else []
         )
 
-        # --------------------------------------------------------------
         # EFFECTIVE SUBNET -> ROUTE TABLE MAPPING
-        # --------------------------------------------------------------
 
         effective_subnet_to_route_table: Dict[
             str,
@@ -582,9 +558,7 @@ class VpcEndpointCollector(BaseCollector):
                 "source": mapping.get("source"),
             }
 
-        # --------------------------------------------------------------
         # ENDPOINT SUBNETS
-        # --------------------------------------------------------------
 
         endpoint_subnets: List[Dict[str, Any]] = []
 
@@ -634,9 +608,7 @@ class VpcEndpointCollector(BaseCollector):
             }
         )
 
-        # --------------------------------------------------------------
         # ROUTE TABLE RESOURCES
-        # --------------------------------------------------------------
 
         raw_route_tables = topology.get(
             "route_tables",
@@ -674,9 +646,7 @@ class VpcEndpointCollector(BaseCollector):
             set(configured_route_table_ids) - configured_route_table_resource_ids
         )
 
-        # --------------------------------------------------------------
         # GATEWAY ENDPOINT ROUTES
-        # --------------------------------------------------------------
 
         gateway_endpoint_routes: List[Dict[str, Any]] = []
 
@@ -751,9 +721,7 @@ class VpcEndpointCollector(BaseCollector):
             and (set(configured_route_table_ids) <= set(gateway_route_table_ids))
         )
 
-        # --------------------------------------------------------------
         # INTERFACE ENDPOINT ROUTE CONTEXT
-        # --------------------------------------------------------------
 
         interface_subnet_routes: List[Dict[str, Any]] = []
 
@@ -883,9 +851,7 @@ class VpcEndpointCollector(BaseCollector):
             },
         }
 
-    # ------------------------------------------------------------------
     # BASE INTERFACE
-    # ------------------------------------------------------------------
 
     def get_resource_id(
         self,
@@ -961,9 +927,7 @@ class VpcEndpointCollector(BaseCollector):
             else {}
         )
 
-    # ------------------------------------------------------------------
     # RESOURCE
-    # ------------------------------------------------------------------
 
     def _build_resource(
         self,
@@ -1024,9 +988,7 @@ class VpcEndpointCollector(BaseCollector):
             },
         }
 
-    # ------------------------------------------------------------------
     # OPTIMIZATION EVIDENCE
-    # ------------------------------------------------------------------
 
     def build_optimization_evidence(
         self,
@@ -1224,9 +1186,7 @@ class VpcEndpointCollector(BaseCollector):
             },
         }
 
-    # ------------------------------------------------------------------
     # COLLECTION STATUS
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _build_collection_status(
@@ -1388,9 +1348,7 @@ class VpcEndpointCollector(BaseCollector):
             "complete_for_analysis": (complete_for_analysis),
         }
 
-    # ------------------------------------------------------------------
     # HELPERS
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _safe_int(

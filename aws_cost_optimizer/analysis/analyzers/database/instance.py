@@ -247,9 +247,7 @@ class RDSAnalyzer(Analyzer):
 
         findings: list[Finding] = []
 
-        # -------------------------------------------------------------
         # COST OPPORTUNITIES
-        # -------------------------------------------------------------
 
         if self._is_standard_rds_instance(context) and self._has_current_resource_cost(
             context
@@ -281,9 +279,7 @@ class RDSAnalyzer(Analyzer):
                 if finding is not None:
                     findings.append(finding)
 
-        # -------------------------------------------------------------
         # DIAGNOSTICS
-        # -------------------------------------------------------------
 
         diagnostic_checks = (
             self._check_stopped_instance,

@@ -690,9 +690,7 @@ class NetworkTopologyCollector:
             route.get("origin"),
         )
 
-    # ------------------------------------------------------------------
     # Subnet profiles
-    # ------------------------------------------------------------------
 
     def _build_subnet_profiles(
         self,
@@ -1082,9 +1080,7 @@ class NetworkTopologyCollector:
 
         return {key: sorted(values) for key, values in targets.items()}
 
-    # ------------------------------------------------------------------
     # Route normalization
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _normalize_route(

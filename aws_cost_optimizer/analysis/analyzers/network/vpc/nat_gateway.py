@@ -131,9 +131,7 @@ from ....evidence import Evidence
 from ....finding import Finding, ObservationPeriod
 from ....registry import register
 
-# ============================================================================
 # THRESHOLDS
-# ============================================================================
 
 DEFAULT_LOW_TRAFFIC_GIB = 1.0
 DEFAULT_HIGH_TRAFFIC_GIB = 100.0
@@ -146,9 +144,7 @@ DEFAULT_PACKET_DROPS = 1.0
 DEFAULT_PACKET_DROP_PERCENT = 0.01
 
 
-# ============================================================================
 # CORE METRICS
-# ============================================================================
 
 CORE_TRAFFIC_METRICS = (
     "BytesInFromSource",
@@ -160,9 +156,7 @@ CORE_TRAFFIC_METRICS = (
 CORE_CONNECTION_METRIC = "ActiveConnectionCount"
 
 
-# ============================================================================
 # PACKET METRICS
-# ============================================================================
 
 PACKET_TRAFFIC_METRICS = (
     "PacketsInFromSource",
@@ -170,9 +164,7 @@ PACKET_TRAFFIC_METRICS = (
 )
 
 
-# ============================================================================
 # DIAGNOSTIC METRICS
-# ============================================================================
 
 DIAGNOSTIC_METRICS = (
     "ConnectionAttemptCount",
@@ -183,9 +175,7 @@ DIAGNOSTIC_METRICS = (
 )
 
 
-# ============================================================================
 # TITLES
-# ============================================================================
 
 TITLES = {
     "nat_gateway_idle": "NAT Gateway is idle",
@@ -211,9 +201,7 @@ TITLES = {
 }
 
 
-# ============================================================================
 # GENERAL HELPERS
-# ============================================================================
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -268,9 +256,7 @@ def _statement(
     )
 
 
-# ============================================================================
 # ANALYZER
-# ============================================================================
 
 
 @register
@@ -283,9 +269,7 @@ class NatGatewayAnalyzer(Analyzer):
         "nat_gateway",
     }
 
-    # ========================================================================
     # SUPPORT
-    # ========================================================================
 
     def supports(
         self,
@@ -294,9 +278,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return context.resource_type in self.SUPPORTED_RESOURCE_TYPES
 
-    # ========================================================================
     # MAIN ANALYSIS
-    # ========================================================================
 
     def analyze(
         self,
@@ -357,9 +339,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return findings
 
-    # ========================================================================
     # EVIDENCE ACCESS
-    # ========================================================================
 
     @staticmethod
     def _resource(
@@ -417,9 +397,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return _dict(evidence.get("semantics"))
 
-    # ========================================================================
     # METRIC ACCESS
-    # ========================================================================
 
     @staticmethod
     def _metric(
@@ -537,9 +515,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return str(statistic).strip()
 
-    # ========================================================================
     # NAT MODE
-    # ========================================================================
 
     @classmethod
     def _availability_mode(
@@ -559,9 +535,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return cls._availability_mode(evidence) == "regional"
 
-    # ========================================================================
     # CORE TRAFFIC
-    # ========================================================================
 
     @classmethod
     def _core_traffic_metrics(
@@ -684,9 +658,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return processed_bytes / (1024.0**3)
 
-    # ========================================================================
     # ACTIVE CONNECTION STATE
-    # ========================================================================
 
     @classmethod
     def _active_connections_complete(
@@ -723,9 +695,7 @@ class NatGatewayAnalyzer(Analyzer):
             )
         )
 
-    # ========================================================================
     # DIAGNOSTIC METRICS
-    # ========================================================================
 
     @classmethod
     def _diagnostic_metric_value(
@@ -770,9 +740,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return any(value > 0 for value in observed)
 
-    # ========================================================================
     # PACKET METRICS
-    # ========================================================================
 
     @classmethod
     def _packet_traffic_values(
@@ -823,9 +791,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return dropped / total_packets * 100.0
 
-    # ========================================================================
     # DATA QUALITY
-    # ========================================================================
 
     @classmethod
     def _topology_complete(
@@ -844,7 +810,6 @@ class NatGatewayAnalyzer(Analyzer):
         return cls._quality(evidence).get("dependency_evidence_complete") is True
 
     # IDLE
-    # ========================================================================
 
     def _detect_idle(
         self,
@@ -988,9 +953,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="elimination",
         )
 
-    # ========================================================================
     # NO ROUTE DEPENDENCY
-    # ========================================================================
 
     def _detect_no_route_dependency(
         self,
@@ -1070,9 +1033,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="elimination",
         )
 
-    # ========================================================================
     # BLACKHOLE ROUTES
-    # ========================================================================
 
     def _detect_blackhole_routes(
         self,
@@ -1135,9 +1096,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ========================================================================
     # LOW TRAFFIC
-    # ========================================================================
 
     def _detect_low_traffic(
         self,
@@ -1218,9 +1177,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ========================================================================
     # CROSS-AZ
-    # ========================================================================
 
     @staticmethod
     def _cross_az_traffic_attributed(
@@ -1363,9 +1320,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="architecture",
         )
 
-    # ========================================================================
     # ENDPOINT OPPORTUNITY
-    # ========================================================================
 
     @staticmethod
     def _endpoint_opportunity_data(
@@ -1598,9 +1553,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="architecture",
         )
 
-    # ========================================================================
     # HIGH DATA PROCESSING
-    # ========================================================================
 
     def _detect_high_data_processing(
         self,
@@ -1677,9 +1630,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ========================================================================
     # MULTIPLE NAT GATEWAYS IN SAME AZ
-    # ========================================================================
 
     def _detect_multiple_az(
         self,
@@ -1797,9 +1748,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="architecture",
         )
 
-    # ========================================================================
     # PORT ALLOCATION PRESSURE
-    # ========================================================================
 
     def _detect_port_allocation_pressure(
         self,
@@ -1857,9 +1806,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ========================================================================
     # IDLE TIMEOUT
-    # ========================================================================
 
     def _detect_idle_timeout_activity(
         self,
@@ -1929,9 +1876,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ========================================================================
     # PACKET DROP
-    # ========================================================================
 
     def _detect_packet_drop_activity(
         self,
@@ -2047,9 +1992,7 @@ class NatGatewayAnalyzer(Analyzer):
             cost_optimization_type="review",
         )
 
-    # ========================================================================
     # THRESHOLDS
-    # ========================================================================
 
     @staticmethod
     def _threshold(
@@ -2079,9 +2022,7 @@ class NatGatewayAnalyzer(Analyzer):
 
         return default
 
-    # ========================================================================
     # FINDING BUILDER
-    # ========================================================================
 
     def _finding(
         self,
@@ -2128,9 +2069,7 @@ class NatGatewayAnalyzer(Analyzer):
             impact={},
         )
 
-    # ========================================================================
     # STRUCTURED EVIDENCE
-    # ========================================================================
 
     def _build_evidence(
         self,
@@ -2248,9 +2187,7 @@ class NatGatewayAnalyzer(Analyzer):
             data_quality=self._quality(optimization_evidence),
         )
 
-    # ========================================================================
     # OBSERVATION PERIOD
-    # ========================================================================
 
     @staticmethod
     def _observation_period(

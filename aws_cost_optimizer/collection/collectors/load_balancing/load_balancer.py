@@ -37,9 +37,7 @@ class ElbCollector(BaseCollector):
     key = "elb"
     resource_type = "load_balancer"
 
-    # ==================================================================
     # INITIALIZATION
-    # ==================================================================
 
     def __init__(
         self,
@@ -67,9 +65,7 @@ class ElbCollector(BaseCollector):
 
         self.topology_collector = NetworkTopologyCollector(self.region)
 
-    # ==================================================================
     # DISCOVERY
-    # ==================================================================
 
     def discover(
         self,
@@ -90,9 +86,7 @@ class ElbCollector(BaseCollector):
 
         return resources
 
-    # ==================================================================
     # RESOURCE ID
-    # ==================================================================
 
     def get_resource_id(
         self,
@@ -106,9 +100,7 @@ class ElbCollector(BaseCollector):
 
         return str(arn)
 
-    # ==================================================================
     # IDENTITY
-    # ==================================================================
 
     def collect_identity(
         self,
@@ -127,9 +119,7 @@ class ElbCollector(BaseCollector):
             "tags": self._get_tags(resource.get("Tags", [])),
         }
 
-    # ==================================================================
     # CONFIGURATION
-    # ==================================================================
 
     def collect_configuration(
         self,
@@ -197,9 +187,7 @@ class ElbCollector(BaseCollector):
             "tags": self._get_tags(resource.get("Tags", [])),
         }
 
-    # ==================================================================
     # RELATIONSHIPS
-    # ==================================================================
 
     def collect_relationships(
         self,
@@ -290,9 +278,7 @@ class ElbCollector(BaseCollector):
             "errors": errors,
         }
 
-    # ==================================================================
     # CLOUDWATCH OBSERVATIONS
-    # ==================================================================
 
     def collect_observations(
         self,
@@ -400,9 +386,7 @@ class ElbCollector(BaseCollector):
 
         collection_errors: List[str] = []
 
-        # --------------------------------------------------------------
         # LOAD-BALANCER LEVEL METRICS
-        # --------------------------------------------------------------
 
         lb_specs = [
             spec
@@ -438,9 +422,7 @@ class ElbCollector(BaseCollector):
 
                 collection_errors.append("load_balancer_metrics: " f"{exc}")
 
-        # --------------------------------------------------------------
         # TARGET-GROUP LEVEL METRICS
-        # --------------------------------------------------------------
 
         tg_specs = [
             spec
@@ -524,9 +506,7 @@ class ElbCollector(BaseCollector):
             }
         }
 
-    # ==================================================================
     # TOPOLOGY
-    # ==================================================================
 
     def collect_topology(
         self,
@@ -553,9 +533,7 @@ class ElbCollector(BaseCollector):
             resource_id=resource.get("LoadBalancerArn"),
         )
 
-    # ==================================================================
     # OPTIMIZATION EVIDENCE
-    # ==================================================================
 
     def build_optimization_evidence(
         self,
@@ -613,9 +591,7 @@ class ElbCollector(BaseCollector):
             "traffic_observed": activity.get("traffic_observed"),
         }
 
-    # ==================================================================
     # LISTENERS
-    # ==================================================================
 
     def _collect_listeners(
         self,
@@ -675,9 +651,7 @@ class ElbCollector(BaseCollector):
 
         return result, []
 
-    # ==================================================================
     # LISTENER RULES
-    # ==================================================================
 
     def _collect_listener_rules(
         self,
@@ -739,9 +713,7 @@ class ElbCollector(BaseCollector):
 
         return rules, errors
 
-    # ==================================================================
     # TARGET GROUPS
-    # ==================================================================
 
     def _collect_target_groups(
         self,
@@ -922,9 +894,7 @@ class ElbCollector(BaseCollector):
 
         return result, errors
 
-    # ==================================================================
     # TARGET GROUP ATTRIBUTES
-    # ==================================================================
 
     def _collect_target_group_attributes(
         self,
@@ -1026,9 +996,7 @@ class ElbCollector(BaseCollector):
 
             group["attributes_error"] = item.get("error")
 
-    # ==================================================================
     # TARGET GROUP INVENTORY
-    # ==================================================================
 
     def _collect_target_group_inventory(
         self,
@@ -1072,9 +1040,7 @@ class ElbCollector(BaseCollector):
 
             return []
 
-    # ==================================================================
     # TARGET HEALTH AGGREGATION
-    # ==================================================================
 
     @staticmethod
     def _target_health_complete(
@@ -1147,9 +1113,7 @@ class ElbCollector(BaseCollector):
 
         return tuple(totals)  # type: ignore[return-value]
 
-    # ==================================================================
     # CLOUDWATCH HELPERS
-    # ==================================================================
 
     @staticmethod
     def _metric_dimensions(
@@ -1273,9 +1237,7 @@ class ElbCollector(BaseCollector):
 
         new_flow_count = available.get("new_flow_count")
 
-        # --------------------------------------------------------------
         # Determine whether sufficient activity evidence exists.
-        # --------------------------------------------------------------
 
         evidence_values: List[float] = []
 
@@ -1341,9 +1303,7 @@ class ElbCollector(BaseCollector):
             "available_metrics": sorted(available.keys()),
         }
 
-    # ==================================================================
     # PROFILE
-    # ==================================================================
 
     def _get_observations_config(
         self,
@@ -1426,9 +1386,7 @@ class ElbCollector(BaseCollector):
             is True
         )
 
-    # ==================================================================
     # CLOUDWATCH DIMENSIONS
-    # ==================================================================
 
     @staticmethod
     def _cloudwatch_load_balancer_dimension(
@@ -1462,9 +1420,7 @@ class ElbCollector(BaseCollector):
             1,
         )[1]
 
-    # ==================================================================
     # COUNTS
-    # ==================================================================
 
     @staticmethod
     def _count_listener_default_actions(
@@ -1489,9 +1445,7 @@ class ElbCollector(BaseCollector):
 
         return count
 
-    # ==================================================================
     # TAGS
-    # ==================================================================
 
     @staticmethod
     def _get_tags(
@@ -1508,9 +1462,7 @@ class ElbCollector(BaseCollector):
             and tag.get("Key")
         }
 
-    # ==================================================================
     # TIME
-    # ==================================================================
 
     @staticmethod
     def _isoformat(

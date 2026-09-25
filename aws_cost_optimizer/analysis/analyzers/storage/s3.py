@@ -98,9 +98,7 @@ class S3Analyzer(Analyzer):
 
         return findings
 
-    # ==================================================================
     # EVIDENCE HELPERS
-    # ==================================================================
 
     def _evidence_from_context(
         self,
@@ -239,9 +237,7 @@ class S3Analyzer(Analyzer):
 
         return float(get_count) / float(total)
 
-    # ==================================================================
     # 1. LIFECYCLE
-    # ==================================================================
 
     def _check_lifecycle_missing(
         self,
@@ -369,9 +365,7 @@ class S3Analyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # 2. INCOMPLETE MULTIPART UPLOADS
-    # ==================================================================
 
     def _check_incomplete_multipart_uploads(
         self,
@@ -538,9 +532,7 @@ class S3Analyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # 3. INTELLIGENT TIERING
-    # ==================================================================
 
     def _check_intelligent_tiering_candidate(
         self,
@@ -661,9 +653,7 @@ class S3Analyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # 4. STANDARD-IA
-    # ==================================================================
 
     def _check_standard_ia_candidate(
         self,
@@ -771,9 +761,7 @@ class S3Analyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # 5. GLACIER / ARCHIVE
-    # ==================================================================
 
     def _check_glacier_candidate(
         self,
@@ -894,9 +882,7 @@ class S3Analyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # 6. REPLICATION
-    # ==================================================================
 
     def _check_replication_cost_exposure(
         self,
@@ -997,9 +983,7 @@ class S3Analyzer(Analyzer):
             },
         )
 
-    # ==================================================================
     # NUMERIC HELPER
-    # ==================================================================
 
     def _build_evidence(
         self,

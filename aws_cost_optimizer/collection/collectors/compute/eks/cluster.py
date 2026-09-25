@@ -223,9 +223,7 @@ class EksCollector(BaseCollector):
             List[List[Dict[str, str]]],
         ] = {}
 
-    # ==================================================================
     # PROFILE
-    # ==================================================================
 
     def _profile_section(
         self,
@@ -293,9 +291,7 @@ class EksCollector(BaseCollector):
 
         return self.cloudwatch_period()
 
-    # ==================================================================
     # DISCOVERY
-    # ==================================================================
 
     def discover(
         self,
@@ -332,9 +328,7 @@ class EksCollector(BaseCollector):
 
         return clusters
 
-    # ==================================================================
     # CLOUDWATCH PREFETCH
-    # ==================================================================
 
     def _prefetch_metrics(
         self,
@@ -389,9 +383,7 @@ class EksCollector(BaseCollector):
                 "pods": [],
             }
 
-            # ----------------------------------------------------------
             # Cluster metrics
-            # ----------------------------------------------------------
 
             if cluster_specs:
 
@@ -429,9 +421,7 @@ class EksCollector(BaseCollector):
 
                     result["cluster"].extend(series)
 
-            # ----------------------------------------------------------
             # Node metrics
-            # ----------------------------------------------------------
 
             for index, spec in enumerate(node_specs):
 
@@ -496,9 +486,7 @@ class EksCollector(BaseCollector):
                         if series:
                             result["nodes"].extend(series)
 
-            # ----------------------------------------------------------
             # Pod metrics
-            # ----------------------------------------------------------
 
             for index, spec in enumerate(pod_specs):
 
@@ -712,9 +700,7 @@ class EksCollector(BaseCollector):
 
         return f"{cluster_name}:" f"{group}:" f"{index}:" f"{metric_key}"
 
-    # ==================================================================
     # RESOURCE ID
-    # ==================================================================
 
     def get_resource_id(
         self,
@@ -728,9 +714,7 @@ class EksCollector(BaseCollector):
 
         return str(value)
 
-    # ==================================================================
     # IDENTITY
-    # ==================================================================
 
     def collect_identity(
         self,
@@ -757,9 +741,7 @@ class EksCollector(BaseCollector):
             },
         }
 
-    # ==================================================================
     # CONFIGURATION
-    # ==================================================================
 
     def collect_configuration(
         self,
@@ -861,9 +843,7 @@ class EksCollector(BaseCollector):
             "addons": self._collect_addons(cluster_name),
         }
 
-    # ==================================================================
     # COMPUTE
-    # ==================================================================
 
     def _collect_compute(
         self,
@@ -931,9 +911,7 @@ class EksCollector(BaseCollector):
             },
         }
 
-    # ==================================================================
     # NODE GROUPS
-    # ==================================================================
 
     def _collect_nodegroups(
         self,
@@ -1102,9 +1080,7 @@ class EksCollector(BaseCollector):
 
         return result, errors
 
-    # ==================================================================
     # EC2 WORKERS
-    # ==================================================================
 
     def _collect_ec2_instances(
         self,
@@ -1366,9 +1342,7 @@ class EksCollector(BaseCollector):
             "autoscaling_group": asg_name,
         }
 
-    # ==================================================================
     # FARGATE
-    # ==================================================================
 
     def _collect_fargate_profiles(
         self,
@@ -1454,9 +1428,7 @@ class EksCollector(BaseCollector):
 
         return result, errors
 
-    # ==================================================================
     # ADDONS
-    # ==================================================================
 
     def _collect_addons(
         self,
@@ -1524,9 +1496,7 @@ class EksCollector(BaseCollector):
 
         return result
 
-    # ==================================================================
     # OBSERVATIONS
-    # ==================================================================
 
     def collect_observations(
         self,
@@ -1630,9 +1600,7 @@ class EksCollector(BaseCollector):
             ),
         }
 
-    # ==================================================================
     # METRIC GROUP BUILDING
-    # ==================================================================
 
     def _build_metric_group(
         self,
@@ -1886,9 +1854,7 @@ class EksCollector(BaseCollector):
             "coverage_percent": (min(coverage_values) if coverage_values else None),
         }
 
-    # ==================================================================
     # DERIVED
-    # ==================================================================
 
     def _build_derived_observations(
         self,
@@ -2096,9 +2062,7 @@ class EksCollector(BaseCollector):
 
         return len(ids)
 
-    # ==================================================================
     # OPTIMIZATION EVIDENCE
-    # ==================================================================
 
     def build_optimization_evidence(
         self,
@@ -2365,9 +2329,7 @@ class EksCollector(BaseCollector):
             "coverage_percent": cls._number(metric.get("coverage_percent")),
         }
 
-    # ==================================================================
     # RELATIONSHIPS
-    # ==================================================================
 
     def collect_relationships(
         self,
@@ -2413,9 +2375,7 @@ class EksCollector(BaseCollector):
             },
         }
 
-    # ==================================================================
     # TOPOLOGY
-    # ==================================================================
 
     def collect_topology(
         self,
@@ -2453,9 +2413,7 @@ class EksCollector(BaseCollector):
                 "error": str(exc),
             }
 
-    # ==================================================================
     # HELPERS
-    # ==================================================================
 
     @staticmethod
     def _combine_metric_quality(

@@ -74,9 +74,7 @@ class TransitGatewayCollector(BaseCollector):
             cloudwatch=self.cloudwatch,
         )
 
-    # ==================================================================
     # PROFILE
-    # ==================================================================
 
     def _profile_section(
         self,
@@ -220,9 +218,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return result
 
-    # ==================================================================
     # DISCOVERY
-    # ==================================================================
 
     def _allowed_gateway_states(self) -> set[str]:
 
@@ -294,9 +290,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return result
 
-    # ==================================================================
     # RESOURCE ID
-    # ==================================================================
 
     def get_resource_id(
         self,
@@ -310,9 +304,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return str(value)
 
-    # ==================================================================
     # IDENTITY
-    # ==================================================================
 
     def collect_identity(
         self,
@@ -366,9 +358,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return result
 
-    # ==================================================================
     # CONFIGURATION
-    # ==================================================================
 
     def collect_configuration(
         self,
@@ -422,9 +412,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return result
 
-    # ==================================================================
     # ATTACHMENTS
-    # ==================================================================
 
     def _collect_attachments(
         self,
@@ -519,9 +507,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return "other"
 
-    # ==================================================================
     # ROUTE TABLES
-    # ==================================================================
 
     def _collect_route_tables(
         self,
@@ -571,9 +557,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return result
 
-    # ==================================================================
     # ROUTES
-    # ==================================================================
 
     def _collect_routes(
         self,
@@ -622,9 +606,7 @@ class TransitGatewayCollector(BaseCollector):
             "routes": normalized,
         }
 
-    # ==================================================================
     # ASSOCIATIONS
-    # ==================================================================
 
     def _collect_associations(
         self,
@@ -664,9 +646,7 @@ class TransitGatewayCollector(BaseCollector):
             "associations": normalized,
         }
 
-    # ==================================================================
     # PROPAGATIONS
-    # ==================================================================
 
     def _collect_propagations(
         self,
@@ -706,9 +686,7 @@ class TransitGatewayCollector(BaseCollector):
             "propagations": normalized,
         }
 
-    # ==================================================================
     # RELATIONSHIPS
-    # ==================================================================
 
     def collect_relationships(
         self,
@@ -782,9 +760,7 @@ class TransitGatewayCollector(BaseCollector):
 
         errors = {}
 
-        # --------------------------------------------------------------
         # Attachments
-        # --------------------------------------------------------------
 
         if attachments_requested:
 
@@ -818,9 +794,7 @@ class TransitGatewayCollector(BaseCollector):
 
                 relationships["collection_status"]["attachments_complete"] = False
 
-        # --------------------------------------------------------------
         # Route tables
-        # --------------------------------------------------------------
 
         route_tables = []
 
@@ -840,9 +814,7 @@ class TransitGatewayCollector(BaseCollector):
 
                 relationships["collection_status"]["route_tables_complete"] = False
 
-        # --------------------------------------------------------------
         # Routes
-        # --------------------------------------------------------------
 
         if routes_requested:
 
@@ -872,9 +844,7 @@ class TransitGatewayCollector(BaseCollector):
 
                     relationships["collection_status"]["routes_complete"] = False
 
-        # --------------------------------------------------------------
         # Associations
-        # --------------------------------------------------------------
 
         if associations_requested:
 
@@ -912,9 +882,7 @@ class TransitGatewayCollector(BaseCollector):
                         "association_evidence_complete"
                     ] = False
 
-        # --------------------------------------------------------------
         # Propagations
-        # --------------------------------------------------------------
 
         if propagations_requested:
 
@@ -960,9 +928,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return relationships
 
-    # ==================================================================
     # CLOUDWATCH
-    # ==================================================================
 
     def collect_observations(
         self,
@@ -990,9 +956,7 @@ class TransitGatewayCollector(BaseCollector):
                 "reason": "No CloudWatch metrics configured.",
             }
 
-        # --------------------------------------------------------------
         # Gateway metrics
-        # --------------------------------------------------------------
 
         gateway_results = []
 
@@ -1019,9 +983,7 @@ class TransitGatewayCollector(BaseCollector):
                 gateway_specs,
             )
 
-        # --------------------------------------------------------------
         # Attachment metrics
-        # --------------------------------------------------------------
 
         attachment_results = {}
         attachment_error = None
@@ -1121,9 +1083,7 @@ class TransitGatewayCollector(BaseCollector):
             },
         }
 
-    # ==================================================================
     # OPTIMIZATION EVIDENCE
-    # ==================================================================
 
     def build_optimization_evidence(
         self,
@@ -1147,9 +1107,7 @@ class TransitGatewayCollector(BaseCollector):
             "resource_id": self.get_resource_id(resource),
         }
 
-        # --------------------------------------------------------------
         # Attachments
-        # --------------------------------------------------------------
 
         attachments = relationships.get("attachments")
 
@@ -1189,9 +1147,7 @@ class TransitGatewayCollector(BaseCollector):
 
             evidence["attachment_types"] = {}
 
-        # --------------------------------------------------------------
         # CloudWatch
-        # --------------------------------------------------------------
 
         cloudwatch = (
             observations.get(
@@ -1231,9 +1187,7 @@ class TransitGatewayCollector(BaseCollector):
             )
         )
 
-        # --------------------------------------------------------------
         # Collection status
-        # --------------------------------------------------------------
 
         evidence["collection_status"] = relationships.get(
             "collection_status",
@@ -1242,9 +1196,7 @@ class TransitGatewayCollector(BaseCollector):
 
         return evidence
 
-    # ==================================================================
     # HELPERS
-    # ==================================================================
 
     @staticmethod
     def _attach_metric_roles(

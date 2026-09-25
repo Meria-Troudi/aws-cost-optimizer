@@ -88,9 +88,7 @@ class EBSCollector(BaseCollector):
 
         return self._dict(observations.get("cloudwatch"))
 
-    # ------------------------------------------------------------------
     # Discovery
-    # ------------------------------------------------------------------
 
     def discover(
         self,
@@ -124,9 +122,7 @@ class EBSCollector(BaseCollector):
 
         return resources
 
-    # ------------------------------------------------------------------
     # CloudWatch batch collection
-    # ------------------------------------------------------------------
 
     def _prefetch_metrics_batch(
         self,
@@ -203,9 +199,7 @@ class EBSCollector(BaseCollector):
 
         return str(resource["id"])
 
-    # ------------------------------------------------------------------
     # Identity
-    # ------------------------------------------------------------------
 
     def collect_identity(
         self,
@@ -228,9 +222,7 @@ class EBSCollector(BaseCollector):
             "tags": tags,
         }
 
-    # ------------------------------------------------------------------
     # Configuration
-    # ------------------------------------------------------------------
 
     def collect_configuration(
         self,
@@ -304,9 +296,7 @@ class EBSCollector(BaseCollector):
 
         return attachments
 
-    # ------------------------------------------------------------------
     # Relationships
-    # ------------------------------------------------------------------
 
     def collect_relationships(
         self,
@@ -333,9 +323,7 @@ class EBSCollector(BaseCollector):
             "attachment_count": len(attachments),
         }
 
-    # ------------------------------------------------------------------
     # Observations
-    # ------------------------------------------------------------------
 
     def collect_observations(
         self,
@@ -404,9 +392,7 @@ class EBSCollector(BaseCollector):
             },
         }
 
-    # ------------------------------------------------------------------
     # Optimization evidence
-    # ------------------------------------------------------------------
 
     def build_optimization_evidence(
         self,

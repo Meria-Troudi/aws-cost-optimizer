@@ -54,9 +54,7 @@ class EC2Collector(BaseCollector):
         "ModifyInstanceCreditSpecification",
     )
 
-    # =========================================================================
     # INITIALIZATION
-    # =========================================================================
 
     def __init__(
         self,
@@ -106,9 +104,7 @@ class EC2Collector(BaseCollector):
         self._cloudwatch_batch_error: Optional[str] = None
         self._cloudwatch_agent_batch_error: Optional[str] = None
 
-    # =========================================================================
     # PROFILE
-    # =========================================================================
 
     def _observation_config(self) -> Dict[str, Any]:
         return self._safe_dict(self.profile.get("observations"))
@@ -221,9 +217,7 @@ class EC2Collector(BaseCollector):
 
         return False
 
-    # =========================================================================
     # DISCOVERY
-    # =========================================================================
 
     def discover(self) -> list:
         """
@@ -289,9 +283,7 @@ class EC2Collector(BaseCollector):
     ) -> str:
         return str(resource.get("InstanceId") or "")
 
-    # =========================================================================
     # CLOUDWATCH PREFETCH
-    # =========================================================================
 
     def _prefetch_metrics_batch(
         self,
@@ -313,9 +305,7 @@ class EC2Collector(BaseCollector):
 
         observation_config = self._observation_config()
 
-        # ---------------------------------------------------------------------
         # STANDARD EC2
-        # ---------------------------------------------------------------------
 
         cloudwatch_config = self._cloudwatch_config()
 
@@ -364,9 +354,7 @@ class EC2Collector(BaseCollector):
 
                         self._cloudwatch_batch_error = str(exc)
 
-        # ---------------------------------------------------------------------
         # OPTIONAL CLOUDWATCH AGENT
-        # ---------------------------------------------------------------------
 
         agent_config = self._cloudwatch_agent_config()
 
@@ -519,9 +507,7 @@ class EC2Collector(BaseCollector):
 
         return requests
 
-    # =========================================================================
     # IDENTITY
-    # =========================================================================
 
     def collect_identity(
         self,
@@ -554,9 +540,7 @@ class EC2Collector(BaseCollector):
             "tags": tags,
         }
 
-    # =========================================================================
     # CONFIGURATION
-    # =========================================================================
 
     def collect_configuration(
         self,
@@ -654,9 +638,7 @@ class EC2Collector(BaseCollector):
             ),
         }
 
-    # =========================================================================
     # RELATIONSHIPS
-    # =========================================================================
 
     def collect_relationships(
         self,
@@ -690,9 +672,7 @@ class EC2Collector(BaseCollector):
             or []
         )
 
-        # ---------------------------------------------------------------------
         # NETWORK INTERFACES
-        # ---------------------------------------------------------------------
 
         if self._relationship_enabled("network_interfaces"):
 
@@ -722,9 +702,7 @@ class EC2Collector(BaseCollector):
                 except Exception:
                     network_interfaces = []
 
-        # ---------------------------------------------------------------------
         # EBS
-        # ---------------------------------------------------------------------
 
         if self._relationship_enabled("ebs_volumes") or self._relationship_enabled(
             "ebs"
@@ -732,9 +710,7 @@ class EC2Collector(BaseCollector):
 
             volumes = self._collect_volumes(resource)
 
-        # ---------------------------------------------------------------------
         # AUTO SCALING
-        # ---------------------------------------------------------------------
 
         if self._relationship_enabled(
             "autoscaling_group"
@@ -742,9 +718,7 @@ class EC2Collector(BaseCollector):
 
             asg = self._find_autoscaling_group(instance_id)
 
-        # ---------------------------------------------------------------------
         # SECURITY GROUPS
-        # ---------------------------------------------------------------------
 
         if self._relationship_enabled("security_groups"):
 
@@ -785,9 +759,7 @@ class EC2Collector(BaseCollector):
             "security_groups": security_groups,
         }
 
-    # =========================================================================
     # OBSERVATIONS
-    # =========================================================================
 
     def collect_observations(
         self,
@@ -823,9 +795,7 @@ class EC2Collector(BaseCollector):
             Dict[str, Any],
         ] = {}
 
-        # ---------------------------------------------------------------------
         # STANDARD CLOUDWATCH
-        # ---------------------------------------------------------------------
 
         cloudwatch_config = self._cloudwatch_config()
 
@@ -909,9 +879,7 @@ class EC2Collector(BaseCollector):
                 metric_results,
             )
 
-        # ---------------------------------------------------------------------
         # OPTIONAL CLOUDWATCH AGENT
-        # ---------------------------------------------------------------------
 
         agent_config = self._cloudwatch_agent_config()
 
@@ -968,9 +936,7 @@ class EC2Collector(BaseCollector):
                     agent_results,
                 )
 
-        # ---------------------------------------------------------------------
         # ACTIVITY SUMMARY
-        # ---------------------------------------------------------------------
 
         activity = self._build_activity_summary(
             metrics,
@@ -978,9 +944,7 @@ class EC2Collector(BaseCollector):
             end,
         )
 
-        # ---------------------------------------------------------------------
         # CLOUDTRAIL
-        # ---------------------------------------------------------------------
 
         cloudtrail: Dict[str, Any] = {}
 
@@ -997,9 +961,7 @@ class EC2Collector(BaseCollector):
                 end,
             )
 
-        # ---------------------------------------------------------------------
         # DATA QUALITY
-        # ---------------------------------------------------------------------
 
         cpu_available = self._metric_ok(metrics.get("cpu_utilization"))
 
@@ -1058,9 +1020,7 @@ class EC2Collector(BaseCollector):
             "cloudwatch_agent_batch_error": (self._cloudwatch_agent_batch_error),
         }
 
-        # ---------------------------------------------------------------------
         # STATUS
-        # ---------------------------------------------------------------------
 
         # The error branch must be checked before "no_data": a batch/
         # direct CloudWatch call that raised is a genuine error, not
@@ -1097,9 +1057,7 @@ class EC2Collector(BaseCollector):
             "data_quality": data_quality,
         }
 
-    # =========================================================================
     # METRIC MERGING
-    # =========================================================================
 
     @classmethod
     def _merge_metrics(
@@ -1143,9 +1101,7 @@ class EC2Collector(BaseCollector):
 
             target[str(key)] = metric
 
-    # =========================================================================
     # EBS
-    # =========================================================================
 
     def _collect_volumes(
         self,
@@ -1267,9 +1223,7 @@ class EC2Collector(BaseCollector):
 
         return result
 
-    # =========================================================================
     # AUTO SCALING
-    # =========================================================================
 
     def _find_autoscaling_group(
         self,
@@ -1344,9 +1298,7 @@ class EC2Collector(BaseCollector):
 
         return result
 
-    # =========================================================================
     # CLOUDTRAIL
-    # =========================================================================
 
     def _collect_historical_events(
         self,
@@ -1458,9 +1410,7 @@ class EC2Collector(BaseCollector):
 
         return {str(value) for value in configured if value}
 
-    # =========================================================================
     # ACTIVITY
-    # =========================================================================
 
     @classmethod
     def _build_activity_summary(
@@ -1564,9 +1514,7 @@ class EC2Collector(BaseCollector):
             ),
         }
 
-    # =========================================================================
     # HELPERS
-    # =========================================================================
 
     @staticmethod
     def _normalize_metric_specs(

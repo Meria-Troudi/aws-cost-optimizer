@@ -17,9 +17,7 @@ SUPPORTED_RESOURCE_TYPES = frozenset(
 )
 
 
-# ---------------------------------------------------------------------------
 # CPU thresholds
-# ---------------------------------------------------------------------------
 
 CPU_VERY_LOW = 10.0
 CPU_LOW = 20.0
@@ -32,18 +30,14 @@ CPU_PEAK_HIGH = 80.0
 CPU_PEAK_CRITICAL = 90.0
 
 
-# ---------------------------------------------------------------------------
 # Memory thresholds
-# ---------------------------------------------------------------------------
 
 MEMORY_LOW = 30.0
 MEMORY_HIGH = 80.0
 MEMORY_CRITICAL = 90.0
 
 
-# ---------------------------------------------------------------------------
 # Network / EBS activity thresholds
-# ---------------------------------------------------------------------------
 
 NETWORK_VERY_LOW_BYTES_PER_SECOND = 1024.0
 NETWORK_LOW_BYTES_PER_SECOND = 10240.0
@@ -52,9 +46,7 @@ EBS_VERY_LOW_IOPS = 1.0
 EBS_LOW_IOPS = 10.0
 
 
-# ---------------------------------------------------------------------------
 # Runtime / pricing thresholds
-# ---------------------------------------------------------------------------
 
 LONG_RUNNING_DAYS = 30
 
@@ -64,16 +56,12 @@ LONG_RUNNING_DAYS = 30
 PRICING_REVIEW_DAYS = 30
 
 
-# ---------------------------------------------------------------------------
 # EBS configuration
-# ---------------------------------------------------------------------------
 
 EBS_GP2_REVIEW_SIZE_GIB = 100.0
 
 
-# ---------------------------------------------------------------------------
 # States
-# ---------------------------------------------------------------------------
 
 STOPPED_STATES = frozenset(
     {
@@ -86,7 +74,6 @@ STOPPED_STATES = frozenset(
 RUNNING_STATE = "running"
 
 
-# ---------------------------------------------------------------------------
 # Instance-family sizing information
 #
 # This is intentionally conservative.
@@ -94,7 +81,6 @@ RUNNING_STATE = "running"
 #
 # We do NOT select a replacement instance here.
 # A recommendation engine / pricing layer should do that.
-# ---------------------------------------------------------------------------
 
 STANDARD_FAMILY_SIZES: dict[str, tuple[str, ...]] = {
     "t2": (
@@ -225,9 +211,7 @@ STANDARD_FAMILY_SIZES: dict[str, tuple[str, ...]] = {
 }
 
 
-# ---------------------------------------------------------------------------
 # Helpers
-# ---------------------------------------------------------------------------
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -282,9 +266,7 @@ class EC2Analyzer(Analyzer):
     name = "ec2"
     version = "12.0"
 
-    # =======================================================================
     # PUBLIC API
-    # =======================================================================
 
     def supports(
         self,
@@ -307,9 +289,7 @@ class EC2Analyzer(Analyzer):
 
         findings: list[Finding] = []
 
-        # -------------------------------------------------------------------
         # 1. STOPPED
-        # -------------------------------------------------------------------
 
         stopped = self._stopped_instance(
             context,
@@ -324,12 +304,10 @@ class EC2Analyzer(Analyzer):
         if data["state"] != RUNNING_STATE:
             return findings
 
-        # -------------------------------------------------------------------
         # 2. MEMORY PRESSURE
         #
         # This must happen before rightsizing so CPU-only analysis cannot
         # incorrectly recommend downsizing a memory-constrained instance.
-        # -------------------------------------------------------------------
 
         memory_pressure = self._memory_pressure(
             context,
@@ -339,9 +317,7 @@ class EC2Analyzer(Analyzer):
         if memory_pressure:
             findings.append(memory_pressure)
 
-        # -------------------------------------------------------------------
         # 3. VERY LOW ACTIVITY
-        # -------------------------------------------------------------------
 
         idle = self._idle_instance(
             context,
@@ -351,9 +327,7 @@ class EC2Analyzer(Analyzer):
         if idle:
             findings.append(idle)
 
-        # -------------------------------------------------------------------
         # 4. OVERLOAD / UNDERSIZING
-        # -------------------------------------------------------------------
 
         overload = self._overload_review(
             context,
@@ -363,7 +337,6 @@ class EC2Analyzer(Analyzer):
         if overload:
             findings.append(overload)
 
-        # -------------------------------------------------------------------
         # 5. RIGHTSIZING
         #
         # Do not emit a generic rightsizing finding when:
@@ -371,7 +344,6 @@ class EC2Analyzer(Analyzer):
         # - memory pressure exists
         # - the workload shows significant peaks
         # - there is no smaller compatible size
-        # -------------------------------------------------------------------
 
         if not idle and not memory_pressure and not overload:
             rightsizing = self._rightsizing(
@@ -382,9 +354,7 @@ class EC2Analyzer(Analyzer):
             if rightsizing:
                 findings.append(rightsizing)
 
-        # -------------------------------------------------------------------
         # 6. AUTO SCALING
-        # -------------------------------------------------------------------
 
         autoscaling = self._autoscaling_review(
             context,
@@ -394,9 +364,7 @@ class EC2Analyzer(Analyzer):
         if autoscaling:
             findings.append(autoscaling)
 
-        # -------------------------------------------------------------------
         # 7. SCHEDULING
-        # -------------------------------------------------------------------
 
         scheduling = self._scheduling_review(
             context,
@@ -406,9 +374,7 @@ class EC2Analyzer(Analyzer):
         if scheduling:
             findings.append(scheduling)
 
-        # -------------------------------------------------------------------
         # 8. PRICING MODEL
-        # -------------------------------------------------------------------
 
         pricing = self._pricing_model_review(
             context,
@@ -418,9 +384,7 @@ class EC2Analyzer(Analyzer):
         if pricing:
             findings.append(pricing)
 
-        # -------------------------------------------------------------------
         # 9. EBS
-        # -------------------------------------------------------------------
 
         findings.extend(
             self._ebs_configuration_review(
@@ -431,9 +395,7 @@ class EC2Analyzer(Analyzer):
 
         return findings
 
-    # =======================================================================
     # EVIDENCE EXTRACTION
-    # =======================================================================
 
     @staticmethod
     def _extract_evidence(
@@ -470,9 +432,7 @@ class EC2Analyzer(Analyzer):
         if not isinstance(volumes, list):
             volumes = []
 
-        # -------------------------------------------------------------------
         # Metrics
-        # -------------------------------------------------------------------
 
         cpu_average = EC2Analyzer._metric_value(
             metrics,
@@ -514,9 +474,7 @@ class EC2Analyzer(Analyzer):
             "mem_used_percent_max",
         )
 
-        # -------------------------------------------------------------------
         # Derived activity
-        # -------------------------------------------------------------------
 
         network_bytes_per_second = _number(
             activity.get("average_network_bytes_per_second")
@@ -524,9 +482,7 @@ class EC2Analyzer(Analyzer):
 
         ebs_iops = _number(activity.get("ebs_iops"))
 
-        # -------------------------------------------------------------------
         # Tags
-        # -------------------------------------------------------------------
 
         environment = _normalise_tag_value(
             tags,
@@ -558,9 +514,7 @@ class EC2Analyzer(Analyzer):
             "name",
         )
 
-        # -------------------------------------------------------------------
         # Availability
-        # -------------------------------------------------------------------
 
         cpu_available = EC2Analyzer._metric_available(
             metrics,
@@ -671,9 +625,7 @@ class EC2Analyzer(Analyzer):
             "observation_period": _dict(observations.get("period")),
         }
 
-    # =======================================================================
     # FINDING 1 — STOPPED
-    # =======================================================================
 
     def _stopped_instance(
         self,
@@ -734,9 +686,7 @@ class EC2Analyzer(Analyzer):
             cost_optimization_type="elimination",
         )
 
-    # =======================================================================
     # FINDING 2 — VERY LOW ACTIVITY
-    # =======================================================================
 
     def _idle_instance(
         self,
@@ -884,9 +834,7 @@ class EC2Analyzer(Analyzer):
             data=data,
         )
 
-    # =======================================================================
     # FINDING 3 — OVERLOAD / UNDERSIZING
-    # =======================================================================
 
     def _overload_review(
         self,
@@ -1002,9 +950,7 @@ class EC2Analyzer(Analyzer):
             cost_optimization_type="rightsizing",
         )
 
-    # =======================================================================
     # FINDING 4 — RIGHTSIZING
-    # =======================================================================
 
     def _rightsizing(
         self,
@@ -1192,9 +1138,7 @@ class EC2Analyzer(Analyzer):
             cost_optimization_type="rightsizing",
         )
 
-    # =======================================================================
     # FINDING 5 — MEMORY
-    # =======================================================================
 
     def _memory_pressure(
         self,
@@ -1276,9 +1220,7 @@ class EC2Analyzer(Analyzer):
             cost_optimization_type="rightsizing",
         )
 
-    # =======================================================================
     # FINDING 6 — AUTO SCALING
-    # =======================================================================
 
     def _autoscaling_review(
         self,
@@ -1368,9 +1310,7 @@ class EC2Analyzer(Analyzer):
             data=data,
         )
 
-    # =======================================================================
     # FINDING 7 — SCHEDULING
-    # =======================================================================
 
     def _scheduling_review(
         self,
@@ -1490,9 +1430,7 @@ class EC2Analyzer(Analyzer):
             data=data,
         )
 
-    # =======================================================================
     # FINDING 8 — PRICING MODEL
-    # =======================================================================
 
     def _pricing_model_review(
         self,
@@ -1647,9 +1585,7 @@ class EC2Analyzer(Analyzer):
             cost_optimization_type="pricing",
         )
 
-    # =======================================================================
     # FINDING 9 — EBS
-    # =======================================================================
 
     def _ebs_configuration_review(
         self,
@@ -1687,9 +1623,7 @@ class EC2Analyzer(Analyzer):
 
             delete_on_termination = volume.get("delete_on_termination")
 
-            # ---------------------------------------------------------------
             # gp2
-            # ---------------------------------------------------------------
 
             if volume_type == "gp2":
 
@@ -1743,11 +1677,9 @@ class EC2Analyzer(Analyzer):
                     )
                 )
 
-            # ---------------------------------------------------------------
             # Provisioned IOPS
             #
             # Only evaluate if observed EBS activity is available.
-            # ---------------------------------------------------------------
 
             if (
                 provisioned_iops is not None
@@ -1810,9 +1742,7 @@ class EC2Analyzer(Analyzer):
                     )
                 )
 
-            # ---------------------------------------------------------------
             # Retained EBS
-            # ---------------------------------------------------------------
 
             if delete_on_termination is False:
 
@@ -1868,9 +1798,7 @@ class EC2Analyzer(Analyzer):
 
         return findings
 
-    # =======================================================================
     # FINDING BUILDER
-    # =======================================================================
 
     def _finding(
         self,
@@ -1908,9 +1836,7 @@ class EC2Analyzer(Analyzer):
             cost_optimization_type=cost_optimization_type,
         )
 
-    # =======================================================================
     # EVIDENCE
-    # =======================================================================
 
     def _evidence(
         self,
@@ -1980,9 +1906,7 @@ class EC2Analyzer(Analyzer):
             },
         )
 
-    # =======================================================================
     # EVIDENCE STATEMENT
-    # =======================================================================
 
     @staticmethod
     def _statement(
@@ -2005,9 +1929,7 @@ class EC2Analyzer(Analyzer):
             observed=(value is not None),
         )
 
-    # =======================================================================
     # METRIC HELPERS
-    # =======================================================================
 
     @staticmethod
     def _metric_available(
@@ -2050,9 +1972,7 @@ class EC2Analyzer(Analyzer):
 
         return float(value)
 
-    # =======================================================================
     # INSTANCE SIZE HELPERS
-    # =======================================================================
 
     @staticmethod
     def _split_instance_type(
@@ -2090,9 +2010,7 @@ class EC2Analyzer(Analyzer):
 
         return index > 0
 
-    # =======================================================================
     # RUNTIME
-    # =======================================================================
 
     @staticmethod
     def _runtime_days(
@@ -2136,9 +2054,7 @@ class EC2Analyzer(Analyzer):
 
         return seconds / 86400.0
 
-    # =======================================================================
     # OBSERVATION PERIOD
-    # =======================================================================
 
     @staticmethod
     def _observation_period(

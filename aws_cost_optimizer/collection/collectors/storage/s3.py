@@ -104,9 +104,7 @@ class S3Collector(BaseCollector):
             Dict[str, Any],
         ] = {}
 
-    # ------------------------------------------------------------------
     # PROFILE
-    # ------------------------------------------------------------------
 
     def _profile_section(
         self,
@@ -171,9 +169,7 @@ class S3Collector(BaseCollector):
 
         return self._metric_group("request")
 
-    # ------------------------------------------------------------------
     # DISCOVERY
-    # ------------------------------------------------------------------
 
     def discover(
         self,
@@ -245,9 +241,7 @@ class S3Collector(BaseCollector):
 
         return region == self.region
 
-    # ------------------------------------------------------------------
     # CLOUDWATCH
-    # ------------------------------------------------------------------
 
     def _prefetch_metrics_batch(
         self,
@@ -343,9 +337,7 @@ class S3Collector(BaseCollector):
             request_metadata,
         )
 
-    # ------------------------------------------------------------------
     # RESULT NORMALIZATION
-    # ------------------------------------------------------------------
 
     def _normalize_metric_batch_results(
         self,
@@ -389,9 +381,7 @@ class S3Collector(BaseCollector):
 
         return dict(grouped)
 
-    # ------------------------------------------------------------------
     # RESOURCE ID
-    # ------------------------------------------------------------------
 
     def get_resource_id(
         self,
@@ -400,9 +390,7 @@ class S3Collector(BaseCollector):
 
         return str(resource["id"])
 
-    # ------------------------------------------------------------------
     # IDENTITY
-    # ------------------------------------------------------------------
 
     def collect_identity(
         self,
@@ -427,9 +415,7 @@ class S3Collector(BaseCollector):
             "tags": tags,
         }
 
-    # ------------------------------------------------------------------
     # CONFIGURATION
-    # ------------------------------------------------------------------
 
     def collect_configuration(
         self,
@@ -523,9 +509,7 @@ class S3Collector(BaseCollector):
             "tags": tags,
         }
 
-    # ------------------------------------------------------------------
     # OBSERVATIONS
-    # ------------------------------------------------------------------
 
     def collect_observations(
         self,
@@ -618,9 +602,7 @@ class S3Collector(BaseCollector):
             "derived": (self._build_derived_data(metrics)),
         }
 
-    # ------------------------------------------------------------------
     # DERIVED ACTIVITY
-    # ------------------------------------------------------------------
 
     def _build_derived_data(
         self,
@@ -769,9 +751,7 @@ class S3Collector(BaseCollector):
             },
         }
 
-    # ------------------------------------------------------------------
     # OPTIMIZATION EVIDENCE
-    # ------------------------------------------------------------------
 
     def build_optimization_evidence(
         self,
@@ -952,9 +932,7 @@ class S3Collector(BaseCollector):
             },
         }
 
-    # ------------------------------------------------------------------
     # S3 CONFIGURATION API HELPERS
-    # ------------------------------------------------------------------
 
     def _get_bucket_region(
         self,
@@ -1704,9 +1682,7 @@ class S3Collector(BaseCollector):
 
             return {}
 
-    # ------------------------------------------------------------------
     # ERROR HELPERS
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _exception_code(
@@ -1755,9 +1731,7 @@ class S3Collector(BaseCollector):
 
         return message
 
-    # ------------------------------------------------------------------
     # HELPERS
-    # ------------------------------------------------------------------
 
     @staticmethod
     def _safe_period(
