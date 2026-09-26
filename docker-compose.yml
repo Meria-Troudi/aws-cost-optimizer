@@ -7,25 +7,5 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-    depends_on:
-      - ollama
-
-  frontend:
-    build:
-      context: ./frontend
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-
-volumes:
+volumes: 
   ollama_models:
