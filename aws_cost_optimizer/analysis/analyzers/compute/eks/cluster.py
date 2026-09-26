@@ -1064,12 +1064,9 @@ class EKSAnalyzer(Analyzer):
         if _number(memory.get("maximum")) > low_memory_maximum:
             return None
 
-        # A cluster-wide average can hide a hot node: three idle nodes
-        # and one at 80% can still average low. Claiming the whole worker
-        # fleet is underutilized in that state would be wrong, so any
-        # single node above the per-node ceilings suppresses this
-        # cluster-level finding. The per-nodegroup detector still reports
-        # the genuinely idle groups.
+        # A cluster-wide average can hide a hot node, so one node over the
+        # per-node ceilings suppresses this finding (per-nodegroup detector
+        # still reports genuinely idle groups).
         hotspots = _utilization_hotspots(
             context,
             cpu_maximum=low_cpu_maximum,
@@ -1314,11 +1311,8 @@ class EKSAnalyzer(Analyzer):
                 "rule": "nodegroup_underutilization",
                 "nodegroups": candidates,
             },
-            # The evidence here (nodegroup, instance ids, CPU/memory
-            # average+maximum, observation period) is enough to say a
-            # rightsizing OPPORTUNITY exists. It is deliberately not a
-            # claim about how much capacity can be removed -- the
-            # recommendation layer decides the safe action.
+            # Evidence supports a rightsizing OPPORTUNITY, not how much capacity can be
+            # removed -- the recommendation layer decides the safe action.
             recommendation_eligible=True,
         )
 

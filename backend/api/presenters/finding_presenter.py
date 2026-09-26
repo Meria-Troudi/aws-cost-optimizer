@@ -84,13 +84,8 @@ def _extract_cost(
         financial.get("cost"),
     )
 
-    # cost stays None when nothing proved it -- an unattributable
-    # collection-plan/shared cost must render as "not available", never
-    # as a measured $0.00. Presenting the null as zero would tell the
-    # user this resource costs nothing, when the truth is its share of
-    # a shared billing line was never established. See
-    # aws_cost_optimizer/analysis/financial.py's identical rule for
-    # observed_monthly_cost.
+    # Unattributable/shared cost renders as "not available", never a measured
+    # $0.00 (see analysis/financial.py's identical rule).
 
     if billing:
         billing = dict(billing)

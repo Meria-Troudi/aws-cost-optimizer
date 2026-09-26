@@ -92,11 +92,8 @@ class RecommendationExplanationService:
 
             return presented
 
-        # The route's never_invent list is passed to the model as
-        # guidance, but guidance is a request, not a guarantee. Check
-        # the generated text before it is persisted: an explanation
-        # asserting a concrete savings figure the deterministic layer
-        # refused to compute is worse than no explanation at all.
+        # never_invent is guidance, not a guarantee -- reject generated text that
+        # asserts a figure the deterministic layer refused to compute.
         forbidden = violations(
             explanation.model_dump(),
             self._never_invent(presented),

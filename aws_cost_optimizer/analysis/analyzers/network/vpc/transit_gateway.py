@@ -75,15 +75,8 @@ from ....registry import register
 
 # CONSTANTS
 
-# Operational classification threshold.
-#
-# This is NOT an AWS pricing threshold.
-#
-# Combined observed attachment traffic <= 1 GiB
-# during the complete analysis period is classified as
-# "no meaningful traffic" for review purposes.
-#
-# This should eventually be configurable globally.
+# Operational threshold (NOT a pricing threshold): combined attachment
+# traffic <= 1 GiB over the whole period = "no meaningful traffic".
 DEFAULT_MEANINGFUL_TRAFFIC_GIB = 1.0
 
 

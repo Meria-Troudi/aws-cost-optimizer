@@ -50,9 +50,8 @@ EBS_LOW_IOPS = 10.0
 
 LONG_RUNNING_DAYS = 30
 
-# Pricing-model findings are deliberately conservative.
-# A running instance for >30 days is only evidence for REVIEW,
-# not proof that Savings Plans / RI should be purchased.
+# Pricing findings are intentionally conservative: >30 days running is only
+# evidence for REVIEW, not proof that Savings Plans / RI should be purchased.
 PRICING_REVIEW_DAYS = 30
 
 
@@ -74,13 +73,8 @@ STOPPED_STATES = frozenset(
 RUNNING_STATE = "running"
 
 
-# Instance-family sizing information
-#
-# This is intentionally conservative.
-# It is used only to prevent invalid "downsize" findings.
-#
-# We do NOT select a replacement instance here.
-# A recommendation engine / pricing layer should do that.
+# Instance-family sizing is conservative: used only to prevent invalid
+# "downsize" findings; a replacement instance is never chosen here.
 
 STANDARD_FAMILY_SIZES: dict[str, tuple[str, ...]] = {
     "t2": (
@@ -304,10 +298,8 @@ class EC2Analyzer(Analyzer):
         if data["state"] != RUNNING_STATE:
             return findings
 
-        # 2. MEMORY PRESSURE
-        #
-        # This must happen before rightsizing so CPU-only analysis cannot
-        # incorrectly recommend downsizing a memory-constrained instance.
+        # 2. MEMORY PRESSURE (before rightsizing, so CPU-only analysis
+        #    cannot recommend downsizing a memory-constrained instance)
 
         memory_pressure = self._memory_pressure(
             context,
@@ -337,13 +329,8 @@ class EC2Analyzer(Analyzer):
         if overload:
             findings.append(overload)
 
-        # 5. RIGHTSIZING
-        #
-        # Do not emit a generic rightsizing finding when:
-        # - the instance is already an idle candidate
-        # - memory pressure exists
-        # - the workload shows significant peaks
-        # - there is no smaller compatible size
+        # 5. RIGHTSIZING (skip when already idle / memory-pressured /
+        #    overloaded, or no smaller compatible size exists)
 
         if not idle and not memory_pressure and not overload:
             rightsizing = self._rightsizing(

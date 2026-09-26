@@ -130,11 +130,8 @@ def present_recommendation(
         "subdomain": group["subdomain"],
         "category": rec.category,
         "scope": rec.scope,
-        # rec.service is the raw billing service (e.g. "EC2 - Other")
-        # -- kept as-is, the frontend's finding<->recommendation
-        # matching compares it against Finding.service. resource_service
-        # is the resource's actual AWS service (e.g. "Amazon EBS"),
-        # used for display/titles instead.
+        # rec.service is the raw billing service (for finding<->recommendation
+        # matching); resource_service is the resource's real AWS service (display).
         "service": rec.service,
         "resource_service": group["service"] or rec.service,
         "title": rec.title,

@@ -477,13 +477,7 @@ class FindingAggregator:
 
         if resource_costs:
 
-            # Resource-attributed cost MUST come from
-            # claimable_resource_cost -- never from "amount", which is
-            # the contextual collection-plan/service/historical bucket
-            # total even on an attributed context. Summing claimable
-            # values cannot multiply-count shared buckets because a
-            # context only reaches this branch when reconciliation
-            # proved single-resource attribution.
+            # Resource-attributed cost comes ONLY from claimable_resource_cost, never "amount".
             amount = sum(
                 float(context["claimable_resource_cost"])
                 for context in resource_costs
@@ -518,27 +512,10 @@ class FindingAggregator:
         findings: list[Finding],
     ) -> dict[str, float | str | None]:
 
-        # Findings in one group typically share a single collection
-        # plan's billing context (see AnalysisContext.billing() /
-        # collection/manager.py) rather than each carrying its own
-        # individually-attributed cost, so summing would
-        # multiply-count the same account-level total once per
-        # resource in the group. Take the whole financial_impact dict
-        # from whichever finding reports the highest cost, rather
-        # than maxing each field independently -- that keeps the
-        # reported savings/confidence/basis consistent with the cost
-        # they actually came from, instead of e.g. pairing one
-        # finding's cost with a different finding's confidence.
-        #
-        # Boundary note: this combines VALIDATED impacts only. After
-        # the cost-boundary fix (engine.py / financial.py), a raw
-        # finding carries a non-null observed_monthly_cost exclusively
-        # when reconciliation proved resource attribution -- so plan /
-        # service / historical amounts can never be promoted here. If
-        # no finding in the group has an attributed cost, the
-        # aggregate correctly reports no observed cost; shared bucket
-        # totals remain available via _aggregate_billing's
-        # collection_plan_cost.
+        # Group findings share one billing context, so taking the whole
+        # highest-cost finding's impact avoids multiply-counting a shared total.
+        # Only validated/attributed costs are promoted here; shared buckets stay
+        # in collection_plan_cost.
 
         best_cost = None
         best_impact: dict[str, Any] | None = None

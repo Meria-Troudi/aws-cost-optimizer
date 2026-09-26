@@ -95,13 +95,9 @@ def _aggregate_findings(
 
     for group in aggregator_groups:
 
-        # group["source_finding_ids"] is only populated by
-        # FindingEngine right after a fresh scan persists its raw
-        # findings (it needs the stable-id -> DB-id map built at that
-        # moment). Reading it back later from hydrated rows leaves it
-        # permanently empty, so pull each member's database_id from
-        # the group's own affected_resources instead -- hydrate_findings
-        # already sets Finding.database_id from the DB row's own id.
+        # source_finding_ids is only set right after a fresh scan (it needs the
+        # stable-id -> DB-id map); hydrated rows read it back empty, so pull each
+        # member's database_id from affected_resources instead.
         member_ids = [
             resource.get("database_id")
             for resource in (group.get("affected_resources") or [])
@@ -134,14 +130,8 @@ def _aggregate_findings(
 
             cost = finding.get("cost")
 
-            # Members grouped together typically share one
-            # collection-plan billing figure (see
-            # aws_cost_optimizer/analysis/aggregation.py::_aggregate_impact
-            # for the full explanation) rather than each having an
-            # individually-attributed cost, so this takes the max
-            # across the group instead of summing -- summing would
-            # multiply-count the same account-level total once per
-            # affected resource.
+            # Group members share one collection-plan billing figure, so take the max
+            # instead of summing (see aggregation._aggregate_impact).
             if isinstance(
                 cost,
                 (int, float),

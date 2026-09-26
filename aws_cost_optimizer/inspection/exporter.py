@@ -862,11 +862,8 @@ class ScanExporter:
         ):
             lines.append(f"Observed cost: ${observed_cost:,.2f}")
 
-            # The number above is real billing, but when reconciliation
-            # could not attribute it to this specific resource it is a
-            # shared bucket total (e.g. 3 NAT gateways sharing one
-            # EU-NatGateway-Hours line). Saying so prevents the reader
-            # from multiplying the figure by the resource count.
+            # Real billing, but unattributable to this resource -- it's a
+            # shared bucket total, so warn so the reader doesn't multiply it.
             if financial_impact.get("savings_basis") in {
                 "cost_not_resource_attributed",
                 "billing_usage_type_mismatch",
@@ -930,12 +927,9 @@ class ScanExporter:
                 or 0
             )
 
-            # A CURRENT_MISMATCH / HISTORICAL context means the billed
-            # usage type does NOT belong to the resources listed below
-            # (e.g. db.t3.large historical billing vs a current
-            # db.r6g.large instance). Rendering the cost as a plain
-            # group header visually attributed historical spend to the
-            # current resource -- split the two explicitly instead.
+            # A CURRENT_MISMATCH / HISTORICAL context means the billed usage type
+            # belongs to a different resource -- render cost separately so it isn't
+            # visually attributed to this one.
             historical_billing = context.get("reconciliation_status") in {
                 CURRENT_MISMATCH,
                 HISTORICAL,

@@ -385,11 +385,7 @@ class ScanService:
                     )
                 )
 
-                # Resource collection is the longest stage (often the
-                # majority of total scan time) and previously reported
-                # no progress between 25% and 55%, so a slow or
-                # many-collector scan looked stuck at 25% for minutes.
-                # Interpolate per collector instead.
+                # Longest stage; interpolate per collector so a slow scan doesn't look stuck.
                 self._report_progress(
                     scan,
                     25 + (30 * plan_index / total_plans),

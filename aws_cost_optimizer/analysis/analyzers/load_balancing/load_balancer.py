@@ -136,18 +136,9 @@ class ElbAnalyzer(Analyzer):
         if not self._eligible(context):
             return []
 
-        # A single load balancer is reported at most ONCE, with ONE
-        # canonical optimization finding.  Overlapping granular rules
-        # (no activity, no targets, empty target groups, ...) all
-        # describe the same underlying idle condition, so reporting all of
-        # them produces duplicate "Review Load Balancer Removal"
-        # recommendations for the same resource.  Instead we:
-        #
-        #   1. detect the canonical idle condition (0 targets + complete
-        #      observation + no traffic) -> elb_idle_with_cost /
-        #      elb_idle, carrying the supporting signals as metadata;
-        #   2. otherwise run the granular checks in priority order and
-        #      keep only the FIRST qualifying finding.
+        # One LB yields at most ONE canonical finding: overlapping idle checks
+        # (no activity / no targets) all describe the same condition, so emit
+        # elb_idle when detected, else only the first qualifying granular check.
         signals = self._signals(context)
 
         canonical = self._canonical_idle_finding(

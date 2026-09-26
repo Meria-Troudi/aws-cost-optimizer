@@ -77,11 +77,8 @@ def save_findings(
                 str(data.get("title")).strip() or None if data.get("title") else None
             ),
             category=category,
-            # The analyzer's real aggregation scope (None means
-            # "use FindingAggregator's default", currently
-            # "region") -- NOT hardcoded, so re-hydrating this
-            # row later and re-aggregating it produces the same
-            # grouping the analyzer/exporter path already does.
+            # Real aggregation scope (None -> FindingAggregator default "region"), not
+            # hardcoded, so re-hydration re-aggregates identically.
             aggregation_scope=str(data.get("aggregation_scope") or "region")
             .strip()
             .lower(),

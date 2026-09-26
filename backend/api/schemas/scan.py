@@ -18,11 +18,8 @@ class ScanRequest(BaseModel):
 
     region: str | None = None
 
-    # No default: the analysis window must always be the caller's
-    # actual selection. Silently substituting a hardcoded date range
-    # when these are omitted would mean a scan analyzes a period the
-    # user never chose, with nothing in the response indicating that
-    # happened.
+    # No default: the window must always be the caller's actual selection, so an
+    # omitted range never silently scans a period the user didn't choose.
     start_date: date
 
     end_date: date

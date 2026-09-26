@@ -24,7 +24,7 @@ Analyze AWS billing data, resource configurations, and CloudWatch metrics to ide
 * **Backend:** Python 3.12+ · FastAPI · SQLAlchemy · Boto3
 * **Frontend:** TypeScript · React · Vite
 * **Database:** SQLite
-* **AI:** Ollama *(optional)*
+* **AI:** Ollama 
 
 ## 🛠️ Prerequisites
 

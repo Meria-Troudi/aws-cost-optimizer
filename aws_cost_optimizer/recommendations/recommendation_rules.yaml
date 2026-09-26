@@ -1,7 +1,5 @@
 
-# =============================================================================
-# AWS COST OPTIMIZER - RECOMMENDATION CATALOG
-# =============================================================================
+# === AWS COST OPTIMIZER - RECOMMENDATION CATALOG ===
 
 catalog:
 
@@ -23,9 +21,7 @@ catalog:
     catalog_does_not_execute_changes: true
 
 
-  # ===========================================================================
-  # FINDING INPUT CONTRACT
-  # ===========================================================================
+  # === FINDING INPUT CONTRACT ===
 
   finding_input_contract:
 
@@ -73,9 +69,7 @@ catalog:
         - collection_plan_cost_must_not_be_presented_as_resource_cost
 
 
-  # ===========================================================================
-  # OUTPUT CONTRACT
-  # ===========================================================================
+  # === OUTPUT CONTRACT ===
 
   output_contract:
 
@@ -104,9 +98,7 @@ catalog:
       - llm_explanation
 
 
-  # ===========================================================================
-  # RECOMMENDATION STATUS
-  # ===========================================================================
+  # === RECOMMENDATION STATUS ===
 
   recommendation_statuses:
     - actionable
@@ -178,9 +170,7 @@ catalog:
         - do_not_recommend_remediation
 
 
-  # ===========================================================================
-  # HISTORICAL RESOURCE POLICY
-  # ===========================================================================
+  # === HISTORICAL RESOURCE POLICY ===
 
   historical_policy:
 
@@ -202,9 +192,7 @@ catalog:
       - historical_finding_may_be_used_to_explain_billing_reconciliation
 
 
-  # ===========================================================================
-  # FINANCIAL BASIS
-  # ===========================================================================
+  # === FINANCIAL BASIS ===
 
   financial_basis:
 
@@ -274,9 +262,7 @@ catalog:
         - explicitly_state_financial_impact_unavailable
 
 
-  # ===========================================================================
-  # SAVINGS POLICY
-  # ===========================================================================
+  # === SAVINGS POLICY ===
 
   savings_policy:
 
@@ -300,9 +286,7 @@ catalog:
       - convert_historical_cost_to_current_savings
 
 
-  # ===========================================================================
-  # AGGREGATION POLICY
-  # ===========================================================================
+  # === AGGREGATION POLICY ===
 
   aggregation_policy:
 
@@ -319,9 +303,7 @@ catalog:
       - historical_cost_must_not_be_added_to_current_cost_without_explicit_period_logic
 
 
-  # ===========================================================================
-  # SAFETY POLICY
-  # ===========================================================================
+  # === SAFETY POLICY ===
 
   safety_policy:
 
@@ -395,9 +377,7 @@ catalog:
         - dependency_is_absent
 
 
-  # ===========================================================================
-  # PROCEDURE CONTRACT
-  # ===========================================================================
+  # === PROCEDURE CONTRACT ===
 
   procedure_contract:
 
@@ -442,16 +422,12 @@ catalog:
         - true_for_production_capacity_changes
 
 
-# =============================================================================
-# RECOMMENDATIONS
-# =============================================================================
+# === RECOMMENDATIONS ===
 
 recommendations:
 
 
-  # ===========================================================================
-  # RDS
-  # ===========================================================================
+  # === RDS ===
 
   rds_delete_unused_database:
 
@@ -795,9 +771,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # AURORA
-  # ===========================================================================
+  # === AURORA ===
 
   aurora_review_unused_cluster:
 
@@ -1290,9 +1264,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # EC2
-  # ===========================================================================
+  # === EC2 ===
 
   ec2_rightsize_instance:
 
@@ -1776,9 +1748,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # EBS
-  # ===========================================================================
+  # === EBS ===
 
   ebs_delete_unattached_volume:
 
@@ -1939,9 +1909,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # PUBLIC IPV4
-  # ===========================================================================
+  # === PUBLIC IPV4 ===
 
   release_unassociated_public_ipv4:
 
@@ -2038,9 +2006,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # NAT GATEWAY
-  # ===========================================================================
+  # === NAT GATEWAY ===
 
   review_nat_gateway_removal:
 
@@ -2154,9 +2120,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # ELB
-  # ===========================================================================
+  # === ELB ===
 
   review_load_balancer_removal:
 
@@ -2214,9 +2178,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # EKS
-  # ===========================================================================
+  # === EKS ===
 
   eks_rightsize_nodes:
 
@@ -2320,9 +2282,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # S3
-  # ===========================================================================
+  # === S3 ===
 
   s3_apply_lifecycle_policy:
 
@@ -2419,9 +2379,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # DYNAMODB
-  # ===========================================================================
+  # === DYNAMODB ===
 
   dynamodb_rightsize_capacity:
 
@@ -2478,9 +2436,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # QUICKSIGHT
-  # ===========================================================================
+  # === QUICKSIGHT ===
 
   quicksight_review_unused_asset:
 
@@ -2537,9 +2493,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # VPC ENDPOINT
-  # ===========================================================================
+  # === VPC ENDPOINT ===
 
   vpc_endpoint_review_non_operational:
 
@@ -2703,9 +2657,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # TRANSIT GATEWAY
-  # ===========================================================================
+  # === TRANSIT GATEWAY ===
 
   transit_gateway_review_unused:
 
@@ -2816,9 +2768,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # WAF
-  # ===========================================================================
+  # === WAF ===
 
   waf_review_unused_web_acl:
 
@@ -3330,9 +3280,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-  # ===========================================================================
-  # GENERIC FALLBACKS
-  # ===========================================================================
+  # === GENERIC FALLBACKS ===
 
   review_unused:
 
@@ -3832,9 +3780,7 @@ recommendations:
       requires_human_confirmation: true
 
 
-# =============================================================================
-# ROUTES
-# =============================================================================
+# === ROUTES ===
 
 routes:
 

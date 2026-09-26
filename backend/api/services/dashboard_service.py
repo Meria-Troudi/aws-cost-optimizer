@@ -53,24 +53,9 @@ from backend.api.services.analytics_constants import (
 
 # Cache
 
-# Cost Explorer responses, keyed by query shape.
-#
-# Bounded LRU with a lock. All three properties matter here:
-#
-#   size    -- this is a module-level dict in a long-running process,
-#              keyed by query parameters, so an unbounded version grows
-#              with every distinct date range a user ever picks.
-#
-#   TTL     -- windows that have already ended used to be stored with
-#              expires_at=None, meaning cached for the lifetime of the
-#              process. Historical data is stable, not immutable
-#              (Cost Explorer restates recent months), so even those
-#              entries now expire, just far more slowly.
-#
-#   lock    -- request threads and background scan threads both reach
-#              this. dict operations are individually atomic under the
-#              GIL, but check-then-act sequences (get, decide, evict,
-#              set) are not, and eviction can race a concurrent read.
+# Cost Explorer responses, keyed by query shape. Bounded LRU (grows with distinct
+# date ranges), finite TTL (CE restates recent months), and mutex-guarded (checks
+# and eviction race between request and scan threads).
 _QUERY_CACHE: "OrderedDict[str, tuple[float, Any]]" = OrderedDict()
 
 _CACHE_LOCK = threading.Lock()
@@ -952,13 +937,9 @@ class DashboardService:
 
         start_key = start.strftime("%Y-%m")
 
-        # `rows` are already at monthly granularity (one row per
-        # calendar month), but `end` is a day-precision exclusive
-        # bound that often falls *inside* its own month (e.g. "today
-        # + 1 day" for the still-open current month). Truncating that
-        # to "%Y-%m" and comparing with >= would wrongly exclude the
-        # entire current month. Anchor the inclusive upper bound to
-        # the last day actually covered by the window instead.
+        # rows are monthly but `end` is a day-precision bound that can fall inside
+        # its own month; truncating would exclude that month, so anchor the upper
+        # bound to the last day actually covered.
         end_key = (end - timedelta(days=1)).strftime("%Y-%m")
 
         totals: dict[
@@ -1113,12 +1094,9 @@ class DashboardService:
 
         previous_month_key = previous_start.strftime("%Y-%m")
 
-        # Anchor the shared fetch window directly from
-        # history_months instead of a separate get_monthly_cost()
-        # call — the SERVICE+REGION dataset below already covers
-        # every month this needs, so the monthly trend, current MTD,
-        # and previous-month total are all derived from it rather
-        # than three more Cost Explorer round trips.
+        # Derive the shared fetch window from history_months so the trend, current
+        # MTD, and previous-month total reuse the SERVICE+REGION dataset
+        # (one fetch, not three).
         fetch_start_date = current_start
 
         for _ in range(history_months - 1):
