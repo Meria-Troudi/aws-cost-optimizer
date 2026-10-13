@@ -1,0 +1,32 @@
+# Scrapes the backend's /metrics endpoint (served by
+# backend/api/metrics.py on port 8000) via the in-cluster backend
+# Service. Requires the kube-prometheus-stack operator installed with
+# k8s/monitoring-values.yaml.
+#
+# NOTE: kube-prometheus-stack by default only selects ServiceMonitors
+# that carry a `release: <helm-release-name>` label. Ours was
+# installed as `monitoring` (helm upgrade --install monitoring ...),
+# so the label below must read `release: monitoring` or the operator
+# will silently ignore this object.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fin-backend
+  namespace: fin-optimizer
+  labels:
+    release: monitoring
+
+spec:
+  namespaceSelector:
+    matchNames:
+      - fin-optimizer
+
+  selector:
+    matchLabels:
+      app: fin-backend
+
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

@@ -32,6 +32,12 @@ PyYAML>=6.0,<7.0
 # time, not at import time.
 httpx>=0.28,<1.0
 
+# Prometheus metrics. backend/api/metrics.py exposes /metrics and the
+# standard http_requests_total / http_request_duration_seconds
+# series, scraped in-cluster by the ServiceMonitor in
+# k8s/servicemonitor.yaml (kube-prometheus-stack).
+prometheus-client>=0.22,<1.0
+
 # --- Development / test ----------------------------------------------
 
 # Test runner. The suite in tests/ is resource-independent -- it makes

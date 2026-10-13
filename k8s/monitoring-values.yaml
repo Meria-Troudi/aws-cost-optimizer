@@ -1,0 +1,56 @@
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+grafana:
+  enabled: true
+  adminUser: admin
+  # adminPassword is intentionally NOT set here: never commit
+  # credentials to the repository. If omitted, the chart generates a
+  # random password and stores it in the `monitoring-grafana` Secret.
+  # Retrieve it with:
+  #   kubectl -n monitoring get secret monitoring-grafana \
+  #     -o jsonpath="{.data.admin-password}" | base64 --decode
+  # To set your own, pass it at install/upgrade time without writing
+  # it to any tracked file, e.g.:
+  #   helm upgrade --install monitoring prometheus-community/kube-prometheus-stack \
+  #     -f k8s/monitoring-values.yaml \
+  #     --set grafana.adminPassword="$GRAFANA_ADMIN_PASSWORD"
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+prometheus:
+  enabled: true
+  prometheusSpec:
+    replicas: 1
+    retention: 24h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

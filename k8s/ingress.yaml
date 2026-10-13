@@ -10,6 +10,25 @@ spec:
   rules:
     - http:
         paths:
+          # API routes go straight to the backend service
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+
+          # Backend health endpoint (frontend calls /health, not /api/health)
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8000
+
+          # Everything else → frontend (React SPA served by nginx)
           - path: /
             pathType: Prefix
             backend:
@@ -17,3 +36,4 @@ spec:
                 name: fin-frontend
                 port:
                   number: 80
+

@@ -4,8 +4,12 @@ from backend.bootstrap import ensure_project_paths
 
 ensure_project_paths()
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+from backend.api.metrics import (
+    PrometheusMiddleware,
+    metrics_endpoint,
+)
 from backend.database import models_loader
 from backend.database.models_loader import init_db
 
@@ -40,6 +44,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Added last so it is the outermost middleware and measures the full
+# request lifetime (including CORS handling). Records
+# http_requests_total and http_request_duration_seconds.
+app.add_middleware(PrometheusMiddleware)
 
 
 @app.on_event("startup")
@@ -116,3 +125,16 @@ def health():
         "status": "ok",
         "service": "aws-cost-optimizer-api",
     }
+
+
+@app.get("/metrics", include_in_schema=False)
+def metrics() -> Response:
+    """
+    Prometheus scrape target.
+
+    Deliberately unauthenticated (like /health) because Prometheus
+    sends no credentials, and deliberately absent from the Ingress:
+    only in-cluster components (the ServiceMonitor) should reach it.
+    """
+
+    return metrics_endpoint()

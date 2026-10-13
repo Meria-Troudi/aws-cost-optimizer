@@ -44,12 +44,26 @@ metadata:
   name: backend
   namespace: fin-optimizer
 
+  # Matched by the ServiceMonitor selector in k8s/servicemonitor.yaml.
+  labels:
+    app: fin-backend
+
+  # Fallback scrape hints for annotation-based discovery.
+  # kube-prometheus-stack scrapes via the ServiceMonitor instead;
+  # these annotations are informational only.
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8000"
+    prometheus.io/path: "/metrics"
+
 spec:
   selector:
     app: fin-backend
 
   ports:
-    - protocol: TCP
+    # Named port referenced by the ServiceMonitor endpoint.
+    - name: http
+      protocol: TCP
       port: 8000
       targetPort: 8000
 
