@@ -1,0 +1,65 @@
+# Application alert rules for the fin-optimizer namespace, evaluated
+# by the Prometheus deployed via kube-prometheus-stack (release name
+# `monitoring` -- the `release: monitoring` label below is what makes
+# the operator pick this object up).
+#
+# Requires kube-state-metrics (installed by kube-prometheus-stack) for
+# the kube_pod_* metrics, and cAdvisor metrics (scraped by default)
+# for container_cpu_usage_seconds_total.
+#
+# NOTE: The CPU threshold (0.8 cores) is a starting point, not a
+# universal limit. Adjust it to match your VM resources and workload
+# (e.g. lower for a small Vagrant node, higher if the node is beefy).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: fin-optimizer-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: fin-optimizer.availability
+      rules:
+        - alert: FinOptimizerPodNotReady
+          expr: |
+            kube_pod_status_ready{
+              namespace="fin-optimizer",
+              condition="true"
+            } == 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fin Optimizer pod is not ready"
+            description: "A Fin Optimizer pod has been unready for 5 minutes."
+
+        - alert: FinOptimizerContainerRestarting
+          expr: |
+            increase(kube_pod_container_status_restarts_total{
+              namespace="fin-optimizer"
+            }[10m]) > 2
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fin Optimizer container is restarting"
+            description: "A container has restarted more than twice in 10 minutes."
+
+    - name: fin-optimizer.resources
+      rules:
+        - alert: FinOptimizerHighCPU
+          expr: |
+            sum by (pod) (
+              rate(container_cpu_usage_seconds_total{
+                namespace="fin-optimizer",
+                container!="",
+                image!=""
+              }[5m])
+            ) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Fin Optimizer pod CPU usage is high"
+            description: "A pod has used more than 0.8 CPU cores for 10 minutes."
