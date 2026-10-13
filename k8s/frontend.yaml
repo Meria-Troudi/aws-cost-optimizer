@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: meriatr/fin-frontend:git-5dd79c240ec886a0c107badf0854829034b3e3e6
+          image: meriatr/fin-frontend:latest
 
           ports:
             - containerPort: 80
@@ -49,3 +49,5 @@ spec:
       targetPort: 80
 
   type: ClusterIP
+
+

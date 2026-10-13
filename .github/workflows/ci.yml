@@ -1,4 +1,3 @@
-
 name: CI-CD
 
 on:
@@ -8,7 +7,7 @@ on:
   pull_request:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   backend:
@@ -74,23 +73,19 @@ jobs:
       - name: Build Docker Compose services
         run: docker compose build
 
-  publish-and-update:
-    name: Publish Images and Update Kubernetes Manifests
+  publish-images:
+    name: Publish Docker Images
     runs-on: ubuntu-latest
     needs:
       - backend
       - frontend
       - docker-build
 
-    # Never publish images or modify manifests for pull requests.
     if: github.event_name == 'push' && github.ref == 'refs/heads/dep'
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: dep
-          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -107,9 +102,7 @@ jobs:
           context: .
           file: backend/Dockerfile
           push: true
-          tags: |
-            meriatr/fin-backend:latest
-            meriatr/fin-backend:git-${{ github.sha }}
+          tags: meriatr/fin-backend:latest
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v6
@@ -117,31 +110,4 @@ jobs:
           context: ./frontend
           file: frontend/Dockerfile
           push: true
-          tags: |
-            meriatr/fin-frontend:latest
-            meriatr/fin-frontend:git-${{ github.sha }}
-
-      - name: Update Kubernetes image tags
-        env:
-          IMAGE_TAG: git-${{ github.sha }}
-        run: |
-          sed -i "s#image: meriatr/fin-backend:.*#image: meriatr/fin-backend:${IMAGE_TAG}#" k8s/backend.yaml
-          sed -i "s#image: meriatr/fin-frontend:.*#image: meriatr/fin-frontend:${IMAGE_TAG}#" k8s/frontend.yaml
-
-          echo "Updated Kubernetes manifests:"
-          grep "image:" k8s/backend.yaml
-          grep "image:" k8s/frontend.yaml
-
-      - name: Commit and push Kubernetes manifest updates
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add k8s/backend.yaml k8s/frontend.yaml
-
-          if git diff --cached --quiet; then
-            echo "No Kubernetes manifest changes to commit."
-          else
-            git commit -m "chore(k8s): deploy ${GITHUB_SHA} [skip ci]"
-            git push origin HEAD:dep
-          fi
+          tags: meriatr/fin-frontend:latest
