@@ -1,42 +1,31 @@
 const WORKFLOW_STEPS = [
   {
-    title: 'Billing Data',
-    body: 'AWS Cost Explorer provides billing and usage data used to identify relevant cost drivers.',
+    title: 'Cost Analysis',
+    body: 'Analyze AWS billing data to identify major cost drivers.',
   },
   {
-    title: 'Cost-Driven Collection',
-    body: 'The system determines which AWS resources require investigation based on the observed costs.',
-  },
-  {
-    title: 'Evidence Collection',
-    body: 'Only the utilization, configuration, dependencies, topology, and activity evidence required for analysis is collected.',
+    title: 'Targeted Collection',
+    body: 'Collect relevant resource, utilization, configuration, and activity data.',
   },
   {
     title: 'Cost Reconciliation',
-    body: 'Billing records are matched with discovered resources whenever possible, while historical and unmatched costs are identified.',
+    body: 'Match billing records with resources and identify historical or unmatched costs.',
   },
   {
-    title: 'Analysis Engine',
-    body: 'Service-specific analyzers evaluate the collected evidence against defined cost conditions.',
-  },
-  {
-    title: 'Findings',
-    body: 'Potential cost optimization conditions are identified and supported by collected evidence.',
+    title: 'Evidence-Based Analysis',
+    body: 'Evaluate collected evidence to identify potential optimization opportunities.',
   },
   {
     title: 'Recommendations',
-    body: 'Optimization actions are generated from supported findings, with evidence and financial context where available.',
+    body: 'Present actionable optimizations with supporting evidence and estimated savings.',
   },
 ]
 
 const PRINCIPLES = [
-  'Do not optimize a resource simply because it exists.',
-  'Do not assume low utilization without utilization evidence.',
-  'Do not assume a resource is unused without checking relevant activity.',
-  'Reconcile billing data with resource evidence.',
-  'Distinguish current resources from historical billing resources.',
-  'Do not treat estimated savings as guaranteed savings.',
-  'Report incomplete evidence instead of presenting unsupported conclusions.',
+  'Evidence before recommendations.',
+  'No assumptions about resource usage or potential savings.',
+  'Billing costs must be reconciled with resource data.',
+  'Incomplete evidence and historical resources must be clearly identified.',
 ]
 
 export default function AboutPage() {
@@ -45,8 +34,6 @@ export default function AboutPage() {
       <div className="header-row">
         <div className="headline">
           <div className="eyebrow">/ About</div>
-          <h1>Explain CostLensAWS</h1>
-          <div className="sub">What is this system and how does it work?</div>
         </div>
       </div>
 
@@ -59,26 +46,20 @@ export default function AboutPage() {
         </h2>
 
         <p>
-          CostLensAWS is an evidence-based AWS cost analysis platform designed to identify
-          cost drivers, investigate the resources responsible for AWS expenditure, detect
-          potential optimization conditions, and generate actionable recommendations.
+          CostLensAWS analyzes AWS spending, investigates the resources
+          behind costs, and provides evidence-based recommendations to
+          optimize cloud expenditure without compromising reliability.
         </p>
       </section>
 
-      {/* Workflow and Core Principle sit side-by-side: the steps explain
-          *how* the system works, the principles explain *why* it's
-          trustworthy while doing it — reading them together makes the
-          case better than stacking them as two unrelated panels. */}
       <div className="about-columns section-gap">
-
         <section className="panel about-workflow">
-          <h2 className="panel-title">How CostLensAWS works</h2>
+          <h2 className="panel-title">How It Works</h2>
 
           <ol className="about-steps">
             {WORKFLOW_STEPS.map((step, index) => (
               <li className="about-step" key={step.title}>
                 <span className="about-step-index">{index + 1}</span>
-
                 <div>
                   <strong>{step.title}</strong>
                   <p>{step.body}</p>
@@ -89,9 +70,11 @@ export default function AboutPage() {
         </section>
 
         <section className="panel about-principle">
-          <h2 className="panel-title">Core principle</h2>
+          <h2 className="panel-title">Core Principles</h2>
 
-          <p className="about-principle-statement">Evidence before recommendation.</p>
+          <p className="about-principle-statement">
+            Evidence before recommendation.
+          </p>
 
           <ul className="about-principle-list">
             {PRINCIPLES.map((line) => (
@@ -99,18 +82,15 @@ export default function AboutPage() {
             ))}
           </ul>
         </section>
-
       </div>
 
       <section className="panel section-gap about-intro about-aws-native">
-        <h2 className="panel-title">AWS-native recommendations</h2>
+        <h2 className="panel-title">AWS-Native Insights</h2>
 
         <p>
-          CostLensAWS also surfaces read-only recommendations from AWS Cost
-          Explorer and AWS Compute Optimizer alongside its own findings.
-          These are external, AWS-generated optimization signals — an
-          additional decision input, not something CostLensAWS's analyzer
-          produced or verified.
+          CostLensAWS also displays recommendations from AWS Cost Explorer
+          and Compute Optimizer, complementing its own analysis with
+          AWS-generated insights.
         </p>
       </section>
     </div>

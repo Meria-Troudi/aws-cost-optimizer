@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fin-optimizer
+  namespace: fin-optimizer
+
+spec:
+  ingressClassName: traefik
+
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fin-frontend
+                port:
+                  number: 80

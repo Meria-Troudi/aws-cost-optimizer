@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: fin-optimizer
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: fin-backend
+
+  template:
+    metadata:
+      labels:
+        app: fin-backend
+
+    spec:
+      containers:
+        - name: backend
+          image: meriatr/fin-backend:latest
+
+          ports:
+            - containerPort: 8000
+
+          env:
+            - name: OLLAMA_BASE_URL
+              value: "http://ollama:11434"
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: fin-optimizer
+
+spec:
+  selector:
+    app: fin-backend
+
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+
+  type: ClusterIP

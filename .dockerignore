@@ -1,0 +1,15 @@
+# Used by backend/Dockerfile's build (context = repo root).
+# Keeps the backend image from pulling in things it never needs.
+.git
+.github
+frontend
+tests
+docs
+*.md
+*.db
+*.db-journal
+__pycache__
+*.pyc
+.pytest_cache
+aws_cost_optimizer/output
+.claude

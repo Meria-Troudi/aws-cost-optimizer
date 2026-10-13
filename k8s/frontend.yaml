@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fin-frontend
+  namespace: fin-optimizer
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: fin-frontend
+
+  template:
+    metadata:
+      labels:
+        app: fin-frontend
+
+    spec:
+      containers:
+        - name: frontend
+          image: meriatr/fin-frontend:latest
+
+          ports:
+            - containerPort: 80
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fin-frontend
+  namespace: fin-optimizer
+
+spec:
+  selector:
+    app: fin-frontend
+
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+
+  type: ClusterIP
