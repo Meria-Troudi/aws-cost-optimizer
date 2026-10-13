@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: meriatr/fin-backend:latest
+          image: meriatr/fin-backend:git-39edd84f032fa288c5f891682802684baad0e500
 
           ports:
             - containerPort: 8000

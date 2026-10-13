@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: meriatr/fin-frontend:latest
+          image: meriatr/fin-frontend:git-39edd84f032fa288c5f891682802684baad0e500
 
           ports:
             - containerPort: 80
